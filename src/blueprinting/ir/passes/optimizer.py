@@ -171,9 +171,12 @@ class OptimizerPass(Pass):
         
         # ScheduleIR.ops is a list of ScheduledOp
         # Only count ops on device 0 (representative single GPU, per-GPU memory)
-        for op in ir.ops:
+        for op in ir.iter_ops():
+            # Get op_id (use op_path for hierarchical, name for legacy)
+            op_id = op.op_path or op.name
+            
             # Count microbatches
-            mb_match = mb_pattern.search(op.op_id)
+            mb_match = mb_pattern.search(op_id)
             if mb_match:
                 seen_mbs.add(int(mb_match.group(1)))
             
@@ -186,7 +189,6 @@ class OptimizerPass(Pass):
                 continue
             
             # Extract layer name (remove _FW, _BW, _mb0, _mb1 suffixes)
-            op_id = op.op_id
             base_layer = op_id
             for suffix in ("_FW", "_BW", "_wgrad", "_agrad"):
                 if suffix in base_layer:
@@ -269,7 +271,8 @@ class OptimizerPass(Pass):
         if optimizer_time > 0:
             device = 0
             optim_op = ScheduledOp(
-                op_id="optimizer_step",
+                name="optimizer_step",
+                op_path="optimizer_step",
                 op_type="OptimizerStep",
                 device=device,
                 stream="compute",
@@ -281,13 +284,14 @@ class OptimizerPass(Pass):
                     "num_unique_layers": len(unique_layer_weights),
                 },
             )
-            ir.add_op(optim_op)
+            ir.add_op(optim_op, stage_id=0, device_id=device)
         
         # Add recompute op to schedule (if checkpointing enabled)
         if recompute_time > 0:
             # Recompute is interleaved with backward pass, but we model it as separate
             recompute_op = ScheduledOp(
-                op_id="recompute_step",
+                name="recompute_step",
+                op_path="recompute_step",
                 op_type="RecomputeStep",
                 device=0,
                 stream="compute",
@@ -299,7 +303,7 @@ class OptimizerPass(Pass):
                     "num_microbatches": num_microbatches,
                 },
             )
-            ir.add_op(recompute_op)
+            ir.add_op(recompute_op, stage_id=0, device_id=0)
             ir.metadata["effective_forward_time"] = forward_time_per_mb + recompute_time_per_mb
         
         return ir

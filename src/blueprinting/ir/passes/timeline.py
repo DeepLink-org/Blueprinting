@@ -74,7 +74,7 @@ class TimelinePass(Pass):
         timeline.metadata["model_overlap"] = self.model_overlap
         
         # Process each scheduled operation
-        for op in schedule.ops:
+        for op in schedule.iter_ops():
             self._add_op_events(timeline, op, schedule)
         
         # Add tensor lifetime events
@@ -103,11 +103,14 @@ class TimelinePass(Pass):
         # Calculate end time
         end_time = op.end
         
+        # Get op_id (use op_path for hierarchical, name for legacy)
+        op_id = op.op_path or op.name
+        
         # Add start event
         timeline.add_event(TimelineEvent(
             time=op.start,
             event_type=start_type,
-            resource_id=op.op_id,
+            resource_id=op_id,
             device=op.device,
             stream=stream,
             op_type=op.op_type,
@@ -121,7 +124,7 @@ class TimelinePass(Pass):
         timeline.add_event(TimelineEvent(
             time=end_time,
             event_type=end_type,
-            resource_id=op.op_id,
+            resource_id=op_id,
             device=op.device,
             stream=stream,
             op_type=op.op_type,
@@ -137,7 +140,7 @@ class TimelinePass(Pass):
                 device=op.device,
                 stream=StreamType.MEMORY,
                 size=tensor.size,
-                metadata={"producer_op": op.op_id}
+                metadata={"producer_op": op_id}
             ))
             
             # Free at tensor's free time (if specified)
@@ -160,7 +163,7 @@ class TimelinePass(Pass):
         
         # Track which tensors we've already added events for
         seen_tensors = set()
-        for op in schedule.ops:
+        for op in schedule.iter_ops():
             for tensor in op.tensors_alloc:
                 seen_tensors.add(tensor.tensor_id)
         

@@ -264,13 +264,13 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================================
 
 def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
-    """构建 Transformer 模型的 GraphIR
+    """构建 Transformer 模型的 GraphIR (层级结构)
     
-    只定义逻辑结构，不做 TP 相关判断。
-    所有并行变换由 ParallelPass 处理。
+    使用 Module → Block → Op 的层级结构：
+    - Module: 整个 Transformer 模型
+    - Block: TransformerLayer, Attention, FFN
+    - Op: Linear, RMSNorm, Attention, Add 等
     """
-    builder = IRBuilder()
-    
     hidden = model["hidden"]
     feedforward = model["feedforward"]
     num_heads = model["attn_heads"]
@@ -281,11 +281,15 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     tp = execution["tensor_par"]
     batch_seq = micro_batch_size * seq_len
     
+    builder = IRBuilder(model_name, "Transformer")
+    
     # 元数据
     builder.set_metadata("model_name", model_name)
     builder.set_metadata("num_layers", num_layers)
     builder.set_metadata("hidden", hidden)
     builder.set_metadata("feedforward", feedforward)
+    builder.set_metadata("num_heads", num_heads)
+    builder.set_metadata("head_dim", head_dim)
     builder.set_metadata("batch_size", micro_batch_size)
     builder.set_metadata("seq_len", seq_len)
     builder.set_metadata("tp", tp)
@@ -297,63 +301,68 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     x = builder.add_input("input_ids", shape=[micro_batch_size, seq_len, hidden])
     prev = x
     
-    # Transformer layers
+    # Transformer layers (使用层级结构)
     for i in range(num_layers):
-        p = f"layer{i}_"
-        
-        # Attention block
-        attn_norm = builder.add_rmsnorm(f"{p}attn_norm", [prev], hidden)
-        builder._nodes[attn_norm].attrs["batch_seq"] = batch_seq
-        
-        # QKV projections (Column Parallel)
-        q = builder.add_linear(f"{p}q_proj", [attn_norm], hidden, hidden, shard="tp_col")
-        k = builder.add_linear(f"{p}k_proj", [attn_norm], hidden, hidden, shard="tp_col")
-        v = builder.add_linear(f"{p}v_proj", [attn_norm], hidden, hidden, shard="tp_col")
-        for node in [q, k, v]:
-            builder._nodes[node].attrs["batch_seq"] = batch_seq
-        
-        # Attention
-        attn = builder.add_attention(f"{p}attn", [q, k, v], num_heads, head_dim, seq_len)
-        builder._nodes[attn].attrs["batch_size"] = micro_batch_size
-        builder._nodes[attn].attrs["shard"] = "tp_col"
-        
-        # Output projection (Row Parallel)
-        attn_out = builder.add_linear(f"{p}attn_out", [attn], hidden, hidden, shard="tp_row")
-        builder._nodes[attn_out].attrs["batch_seq"] = batch_seq
-        
-        # Residual
-        attn_add = builder.add_elementwise(f"{p}attn_add", "Add", [prev, attn_out])
-        builder._nodes[attn_add].attrs["num_elements"] = batch_seq * hidden
-        
-        # FFN block (标准 2 层 FFN，与 Calculon 对齐)
-        ffn_norm = builder.add_rmsnorm(f"{p}ffn_norm", [attn_add], hidden)
-        builder._nodes[ffn_norm].attrs["batch_seq"] = batch_seq
-        
-        # FC1: hidden -> feedforward (Column Parallel)
-        fc1 = builder.add_linear(f"{p}fc1", [ffn_norm], hidden, feedforward, shard="tp_col")
-        builder._nodes[fc1].attrs["batch_seq"] = batch_seq
-        
-        # GELU activation
-        gelu = builder.add_elementwise(f"{p}gelu", "SiLU", [fc1])  # 用 SiLU 近似 GELU
-        builder._nodes[gelu].attrs["num_elements"] = batch_seq * feedforward
-        builder._nodes[gelu].attrs["shard"] = "tp_col"
-        
-        # FC2: feedforward -> hidden (Row Parallel)
-        fc2 = builder.add_linear(f"{p}fc2", [gelu], feedforward, hidden, shard="tp_row")
-        builder._nodes[fc2].attrs["batch_seq"] = batch_seq
-        
-        # Residual
-        ffn_add = builder.add_elementwise(f"{p}ffn_add", "Add", [attn_add, fc2])
-        builder._nodes[ffn_add].attrs["num_elements"] = batch_seq * hidden
-        
-        prev = ffn_add
+        with builder.block(f"layer{i}", "TransformerLayer", layer_idx=i):
+            # Attention block
+            with builder.block("attn", "Attention"):
+                norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
+                norm_out = f"{norm.name}_out"
+                
+                # QKV projections (Column Parallel)
+                q = builder.linear("q_proj", norm_out, hidden, hidden, 
+                                   shard="tp_col", batch_seq=batch_seq)
+                k = builder.linear("k_proj", norm_out, hidden, hidden,
+                                   shard="tp_col", batch_seq=batch_seq)
+                v = builder.linear("v_proj", norm_out, hidden, hidden,
+                                   shard="tp_col", batch_seq=batch_seq)
+                
+                # Attention
+                attn = builder.attention("mha", 
+                                        [f"{q.name}_out", f"{k.name}_out", f"{v.name}_out"],
+                                        num_heads, head_dim, seq_len,
+                                        batch_size=micro_batch_size,
+                                        shard="tp_col")
+                
+                # Output projection (Row Parallel)
+                attn_out = builder.linear("out_proj", f"{attn.name}_out", hidden, hidden,
+                                          shard="tp_row", batch_seq=batch_seq)
+                
+                # Residual
+                res1 = builder.add("residual", [prev, f"{attn_out.name}_out"],
+                                   num_elements=batch_seq * hidden)
+            
+            attn_block_out = f"{res1.name}_out"
+            
+            # FFN block
+            with builder.block("ffn", "FFN"):
+                norm2 = builder.rmsnorm("norm", attn_block_out, hidden, batch_seq=batch_seq)
+                norm2_out = f"{norm2.name}_out"
+                
+                # FC1: hidden -> feedforward (Column Parallel)
+                fc1 = builder.linear("fc1", norm2_out, hidden, feedforward,
+                                     shard="tp_col", batch_seq=batch_seq)
+                
+                # Activation
+                act = builder.activation("act", f"{fc1.name}_out", "SiLU",
+                                        num_elements=batch_seq * feedforward,
+                                        shard="tp_col")
+                
+                # FC2: feedforward -> hidden (Row Parallel)
+                fc2 = builder.linear("fc2", f"{act.name}_out", feedforward, hidden,
+                                     shard="tp_row", batch_seq=batch_seq)
+                
+                # Residual
+                res2 = builder.add("residual", [attn_block_out, f"{fc2.name}_out"],
+                                   num_elements=batch_seq * hidden)
+            
+            prev = f"{res2.name}_out"
     
-    # Final norm + LM head
-    final_norm = builder.add_rmsnorm("final_norm", [prev], hidden)
-    builder._nodes[final_norm].attrs["batch_seq"] = batch_seq
+    # Final norm
+    with builder.block("final", "Output"):
+        final_norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
     
-    # 注：LM Head 通常与 embedding 共享权重
-    builder.mark_output(final_norm)
+    builder.add_output(f"{final_norm.name}_out")
     
     return builder.build()
 
@@ -362,11 +371,10 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
 # 编译流水线
 # ============================================================================
 
-def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int) -> Compiler:
+def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int, debug: bool = False) -> Compiler:
     """创建编译器流水线"""
-    compiler = Compiler()
+    compiler = Compiler(debug=debug)
     
-    # 计算 microbatch 数量
     tp = execution["tensor_par"]
     pp = execution["pipeline_par"]
     dp = execution["data_par"]
@@ -417,7 +425,6 @@ def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int) 
 
 def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], system_cfg: Dict[str, Any]) -> Dict[str, Any]:
     """运行 Calculon 仿真"""
-    # 使用 hp.scope 传递配置参数
     with hp.scope(app=model_cfg, exe=execution_cfg) as ps:
         app = Model.from_cfg(ps.app)
         exe = Execution(ps.exe)
@@ -431,10 +438,7 @@ def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], syste
 
 
 def compare_results(model_name: str, execution_cfg: Dict[str, Any], ir_result, calc_stats: Dict[str, Any]):
-    """对比 IR 编译器与 Calculon 结果
-    
-    只从结果中读取数据并对齐单位，不做任何计算和估算。
-    """
+    """对比 IR 编译器与 Calculon 结果"""
     
     ir_metrics = normalize_ir_metrics(ir_result)
     calc_metrics = normalize_calculon_stats(calc_stats)
@@ -449,10 +453,8 @@ def compare_results(model_name: str, execution_cfg: Dict[str, Any], ir_result, c
     calc_block = calc_metrics.get("block", {})
     calc_basis = calc_metrics.get("basis", {})
     
-    # Raw values for display (Calculon optimizer can be None with ZeRO)
     calc_optim_raw = calc_stats.get("optim_space", None)
     
-    # ========== 输出对比 ==========
     print_header("IR 编译器 vs Calculon 对比")
     
     tp = execution_cfg["tensor_par"]
@@ -593,6 +595,7 @@ def main():
     parser.add_argument("--system", default="h100_80g_nvl8", help="系统配置名")
     parser.add_argument("--execution", default="3072_t4_p64_d12_mbs4_full", help="执行配置名")
     parser.add_argument("--output", help="输出 Chrome Trace 文件路径")
+    parser.add_argument("--debug", action="store_true", help="打印每个 pass 的 IR 摘要")
     parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
     args = parser.parse_args()
     
@@ -608,12 +611,13 @@ def main():
     print(f"系统: {args.system}")
     print(f"执行: {args.execution}")
     
-    # 1. 构建图
+    # 1. 构建图 (使用层级结构)
     print_section("构建计算图")
     graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
-    print(f"  节点数: {len(graph.nodes)}")
-    print(f"  边数:   {len(graph.edges)}")
-    print(f"  层数:   {model_cfg['num_blocks']}")
+    print(f"  结构: {graph}")
+    print(f"  层数: {model_cfg['num_blocks']}")
+    if args.verbose:
+        print(f"\n{graph.tree(max_depth=2)}")
     
     # 2. 编译
     print_section("编译")
@@ -621,6 +625,7 @@ def main():
         execution_cfg,
         cfg["system_path"],
         model_cfg.get("seq_size", 2048),
+        debug=args.debug,
     )
     result = compiler.compile(graph)
     print(f"  完成")
@@ -633,17 +638,6 @@ def main():
         compare_results(model_name, execution_cfg, result, calc_stats)
     except Exception as e:
         print(f"  错误: {e}")
-    
-    # 4. 导出 Timeline (可选)
-    if args.output:
-        print_section("导出 Chrome Trace")
-        for ir in compiler._intermediate_results:
-            if hasattr(ir, 'to_trace_events'):
-                events = ir.to_trace_events()
-                with open(args.output, 'w') as f:
-                    json.dump(events, f, indent=2)
-                print(f"  已导出: {args.output}")
-                break
     
     print("\n" + "="*60)
     print("  完成")

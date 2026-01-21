@@ -1,7 +1,15 @@
 """Compiler - Orchestrates IR passes to produce simulation results.
 
 The Compiler combines multiple passes into a compilation pipeline,
-transforming GraphIR through various stages to produce a SimulationResult.
+transforming hierarchical GraphIR through various stages to produce a SimulationResult.
+
+IR Pipeline:
+    GraphIR (Module → Block → Op)
+    → WorkloadPass (fills FLOPs, memory)
+    → ParallelPass (applies TP/PP/DP)
+    → SchedulePass → ScheduleIR (Stage → Device → ScheduledOp)
+    → TimelinePass (optional) → TimelineIR
+    → EvaluatePass → SimulationResult
 """
 
 from typing import Any, Dict, List, Optional, Union
@@ -10,6 +18,7 @@ from sympy import Symbol
 
 from .graph import GraphIR
 from .schedule import ScheduleIR
+from .timeline import TimelineIR
 from .result import SimulationResult
 from .passes.base import Pass
 from .passes.workload import WorkloadPass
@@ -22,8 +31,8 @@ class Compiler:
     """Compiler for IR-based model simulation.
     
     The Compiler orchestrates a pipeline of passes that transform
-    a GraphIR into a SimulationResult. Each pass adds or transforms
-    information in the IR.
+    a hierarchical GraphIR into a SimulationResult. Each pass adds
+    or transforms information in the IR.
     
     Example:
         # Build a graph
@@ -47,6 +56,7 @@ class Compiler:
         
         Args:
             system_config: Optional system configuration to use for scheduling
+            debug: If True, print IR snapshot after each pass
         """
         self.system_config = system_config or {}
         self.passes: List[Pass] = []
@@ -74,7 +84,6 @@ class Compiler:
             SimulationResult after all passes
         """
         # Clear expression cache at the start of each compilation
-        # This ensures id()-based cache keys are valid for this compilation
         from .symmax import clear_expr_cache
         clear_expr_cache()
         
@@ -88,19 +97,25 @@ class Compiler:
         # Ensure we return a SimulationResult
         if isinstance(current, SimulationResult):
             return current
-        elif isinstance(current, ScheduleIR):
+        elif isinstance(current, (ScheduleIR, TimelineIR)):
             # If no EvaluatePass was added, create a default one
             return EvaluatePass().run(current)
         else:
             raise ValueError(f"Unexpected final IR type: {type(current)}")
 
     def _print_ir_snapshot(self, p: Pass, ir: Any) -> None:
-        """Print a concise snapshot of IR after each pass."""
+        """Print a snapshot of IR after each pass."""
         name = getattr(p, "name", p.__class__.__name__)
+        
         if isinstance(ir, GraphIR):
-            print(f"[IR] {name}: GraphIR(nodes={len(ir.nodes)}, edges={len(ir.edges)})")
+            # Use the hierarchical repr
+            print(f"[IR] {name}: {ir}")
         elif isinstance(ir, ScheduleIR):
-            print(f"[IR] {name}: ScheduleIR(ops={len(ir.ops)}, devices={ir.num_devices})")
+            print(f"[IR] {name}: {ir}")
+        elif isinstance(ir, TimelineIR):
+            print(f"[IR] {name}: TimelineIR(events={len(ir.events)}, devices={ir.num_devices})")
+        elif isinstance(ir, SimulationResult):
+            print(f"[IR] {name}: SimulationResult(peak_mem={ir.peak_memory/1e9:.2f}GB, time={ir.e2e_time*1e3:.2f}ms)")
         else:
             print(f"[IR] {name}: {type(ir).__name__}")
     
@@ -117,6 +132,7 @@ class Compiler:
         subs: Optional[Dict] = None,
         system_config: Optional[Dict] = None,
         training: bool = True,
+        debug: bool = False,
     ) -> "Compiler":
         """Create a compiler with a default pass pipeline.
         
@@ -127,6 +143,7 @@ class Compiler:
             subs: Symbol substitutions
             system_config: System configuration
             training: Whether this is a training workload
+            debug: Print IR snapshot after each pass
             
         Returns:
             Configured Compiler
@@ -138,15 +155,15 @@ class Compiler:
             "memory_capacity_gb": 80,
         }
         
-        return (Compiler(system_config)
+        return (Compiler(system_config, debug=debug)
             .add_pass(WorkloadPass())
             .add_pass(ParallelPass(tp=tp, pp=pp, dp=dp))
-            .add_pass(SchedulePass(system_config=system_config))
+            .add_pass(SchedulePass(system_config=system_config, training=training))
             .add_pass(EvaluatePass(subs=subs, training=training)))
     
     def __repr__(self) -> str:
-        passes_str = ", ".join(p.name for p in self.passes)
-        return f"Compiler([{passes_str}])"
+        pass_names = [getattr(p, "name", p.__class__.__name__) for p in self.passes]
+        return f"Compiler([{', '.join(pass_names)}])"
 
 
 def compile_model(
@@ -161,6 +178,7 @@ def compile_model(
     num_layers: int = 32,
     system_config: Optional[Dict] = None,
     training: bool = True,
+    debug: bool = False,
 ) -> SimulationResult:
     """Convenience function to compile a model graph.
     
@@ -176,6 +194,7 @@ def compile_model(
         num_layers: Number of transformer layers
         system_config: System configuration
         training: Whether this is a training workload
+        debug: Print IR snapshot after each pass
         
     Returns:
         SimulationResult
@@ -202,6 +221,7 @@ def compile_model(
         subs=subs,
         system_config=system_config,
         training=training,
+        debug=debug,
     )
     
     return compiler.compile(graph)
