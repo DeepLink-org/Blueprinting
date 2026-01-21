@@ -352,6 +352,8 @@ class EvaluatePass(Pass):
                     "wgrad_time": base.get("layer", {}).get("time", {}).get("wgrad", 0),
                     "compute_time": base.get("layer", {}).get("time", {}).get("compute", 0),
                     "comm_time": base.get("layer", {}).get("time", {}).get("comm", 0),
+                    "comm_fw": base.get("layer", {}).get("time", {}).get("comm_fw", 0),
+                    "comm_bw": base.get("layer", {}).get("time", {}).get("comm_bw", 0),
                     "total_time": base.get("layer", {}).get("time", {}).get("total", 0),
                 },
             },

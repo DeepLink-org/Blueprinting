@@ -236,12 +236,20 @@ class NetworkConfig:
         
         eff_bandwidth = self.get_throughput(comm_bytes)
         
-        # Ring algorithm factor for collective operations
+        # Prefer Calculon-style op scaling if config provides it
+        op_cfg = self._ops.get(op_type)
+        if op_cfg is not None and isinstance(op_cfg, (list, tuple)) and len(op_cfg) == 2:
+            scalar, offset = op_cfg
+            op_size = comm_bytes * scalar
+            if offset is not None and num_peers > 0:
+                chunk_size = op_size / num_peers
+                op_size += chunk_size * offset
+            return self._latency + op_size / eff_bandwidth
+        
+        # Fallback: ring algorithm factor
         if op_type in ("all_reduce",):
-            # AllReduce: 2 * (n-1) / n factor
             factor = 2 * (num_peers - 1) / num_peers
         elif op_type in ("all_gather", "reduce_scatter"):
-            # AllGather/ReduceScatter: (n-1) / n factor
             factor = (num_peers - 1) / num_peers
         else:
             factor = 1.0

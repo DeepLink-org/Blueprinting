@@ -114,37 +114,127 @@ class ParallelPass(Pass):
     def _insert_block_comms(self, block: BlockNode) -> None:
         """Insert communication ops at block boundaries."""
         if block.block_type in ("Attention", "FFN"):
-            last_op = None
-            for child in block.children:
-                if isinstance(child, OpNode):
-                    last_op = child
-            
-            if last_op and last_op.shard == "tp_row" and self.tp_comm_type == "ar":
-                comm_op = self._create_allreduce_op(last_op.name, block)
-                idx = block.children.index(last_op)
-                block.children.insert(idx + 1, comm_op)
+            # Insert pre-comm ops for RS/AG style TP (to match Calculon)
+            if self.tp_comm_type in ("rs_ag", "p2p_rs_ag"):
+                first_op = None
+                for child in block.children:
+                    if isinstance(child, OpNode) and child.op_type not in ("AllReduce", "AllGather", "ReduceScatter"):
+                        first_op = child
+                        break
+                if first_op is not None:
+                    ag_op = self._create_tp_comm_op("AllGather", first_op)
+                    rs_op = self._create_tp_comm_op("ReduceScatter", first_op)
+                    block.children.insert(0, rs_op)
+                    block.children.insert(0, ag_op)
+
+            idx = 0
+            while idx < len(block.children):
+                child = block.children[idx]
+                if isinstance(child, OpNode) and child.op_type not in ("AllReduce", "AllGather", "ReduceScatter"):
+                    if child.shard == "tp_row":
+                        if self.tp_comm_type == "ar":
+                            comm_op = self._create_allreduce_op(child, block)
+                            block.children.insert(idx + 1, comm_op)
+                            idx += 1
+                        elif self.tp_comm_type in ("rs_ag", "p2p_rs_ag"):
+                            rs_op = self._create_tp_comm_op("ReduceScatter", child)
+                            ag_op = self._create_tp_comm_op("AllGather", child)
+                            block.children.insert(idx + 1, rs_op)
+                            block.children.insert(idx + 2, ag_op)
+                            idx += 2
+                idx += 1
     
-    def _create_allreduce_op(self, source_name: str, parent_block: BlockNode) -> OpNode:
+    def _create_allreduce_op(self, source_op: OpNode, parent_block: BlockNode) -> OpNode:
         """Create an AllReduce communication op."""
-        comm_name = f"{source_name}_allreduce"
+        comm_name = f"{source_op.name}_allreduce"
+        data_elems = self._infer_comm_elements(source_op)
+        dtype_bytes = 2
+        comm_bytes = data_elems * dtype_bytes if data_elems else 0
         
         comm_op = OpNode(
             name=comm_name,
             op_type="AllReduce",
-            inputs=[f"{source_name}_out"],
+            inputs=[f"{source_op.name}_out"],
             outputs=[f"{comm_name}_out"],
-            attrs={"tp": self.tp},
+            attrs={"tp": self.tp, "data_size": data_elems},
         )
         
-        comm_op.comm_bytes_fw = 0
-        comm_op.comm_bytes_bw = 0
-        comm_op.comm_bytes = 0
+        comm_op.comm_bytes_fw = comm_bytes
+        comm_op.comm_bytes_bw = comm_bytes
+        comm_op.comm_bytes = comm_bytes
+        # Model local buffer read/write similar to Calculon TPComm
+        comm_op.memory_fw = (data_elems * dtype_bytes * 2) if data_elems else 0
+        comm_op.memory_bw = comm_op.memory_fw
         comm_op.flops_fw = 0
         comm_op.flops_bw = 0
         comm_op.flops = 0
         comm_op.shard = "tp_comm"
         
         return comm_op
+
+    def _create_tp_comm_op(self, op_type: str, source_op: OpNode) -> OpNode:
+        """Create a TP communication op (AllGather/ReduceScatter)."""
+        comm_name = f"{source_op.name}_{op_type.lower()}"
+        data_elems = self._infer_comm_elements(source_op)
+        dtype_bytes = 2
+        comm_bytes = data_elems * dtype_bytes if data_elems else 0
+        
+        comm_op = OpNode(
+            name=comm_name,
+            op_type=op_type,
+            inputs=[f"{source_op.name}_out"],
+            outputs=[f"{comm_name}_out"],
+            attrs={"tp": self.tp, "data_size": data_elems},
+        )
+        
+        comm_op.comm_bytes_fw = comm_bytes
+        comm_op.comm_bytes_bw = comm_bytes
+        comm_op.comm_bytes = comm_bytes
+        comm_op.memory_fw = (data_elems * dtype_bytes * 2) if data_elems else 0
+        comm_op.memory_bw = comm_op.memory_fw
+        comm_op.flops_fw = 0
+        comm_op.flops_bw = 0
+        comm_op.flops = 0
+        comm_op.shard = "tp_comm"
+        
+        return comm_op
+
+    def _infer_comm_elements(self, op: OpNode) -> Optional[float]:
+        """Infer number of elements to communicate from the source op."""
+        attrs = op.attrs
+        
+        if op.op_type == "Linear":
+            batch_seq = attrs.get("batch_seq")
+            out_features = attrs.get("out_features")
+            in_features = attrs.get("in_features")
+            if batch_seq is not None and out_features is not None:
+                if op.shard == "tp_col" and in_features is not None:
+                    return batch_seq * in_features
+                return batch_seq * out_features
+        
+        if op.op_type in ("RMSNorm", "LayerNorm"):
+            batch_seq = attrs.get("batch_seq")
+            normalized_shape = attrs.get("normalized_shape")
+            if batch_seq is not None and normalized_shape is not None:
+                return batch_seq * normalized_shape
+        
+        if op.op_type == "Attention":
+            batch_size = attrs.get("batch_size")
+            num_heads = attrs.get("num_heads")
+            seq_len = attrs.get("seq_len")
+            head_dim = attrs.get("head_dim")
+            if None not in (batch_size, num_heads, seq_len, head_dim):
+                return batch_size * num_heads * seq_len * head_dim
+        
+        num_elements = attrs.get("num_elements")
+        if num_elements is not None:
+            return num_elements
+        
+        activation_bytes = getattr(op, "activation_bytes", None)
+        if activation_bytes:
+            return activation_bytes / 2
+        
+        return None
     
     def _adjust_column_parallel(self, node: OpNode) -> None:
         """Adjust node for column parallelism."""

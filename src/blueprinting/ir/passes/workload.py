@@ -152,9 +152,18 @@ class WorkloadPass(Pass):
         
         activation_size = batch_size * num_heads * seq_len * head_dim
         score_size = batch_size * num_heads * seq_len * seq_len
-        node.memory_fw = (3 * activation_size + score_size + activation_size) * self.dtype_bytes
+        
+        # Match Calculon-style attention breakdown:
+        # QK matmul + Softmax + Dropout(mask) + Attn matmul
+        qk_mem = (2 * activation_size + score_size) * self.dtype_bytes
+        softmax_mem = 2 * score_size * self.dtype_bytes
+        dropout_mem = 2 * score_size * self.dtype_bytes + score_size  # mask = 1 byte/elem
+        attn_mem = (2 * activation_size + score_size) * self.dtype_bytes
+        
+        node.memory_fw = qk_mem + softmax_mem + dropout_mem + attn_mem
         node.memory_bw = node.memory_fw
         
+        # Store attention scores (softmax outputs) as main activation
         node.activation_bytes = score_size * self.dtype_bytes
     
     def _compute_silu(self, node: OpNode, attrs: Dict, batch_seq, ff) -> None:

@@ -209,12 +209,25 @@ class SchedulePass(Pass):
             comm_num = _to_python_float(comm_bytes)
             if comm_num is not None:
                 num_peers = op.attrs.get("tp", 8)
-                return self.sys.compute_comm_time(
+                op_type = op.op_type
+                if op_type == "AllReduce":
+                    comm_type = "all_reduce"
+                elif op_type == "AllGather":
+                    comm_type = "all_gather"
+                elif op_type == "ReduceScatter":
+                    comm_type = "reduce_scatter"
+                else:
+                    comm_type = op_type.lower()
+                comm_time = self.sys.compute_comm_time(
                     comm_num,
-                    op_type=op.op_type.lower(),
+                    op_type=comm_type,
                     num_peers=num_peers,
                     tier=0
                 )
+                mem_bytes = _to_python_float(op.memory_fw or 0) or 0
+                mem_bw = self.sys.get_memory_throughput(mem_bytes)
+                mem_time = mem_bytes / mem_bw if mem_bw > 0 else 0
+                return comm_time + mem_time
             else:
                 eff_net_bw = self.sys.get_network_throughput()
                 return comm_bytes / eff_net_bw if eff_net_bw > 0 else 0
@@ -367,7 +380,7 @@ class SchedulePass(Pass):
                     layer_activations_sum[layer_idx] = 0
                     layer_weights[layer_idx] = 0
                     layer_flops[layer_idx] = {"fw": 0, "agrad": 0, "wgrad": 0}
-                    layer_times[layer_idx] = {"compute": 0, "comm": 0}
+                    layer_times[layer_idx] = {"compute": 0, "comm": 0, "comm_fw": 0, "comm_bw": 0}
                 
                 layer_activations_sum[layer_idx] += activation_bytes or 0
                 layer_activations[layer_idx] = max(layer_activations[layer_idx], activation_bytes or 0)
@@ -392,6 +405,13 @@ class SchedulePass(Pass):
                 if isinstance(duration, (int, float)):
                     if op.stream in ("comm", "nccl"):
                         layer_times[layer_idx]["comm"] += duration
+                        if op.op_type == "AllGather":
+                            layer_times[layer_idx]["comm_fw"] += duration
+                        elif op.op_type == "ReduceScatter":
+                            layer_times[layer_idx]["comm_bw"] += duration
+                        elif op.op_type == "AllReduce":
+                            layer_times[layer_idx]["comm_fw"] += duration / 2
+                            layer_times[layer_idx]["comm_bw"] += duration / 2
                     else:
                         layer_times[layer_idx]["compute"] += duration
             else:
@@ -475,6 +495,8 @@ class SchedulePass(Pass):
                     "wgrad": layer_wgrad_time,
                     "compute": layer_compute_time,
                     "comm": layer_comm_time,
+                    "comm_fw": layer_times[first_layer_idx].get("comm_fw", 0),
+                    "comm_bw": layer_times[first_layer_idx].get("comm_bw", 0),
                     "total": layer_compute_time + layer_comm_time,
                 },
             },
