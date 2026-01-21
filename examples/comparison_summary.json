@@ -1,0 +1,25 @@
+{
+  "config": {
+    "model": "Llama-13B",
+    "hidden": 5120,
+    "layers": 40,
+    "tp": 8,
+    "pp": 1,
+    "dp": 1,
+    "batch_size": 8,
+    "micro_batch_size": 1
+  },
+  "ir_compiler": {
+    "iteration_time_ms": 805.9946364614393,
+    "micro_batch_time_ms": 100.74932955767991
+  },
+  "calculon": {
+    "total_time_ms": 690.3791234231794,
+    "fw_time_ms": 182.40317333807408,
+    "bw_time_ms": 324.1482006376296,
+    "mfu_pct": 19.109652625172426
+  },
+  "diff_pct": {
+    "iteration_time": 16.74666992608226
+  }
+}

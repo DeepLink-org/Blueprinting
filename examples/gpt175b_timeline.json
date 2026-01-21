@@ -1,0 +1,5118 @@
+{
+  "traceEvents": [
+    {
+      "name": "alloc:layer0_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 0.0,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 0.0,
+      "dur": 262.144,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer0_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 262.144,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 262.144,
+      "dur": 927.7129359359999,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer0_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 1189.856935936,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 1189.856935936,
+      "dur": 927.7129359359998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer0_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 2117.5698718719996,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 2117.5698718719996,
+      "dur": 927.7129359359999,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer0_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 3045.2828078079997,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 3045.2828078079997,
+      "dur": 327.6799999999999,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_attention"
+      }
+    },
+    {
+      "name": "alloc:layer0_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 3372.9628078079995,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 3372.9628078079995,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 4300.675743743999,
+      "dur": 869.9297185185183,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer0_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer0_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 5170.605462262517,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 5170.605462262517,
+      "dur": 869.9297185185183,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer0_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer0_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 6040.535180781036,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 6040.535180781036,
+      "dur": 196.60800000000003,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer0_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 6237.143180781036,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 6237.143180781036,
+      "dur": 262.1439999999997,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer0_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 6499.287180781035,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 6499.287180781035,
+      "dur": 3710.8517437439996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer0_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 10210.138924525036,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 10210.138924525036,
+      "dur": 3710.8517437439996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer0_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 13920.990668269034,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 13920.990668269034,
+      "dur": 131.07199999999943,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer0_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 14052.062668269034,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 14052.062668269034,
+      "dur": 229.3759999999999,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer0_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 14281.438668269035,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 14281.438668269035,
+      "dur": 3710.8517437440014,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 17992.290412013037,
+      "dur": 869.9297185185175,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer0_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer0_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 18862.220130531554,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 18862.220130531554,
+      "dur": 869.9297185185175,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer0_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer0_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 19732.14984905007,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 19732.14984905007,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer0_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer1_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 19928.75784905007,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 19928.75784905007,
+      "dur": 262.14399999999887,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer1_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 20190.90184905007,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 20190.90184905007,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer1_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 21118.61478498607,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 21118.61478498607,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer1_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 22046.32772092207,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 22046.32772092207,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer1_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 22974.04065685807,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 22974.04065685807,
+      "dur": 327.68000000000035,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_attention"
+      }
+    },
+    {
+      "name": "alloc:layer1_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 23301.72065685807,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 23301.72065685807,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 24229.43359279407,
+      "dur": 869.9297185185175,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer1_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer1_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 25099.363311312587,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 25099.363311312587,
+      "dur": 869.9297185185175,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer1_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer1_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 25969.293029831104,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 25969.293029831104,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer1_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 26165.901029831104,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 26165.901029831104,
+      "dur": 262.14399999999887,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer1_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 26428.045029831104,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 26428.045029831104,
+      "dur": 3710.8517437440014,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer1_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 30138.896773575107,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 30138.896773575107,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer1_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 33849.7485173191,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 33849.7485173191,
+      "dur": 131.0720000000029,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer1_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 33980.82051731911,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 33980.82051731911,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer1_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 34210.19651731911,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 34210.19651731911,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 37921.04826106311,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer1_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer1_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 38790.97797958163,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 38790.97797958163,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer1_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer1_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 39660.90769810015,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 39660.90769810015,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer1_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer2_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 39857.51569810015,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 39857.51569810015,
+      "dur": 262.14399999999887,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer2_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 40119.65969810015,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 40119.65969810015,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer2_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 41047.372634036146,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 41047.372634036146,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer2_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 41975.08556997215,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 41975.08556997215,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer2_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 42902.79850590815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 42902.79850590815,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_attention"
+      }
+    },
+    {
+      "name": "alloc:layer2_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 43230.47850590815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 43230.47850590815,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 44158.191441844145,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer2_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer2_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 45028.121160362665,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 45028.121160362665,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer2_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer2_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 45898.050878881186,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 45898.050878881186,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer2_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 46094.658878881186,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 46094.658878881186,
+      "dur": 262.14399999999887,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer2_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 46356.802878881186,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 46356.802878881186,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer2_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 50067.65462262518,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 50067.65462262518,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer2_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 53778.50636636918,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 53778.50636636918,
+      "dur": 131.0720000000029,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer2_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 53909.578366369184,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 53909.578366369184,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer2_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 54138.95436636919,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 54138.95436636919,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 57849.80611011318,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer2_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer2_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 58719.73582863171,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 58719.73582863171,
+      "dur": 869.9297185185209,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer2_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer2_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 59589.66554715023,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 59589.66554715023,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer2_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer3_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 59786.27354715023,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 59786.27354715023,
+      "dur": 262.14399999999887,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer3_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 60048.41754715023,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 60048.41754715023,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer3_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 60976.13048308623,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 60976.13048308623,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer3_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 61903.843419022225,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 61903.843419022225,
+      "dur": 927.7129359359996,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer3_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 62831.55635495823,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 62831.55635495823,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_attention"
+      }
+    },
+    {
+      "name": "alloc:layer3_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 63159.23635495822,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 63159.23635495822,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 64086.94929089423,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer3_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer3_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 64956.87900941275,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 64956.87900941275,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer3_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer3_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 65826.80872793126,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 65826.80872793126,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer3_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 66023.41672793125,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 66023.41672793125,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer3_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 66285.56072793127,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 66285.56072793127,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer3_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 69996.41247167526,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 69996.41247167526,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer3_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 73707.26421541926,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 73707.26421541926,
+      "dur": 131.07199999999597,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer3_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 73838.33621541926,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 73838.33621541926,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer3_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 74067.71221541926,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 74067.71221541926,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 77778.56395916326,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer3_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer3_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 78648.49367768178,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 78648.49367768178,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer3_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer3_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 79518.42339620029,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 79518.42339620029,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer3_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer4_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 79715.03139620028,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 79715.03139620028,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer4_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 79977.1753962003,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 79977.1753962003,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer4_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 80904.8883321363,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 80904.8883321363,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer4_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 81832.6012680723,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 81832.6012680723,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer4_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 82760.31420400832,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 82760.31420400832,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_attention"
+      }
+    },
+    {
+      "name": "alloc:layer4_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 83087.99420400831,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 83087.99420400831,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 84015.70713994431,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer4_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer4_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 84885.63685846284,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 84885.63685846284,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer4_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer4_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 85755.56657698135,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 85755.56657698135,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer4_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 85952.17457698134,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 85952.17457698134,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer4_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 86214.31857698134,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 86214.31857698134,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer4_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 89925.17032072534,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 89925.17032072534,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer4_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 93636.02206446935,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 93636.02206446935,
+      "dur": 131.07199999999597,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer4_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 93767.09406446935,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 93767.09406446935,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer4_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 93996.47006446935,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 93996.47006446935,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 97707.32180821334,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer4_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer4_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 98577.25152673185,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 98577.25152673185,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer4_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer4_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 99447.18124525037,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 99447.18124525037,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer4_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer5_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 99643.78924525037,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 99643.78924525037,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer5_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 99905.93324525037,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 99905.93324525037,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer5_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 100833.64618118638,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 100833.64618118638,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer5_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 101761.3591171224,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 101761.3591171224,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer5_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 102689.0720530584,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 102689.0720530584,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_attention"
+      }
+    },
+    {
+      "name": "alloc:layer5_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 103016.7520530584,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 103016.7520530584,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 103944.4649889944,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer5_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer5_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 104814.39470751291,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 104814.39470751291,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer5_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer5_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 105684.32442603142,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 105684.32442603142,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer5_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 105880.93242603143,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 105880.93242603143,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer5_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 106143.07642603143,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 106143.07642603143,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer5_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 109853.92816977543,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 109853.92816977543,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer5_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 113564.77991351944,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 113564.77991351944,
+      "dur": 131.07199999999597,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer5_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 113695.85191351942,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 113695.85191351942,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer5_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 113925.22791351943,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 113925.22791351943,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 117636.07965726343,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer5_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer5_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 118506.00937578194,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 118506.00937578194,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer5_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer5_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 119375.93909430045,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 119375.93909430045,
+      "dur": 196.60800000000089,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer5_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer6_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 119572.54709430046,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 119572.54709430046,
+      "dur": 262.1440000000058,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer6_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 119834.69109430046,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 119834.69109430046,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer6_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 120762.40403023647,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 120762.40403023647,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer6_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 121690.11696617247,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 121690.11696617247,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer6_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 122617.82990210848,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 122617.82990210848,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_attention"
+      }
+    },
+    {
+      "name": "alloc:layer6_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 122945.50990210848,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 122945.50990210848,
+      "dur": 927.7129359360065,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 123873.22283804449,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer6_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer6_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 124743.152556563,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 124743.152556563,
+      "dur": 869.9297185185278,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer6_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer6_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 125613.08227508153,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 125613.08227508153,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer6_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 125809.69027508152,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 125809.69027508152,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer6_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 126071.8342750815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 126071.8342750815,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer6_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 129782.68601882551,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 129782.68601882551,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer6_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 133493.5377625695,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 133493.5377625695,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer6_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 133624.6097625695,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 133624.6097625695,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer6_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 133853.98576256953,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 133853.98576256953,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 137564.83750631352,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer6_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer6_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 138434.76722483203,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 138434.76722483203,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer6_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer6_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 139304.69694335054,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 139304.69694335054,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer6_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer7_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 139501.30494335052,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 139501.30494335052,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer7_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 139763.44894335052,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 139763.44894335052,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer7_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 140691.16187928652,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 140691.16187928652,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer7_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 141618.87481522252,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 141618.87481522252,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer7_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 142546.5877511585,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 142546.5877511585,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_attention"
+      }
+    },
+    {
+      "name": "alloc:layer7_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 142874.2677511585,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 142874.2677511585,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 143801.98068709447,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer7_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer7_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 144671.91040561302,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 144671.91040561302,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer7_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer7_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 145541.84012413153,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 145541.84012413153,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer7_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 145738.4481241315,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 145738.4481241315,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer7_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 146000.5921241315,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 146000.5921241315,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer7_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 149711.4438678755,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 149711.4438678755,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer7_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 153422.29561161948,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 153422.29561161948,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer7_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 153553.3676116195,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 153553.3676116195,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer7_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 153782.74361161952,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 153782.74361161952,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 157493.5953553635,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer7_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer7_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 158363.52507388202,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 158363.52507388202,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer7_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer7_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 159233.45479240053,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 159233.45479240053,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer7_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer8_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 159430.0627924005,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 159430.0627924005,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer8_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 159692.2067924005,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 159692.2067924005,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer8_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 160619.9197283365,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 160619.9197283365,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer8_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 161547.6326642725,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 161547.6326642725,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer8_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 162475.3456002085,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 162475.3456002085,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_attention"
+      }
+    },
+    {
+      "name": "alloc:layer8_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 162803.0256002085,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 162803.0256002085,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 163730.7385361445,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer8_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer8_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 164600.668254663,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 164600.668254663,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer8_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer8_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 165470.59797318152,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 165470.59797318152,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer8_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 165667.2059731815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 165667.2059731815,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer8_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 165929.3499731815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 165929.3499731815,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer8_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 169640.20171692548,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 169640.20171692548,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer8_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 173351.05346066947,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 173351.05346066947,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer8_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 173482.1254606695,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 173482.1254606695,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer8_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 173711.5014606695,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 173711.5014606695,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 177422.3532044135,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer8_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer8_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 178292.282922932,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 178292.282922932,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer8_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer8_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 179162.21264145052,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 179162.21264145052,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer8_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer9_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 179358.8206414505,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 179358.8206414505,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer9_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 179620.9646414505,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 179620.9646414505,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer9_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 180548.6775773865,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 180548.6775773865,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer9_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 181476.3905133225,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 181476.3905133225,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer9_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 182404.1034492585,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 182404.1034492585,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_attention"
+      }
+    },
+    {
+      "name": "alloc:layer9_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 182731.78344925848,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 182731.78344925848,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 183659.49638519448,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer9_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer9_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 184529.426103713,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 184529.426103713,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer9_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer9_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 185399.3558222315,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 185399.3558222315,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer9_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 185595.96382223148,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 185595.96382223148,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer9_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 185858.10782223148,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 185858.10782223148,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer9_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 189568.95956597547,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 189568.95956597547,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer9_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 193279.81130971946,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 193279.81130971946,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer9_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 193410.88330971947,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 193410.88330971947,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer9_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 193640.2593097195,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 193640.2593097195,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 197351.11105346348,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer9_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer9_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 198221.040771982,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 198221.040771982,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer9_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer9_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 199090.9704905005,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 199090.9704905005,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer9_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer10_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 199287.57849050048,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 199287.57849050048,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer10_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 199549.72249050048,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 199549.72249050048,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer10_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 200477.43542643648,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 200477.43542643648,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer10_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 201405.14836237248,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 201405.14836237248,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer10_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 202332.86129830847,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 202332.86129830847,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_attention"
+      }
+    },
+    {
+      "name": "alloc:layer10_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 202660.54129830847,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 202660.54129830847,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 203588.25423424446,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer10_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer10_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 204458.18395276298,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 204458.18395276298,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer10_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer10_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 205328.1136712815,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 205328.1136712815,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer10_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 205524.72167128147,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 205524.72167128147,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer10_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 205786.86567128147,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 205786.86567128147,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer10_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 209497.71741502546,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 209497.71741502546,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer10_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 213208.56915876945,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 213208.56915876945,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer10_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 213339.64115876946,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 213339.64115876946,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer10_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 213569.01715876948,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 213569.01715876948,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 217279.86890251347,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer10_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer10_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 218149.79862103198,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 218149.79862103198,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer10_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer10_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 219019.7283395505,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 219019.7283395505,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer10_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:layer11_attn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 219216.33633955047,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 219216.33633955047,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_attn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer11_q_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 219478.48033955047,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 219478.48033955047,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_q_proj"
+      }
+    },
+    {
+      "name": "alloc:layer11_k_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 220406.19327548647,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 220406.19327548647,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_k_proj"
+      }
+    },
+    {
+      "name": "alloc:layer11_v_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 221333.90621142247,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 221333.90621142247,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_v_proj"
+      }
+    },
+    {
+      "name": "alloc:layer11_attention_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 222261.61914735846,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Attention",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 222261.61914735846,
+      "dur": 327.6799999999969,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_attention"
+      }
+    },
+    {
+      "name": "alloc:layer11_attn_out_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 222589.29914735846,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 222589.29914735846,
+      "dur": 927.7129359359926,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_attn_out"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 223517.01208329445,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer11_attn_out_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer11_attn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 224386.94180181297,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 224386.94180181297,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer11_attn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer11_attn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 225256.87152033148,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 225256.87152033148,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_attn_add"
+      }
+    },
+    {
+      "name": "alloc:layer11_ffn_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 225453.47952033146,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 225453.47952033146,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_ffn_norm"
+      }
+    },
+    {
+      "name": "alloc:layer11_gate_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 225715.62352033146,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 225715.62352033146,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_gate_proj"
+      }
+    },
+    {
+      "name": "alloc:layer11_up_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 229426.47526407545,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 229426.47526407545,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_up_proj"
+      }
+    },
+    {
+      "name": "alloc:layer11_gate_silu_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 233137.32700781943,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "SiLU",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 233137.32700781943,
+      "dur": 131.07200000000984,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_gate_silu"
+      }
+    },
+    {
+      "name": "alloc:layer11_swiglu_mul_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 233268.39900781945,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Mul",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 233268.39900781945,
+      "dur": 229.37600000000336,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_swiglu_mul"
+      }
+    },
+    {
+      "name": "alloc:layer11_down_proj_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 233497.77500781947,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 233497.77500781947,
+      "dur": 3710.851743743998,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_down_proj"
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 237208.62675156345,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer11_down_proj_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer11_ffn_allreduce_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 238078.55647008197,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "AllReduce",
+      "cat": "nccl",
+      "ph": "X",
+      "ts": 238078.55647008197,
+      "dur": 869.9297185185139,
+      "pid": 0,
+      "tid": 0,
+      "args": {
+        "resource_id": "layer11_ffn_allreduce"
+      }
+    },
+    {
+      "name": "alloc:layer11_ffn_add_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 238948.48618860048,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Add",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 238948.48618860048,
+      "dur": 196.60799999998702,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "layer11_ffn_add"
+      }
+    },
+    {
+      "name": "alloc:final_norm_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 239145.09418860046,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "RMSNorm",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 239145.09418860046,
+      "dur": 262.14399999999193,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "final_norm"
+      }
+    },
+    {
+      "name": "alloc:lm_head_out",
+      "cat": "memory",
+      "ph": "i",
+      "ts": 239407.23818860046,
+      "pid": 0,
+      "tid": 0,
+      "s": "g",
+      "args": {
+        "size": 0
+      }
+    },
+    {
+      "name": "Linear",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 239407.23818860046,
+      "dur": 3794.2764503040016,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "lm_head"
+      }
+    },
+    {
+      "name": "OptimizerStep",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 243201.51463890445,
+      "dur": 14496.494804612043,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "optimizer_step"
+      }
+    },
+    {
+      "name": "RecomputeStep",
+      "cat": "compute",
+      "ph": "X",
+      "ts": 257698.0094435165,
+      "dur": 429749.09472003375,
+      "pid": 0,
+      "tid": 61,
+      "args": {
+        "resource_id": "recompute_step"
+      }
+    }
+  ],
+  "metadata": {
+    "model": "GPT-175B",
+    "system": "H100-NVL8",
+    "strategy": "sequential",
+    "processing_mode": "roofline",
+    "peak_tflops": 1000,
+    "memory_bandwidth": 3072000000000.0,
+    "network_bandwidth": 450000000000.0,
+    "memory_capacity": 85899345920,
+    "optimizer_time": 0.014496494804612032,
+    "recompute_time": 0.42974909472003375,
+    "recompute_time_per_mb": 0.013429659210001055,
+    "forward_time_per_mb": 0.06714829605000527,
+    "total_ops_time": 0.20144488815001582,
+    "total_weight_bytes": 7403253012.25,
+    "unique_layer_weights": {
+      "layer0_attn_norm": 24576,
+      "layer0_q_proj": 37751808.0,
+      "layer0_k_proj": 37751808.0,
+      "layer0_v_proj": 37751808.0,
+      "layer0_attn_out": 37751808.0,
+      "layer0_ffn_norm": 24576,
+      "layer0_gate_proj": 151007232.0,
+      "layer0_up_proj": 151007232.0,
+      "layer0_down_proj": 150998016.0,
+      "layer1_attn_norm": 24576,
+      "layer1_q_proj": 37751808.0,
+      "layer1_k_proj": 37751808.0,
+      "layer1_v_proj": 37751808.0,
+      "layer1_attn_out": 37751808.0,
+      "layer1_ffn_norm": 24576,
+      "layer1_gate_proj": 151007232.0,
+      "layer1_up_proj": 151007232.0,
+      "layer1_down_proj": 150998016.0,
+      "layer2_attn_norm": 24576,
+      "layer2_q_proj": 37751808.0,
+      "layer2_k_proj": 37751808.0,
+      "layer2_v_proj": 37751808.0,
+      "layer2_attn_out": 37751808.0,
+      "layer2_ffn_norm": 24576,
+      "layer2_gate_proj": 151007232.0,
+      "layer2_up_proj": 151007232.0,
+      "layer2_down_proj": 150998016.0,
+      "layer3_attn_norm": 24576,
+      "layer3_q_proj": 37751808.0,
+      "layer3_k_proj": 37751808.0,
+      "layer3_v_proj": 37751808.0,
+      "layer3_attn_out": 37751808.0,
+      "layer3_ffn_norm": 24576,
+      "layer3_gate_proj": 151007232.0,
+      "layer3_up_proj": 151007232.0,
+      "layer3_down_proj": 150998016.0,
+      "layer4_attn_norm": 24576,
+      "layer4_q_proj": 37751808.0,
+      "layer4_k_proj": 37751808.0,
+      "layer4_v_proj": 37751808.0,
+      "layer4_attn_out": 37751808.0,
+      "layer4_ffn_norm": 24576,
+      "layer4_gate_proj": 151007232.0,
+      "layer4_up_proj": 151007232.0,
+      "layer4_down_proj": 150998016.0,
+      "layer5_attn_norm": 24576,
+      "layer5_q_proj": 37751808.0,
+      "layer5_k_proj": 37751808.0,
+      "layer5_v_proj": 37751808.0,
+      "layer5_attn_out": 37751808.0,
+      "layer5_ffn_norm": 24576,
+      "layer5_gate_proj": 151007232.0,
+      "layer5_up_proj": 151007232.0,
+      "layer5_down_proj": 150998016.0,
+      "layer6_attn_norm": 24576,
+      "layer6_q_proj": 37751808.0,
+      "layer6_k_proj": 37751808.0,
+      "layer6_v_proj": 37751808.0,
+      "layer6_attn_out": 37751808.0,
+      "layer6_ffn_norm": 24576,
+      "layer6_gate_proj": 151007232.0,
+      "layer6_up_proj": 151007232.0,
+      "layer6_down_proj": 150998016.0,
+      "layer7_attn_norm": 24576,
+      "layer7_q_proj": 37751808.0,
+      "layer7_k_proj": 37751808.0,
+      "layer7_v_proj": 37751808.0,
+      "layer7_attn_out": 37751808.0,
+      "layer7_ffn_norm": 24576,
+      "layer7_gate_proj": 151007232.0,
+      "layer7_up_proj": 151007232.0,
+      "layer7_down_proj": 150998016.0,
+      "layer8_attn_norm": 24576,
+      "layer8_q_proj": 37751808.0,
+      "layer8_k_proj": 37751808.0,
+      "layer8_v_proj": 37751808.0,
+      "layer8_attn_out": 37751808.0,
+      "layer8_ffn_norm": 24576,
+      "layer8_gate_proj": 151007232.0,
+      "layer8_up_proj": 151007232.0,
+      "layer8_down_proj": 150998016.0,
+      "layer9_attn_norm": 24576,
+      "layer9_q_proj": 37751808.0,
+      "layer9_k_proj": 37751808.0,
+      "layer9_v_proj": 37751808.0,
+      "layer9_attn_out": 37751808.0,
+      "layer9_ffn_norm": 24576,
+      "layer9_gate_proj": 151007232.0,
+      "layer9_up_proj": 151007232.0,
+      "layer9_down_proj": 150998016.0,
+      "layer10_attn_norm": 24576,
+      "layer10_q_proj": 37751808.0,
+      "layer10_k_proj": 37751808.0,
+      "layer10_v_proj": 37751808.0,
+      "layer10_attn_out": 37751808.0,
+      "layer10_ffn_norm": 24576,
+      "layer10_gate_proj": 151007232.0,
+      "layer10_up_proj": 151007232.0,
+      "layer10_down_proj": 150998016.0,
+      "layer11_attn_norm": 24576,
+      "layer11_q_proj": 37751808.0,
+      "layer11_k_proj": 37751808.0,
+      "layer11_v_proj": 37751808.0,
+      "layer11_attn_out": 37751808.0,
+      "layer11_ffn_norm": 24576,
+      "layer11_gate_proj": 151007232.0,
+      "layer11_up_proj": 151007232.0,
+      "layer11_down_proj": 150998016.0,
+      "final_norm": 24576,
+      "lm_head": 154402068.25
+    },
+    "num_microbatches": 32,
+    "optimizer_config": {
+      "type": "adam",
+      "master_weights": true,
+      "gradient_checkpointing": true,
+      "checkpoint_ratio": 0.2
+    },
+    "effective_forward_time": 0.08057795526000633,
+    "memory_model": "eager",
+    "model_overlap": true,
+    "overlap_analysis": {
+      "0": {
+        "compute_time": 0.6456904776746615,
+        "comm_time": 0.04175662648888875,
+        "overlap_time": 0.0,
+        "efficiency": 0.9
+      }
+    }
+  }
+}
