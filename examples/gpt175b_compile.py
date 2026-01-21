@@ -25,6 +25,12 @@ from typing import Dict, Any
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich import box
+
 from blueprinting.ir import (
     GraphIR, IRBuilder, Compiler,
     WorkloadPass, ParallelPass, SchedulePass,
@@ -38,6 +44,7 @@ import hyperparameter as hp
 import logging
 
 logger = logging.getLogger(__name__)
+console = Console()
 
 
 # ============================================================================
@@ -72,39 +79,10 @@ def load_configs(model: str, system: str, execution: str) -> Dict[str, Any]:
 # 输出格式化
 # ============================================================================
 
-def print_header(title: str):
-    print(f"\n{'='*60}")
-    print(f"  {title}")
-    print('='*60)
-
-def print_section(title: str):
-    print(f"\n[{title}]")
-
-def print_comparison(name: str, ir_val, calc_val):
-    """打印对比行 - ir_val 和 calc_val 都是格式化后的字符串"""
-    ir_str = ir_val if ir_val else "-"
-    calc_str = calc_val if calc_val else "-"
-    print(f"  {name:12} IR: {ir_str:>12}  Calculon: {calc_str:>12}  diff:{'':>7}")
-
-
-def format_diff(ir_val: float, calc_val: float) -> str:
-    """格式化相对 Calculon 的误差百分比"""
-    if not calc_val:
-        return "  diff:       "
-    diff = pct_diff(ir_val, calc_val)
-    return f"  diff:{diff:+6.1f}%"
-
-
-def print_comparison_with_diff(name: str, ir_val, calc_val, ir_num: float, calc_num: float):
-    """打印对比行并追加相对误差"""
-    ir_str = ir_val if ir_val else "-"
-    calc_str = calc_val if calc_val else "-"
-    diff_str = format_diff(ir_num, calc_num)
-    print(f"  {name:12} IR: {ir_str:>12}  Calculon: {calc_str:>12}{diff_str}")
-
-
 def format_bytes(n: float) -> str:
     """格式化字节数"""
+    if not n:
+        return "-"
     if n >= 1e12: return f"{n/1e12:.2f} TB"
     if n >= 1e9: return f"{n/1e9:.2f} GB"
     if n >= 1e6: return f"{n/1e6:.2f} MB"
@@ -113,6 +91,8 @@ def format_bytes(n: float) -> str:
 
 def format_time(s: float) -> str:
     """格式化时间"""
+    if not s:
+        return "-"
     if s >= 1: return f"{s:.2f} s"
     if s >= 1e-3: return f"{s*1e3:.2f} ms"
     return f"{s*1e6:.2f} µs"
@@ -132,15 +112,27 @@ def pct_diff(a: float, b: float) -> float:
     return (a - b) / b * 100
 
 
-def symbol(diff: float, threshold: float = 10) -> str:
-    """根据差异返回符号"""
-    if abs(diff) < threshold: return "✓"
-    if abs(diff) < threshold * 2: return "⚠"
-    return "✗"
+def format_diff(ir_val: float, calc_val: float) -> str:
+    """格式化相对误差，带颜色"""
+    if not calc_val:
+        return "-"
+    diff = pct_diff(ir_val, calc_val)
+    if abs(diff) < 5:
+        return f"[green]{diff:+.1f}%[/green]"
+    elif abs(diff) < 15:
+        return f"[yellow]{diff:+.1f}%[/yellow]"
+    else:
+        return f"[red]{diff:+.1f}%[/red]"
 
 
-def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
-    """Normalize IR metrics to comparison schema."""
+def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1) -> Dict[str, Any]:
+    """Normalize IR metrics to comparison schema.
+    
+    Args:
+        ir_result: IR simulation result
+        num_layers: Total number of transformer layers
+        pp: Pipeline parallelism degree
+    """
     if not ir_result:
         return {}
     
@@ -157,6 +149,17 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     gradients = ir_mb.gradients if ir_mb else 0
     optimizer_states = ir_mb.optimizer_states if ir_mb else 0
     total_memory = ir_mb.total if ir_mb else 0
+    
+    # 计算单层指标 (每个 PP stage 的层数)
+    layers_per_stage = num_layers // pp if pp > 0 else num_layers
+    block_weights = weights_fp32 / layers_per_stage if layers_per_stage > 0 else 0
+    block_activations = activations  # 激活是单层的
+    block_optimizer = optimizer_states / layers_per_stage if layers_per_stage > 0 else 0
+    
+    # 时间：单层时间
+    block_fw = ir_tb.forward / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
+    block_bw = ir_tb.backward / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
+    block_comm = ir_tb.communication / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
     
     return {
         "schema": "comparison_v1",
@@ -185,6 +188,21 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
                 "optimizer_time": ir_tb.optimizer if ir_tb else 0,
                 "communication_time": ir_tb.communication if ir_tb else 0,
                 "bubble_time": ir_tb.bubble if ir_tb else 0,
+            },
+        },
+        "block": {
+            "memory": {
+                "weights_bytes": block_weights / 2,  # fp16 权重
+                "activations_bytes": block_activations,
+                "optimizer_bytes": block_optimizer,
+            },
+            "time": {
+                "forward_time": block_fw,
+                "agrad_time": block_bw / 2,  # 假设激活梯度和权重梯度各占一半
+                "wgrad_time": block_bw / 2,
+                "compute_time": block_fw + block_bw,
+                "comm_time": block_comm,
+                "total_time": block_fw + block_bw + block_comm,
             },
         },
     }
@@ -264,13 +282,7 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================================
 
 def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
-    """构建 Transformer 模型的 GraphIR (层级结构)
-    
-    使用 Module → Block → Op 的层级结构：
-    - Module: 整个 Transformer 模型
-    - Block: TransformerLayer, Attention, FFN
-    - Op: Linear, RMSNorm, Attention, Add 等
-    """
+    """构建 Transformer 模型的 GraphIR (层级结构)"""
     hidden = model["hidden"]
     feedforward = model["feedforward"]
     num_heads = model["attn_heads"]
@@ -301,15 +313,13 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     x = builder.add_input("input_ids", shape=[micro_batch_size, seq_len, hidden])
     prev = x
     
-    # Transformer layers (使用层级结构)
+    # Transformer layers
     for i in range(num_layers):
         with builder.block(f"layer{i}", "TransformerLayer", layer_idx=i):
-            # Attention block
             with builder.block("attn", "Attention"):
                 norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
                 norm_out = f"{norm.name}_out"
                 
-                # QKV projections (Column Parallel)
                 q = builder.linear("q_proj", norm_out, hidden, hidden, 
                                    shard="tp_col", batch_seq=batch_seq)
                 k = builder.linear("k_proj", norm_out, hidden, hidden,
@@ -317,42 +327,34 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
                 v = builder.linear("v_proj", norm_out, hidden, hidden,
                                    shard="tp_col", batch_seq=batch_seq)
                 
-                # Attention
                 attn = builder.attention("mha", 
                                         [f"{q.name}_out", f"{k.name}_out", f"{v.name}_out"],
                                         num_heads, head_dim, seq_len,
                                         batch_size=micro_batch_size,
                                         shard="tp_col")
                 
-                # Output projection (Row Parallel)
                 attn_out = builder.linear("out_proj", f"{attn.name}_out", hidden, hidden,
                                           shard="tp_row", batch_seq=batch_seq)
                 
-                # Residual
                 res1 = builder.add("residual", [prev, f"{attn_out.name}_out"],
                                    num_elements=batch_seq * hidden)
             
             attn_block_out = f"{res1.name}_out"
             
-            # FFN block
             with builder.block("ffn", "FFN"):
                 norm2 = builder.rmsnorm("norm", attn_block_out, hidden, batch_seq=batch_seq)
                 norm2_out = f"{norm2.name}_out"
                 
-                # FC1: hidden -> feedforward (Column Parallel)
                 fc1 = builder.linear("fc1", norm2_out, hidden, feedforward,
                                      shard="tp_col", batch_seq=batch_seq)
                 
-                # Activation
                 act = builder.activation("act", f"{fc1.name}_out", "SiLU",
                                         num_elements=batch_seq * feedforward,
                                         shard="tp_col")
                 
-                # FC2: feedforward -> hidden (Row Parallel)
                 fc2 = builder.linear("fc2", f"{act.name}_out", feedforward, hidden,
                                      shard="tp_row", batch_seq=batch_seq)
                 
-                # Residual
                 res2 = builder.add("residual", [attn_block_out, f"{fc2.name}_out"],
                                    num_elements=batch_seq * hidden)
             
@@ -437,10 +439,15 @@ def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], syste
         return model.get_stats_json(False)
 
 
-def compare_results(model_name: str, execution_cfg: Dict[str, Any], ir_result, calc_stats: Dict[str, Any]):
-    """对比 IR 编译器与 Calculon 结果"""
+def compare_results(model_name: str, model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], ir_result, calc_stats: Dict[str, Any]):
+    """对比 IR 编译器与 Calculon 结果 (使用 Rich 表格)"""
     
-    ir_metrics = normalize_ir_metrics(ir_result)
+    tp = execution_cfg["tensor_par"]
+    pp = execution_cfg["pipeline_par"]
+    dp = execution_cfg["data_par"]
+    num_layers = model_cfg.get("num_blocks", 1)
+    
+    ir_metrics = normalize_ir_metrics(ir_result, num_layers=num_layers, pp=pp)
     calc_metrics = normalize_calculon_stats(calc_stats)
     
     ir_mem = ir_metrics.get("per_gpu", {}).get("memory", {})
@@ -454,130 +461,119 @@ def compare_results(model_name: str, execution_cfg: Dict[str, Any], ir_result, c
     calc_basis = calc_metrics.get("basis", {})
     
     calc_optim_raw = calc_stats.get("optim_space", None)
-    
-    print_header("IR 编译器 vs Calculon 对比")
-    
-    tp = execution_cfg["tensor_par"]
-    pp = execution_cfg["pipeline_par"]
-    dp = execution_cfg["data_par"]
     batch_size = execution_cfg["batch_size"]
     micro_batch_size = execution_cfg["microbatch_size"]
     num_gpus = tp * pp * dp
     
-    print(f"\n配置: {model_name}, TP={tp}, PP={pp}, DP={dp}")
-    print(f"GPUs: {num_gpus}, Batch: {batch_size}, MicroBatch: {micro_batch_size}")
+    # 配置信息
+    config_text = Text()
+    config_text.append(f"{model_name}", style="bold cyan")
+    config_text.append(f"  TP={tp} PP={pp} DP={dp}  ", style="dim")
+    config_text.append(f"GPUs={num_gpus}", style="green")
+    config_text.append(f"  Batch={batch_size} MicroBatch={micro_batch_size}", style="dim")
     
-    # 总内存
-    print_section("总内存 (per GPU)")
+    console.print()
+    console.print(Panel(config_text, title="[bold]配置[/bold]", border_style="blue"))
+    
+    # === 总内存表格 ===
+    mem_table = Table(title="总内存 (per GPU)", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    mem_table.add_column("指标", style="cyan", width=12)
+    mem_table.add_column("IR", justify="right", style="green", width=12)
+    mem_table.add_column("Calculon", justify="right", style="yellow", width=12)
+    mem_table.add_column("Diff", justify="right", width=10)
+    
     ir_weight_basis = ir_basis.get("weights", "fp32")
     calc_weight_basis = calc_basis.get("weights", "fp32")
     ir_weight_bytes = ir_mem.get("weights_fp16_bytes", 0) if ir_weight_basis == "fp16" else ir_mem.get("weights_fp32_bytes", 0)
     calc_weight_bytes = calc_mem.get("weights_fp16_bytes", 0) if calc_weight_basis == "fp16" else calc_mem.get("weights_fp32_bytes", 0)
-    print_comparison_with_diff(
-        "权重",
-        format_bytes(ir_weight_bytes),
-        format_bytes(calc_weight_bytes),
-        ir_weight_bytes,
-        calc_weight_bytes,
-    )
-    print_comparison_with_diff(
-        "激活",
-        format_bytes(ir_mem.get("activations_bytes", 0)),
-        format_bytes(calc_mem.get("activations_bytes", 0)),
-        ir_mem.get("activations_bytes", 0),
-        calc_mem.get("activations_bytes", 0),
-    )
-    ir_grad = ir_mem.get("gradients_bytes", 0)
-    print_comparison("梯度", format_bytes(ir_grad) if ir_grad else "-", "-")
-    ir_optim = ir_mem.get("optimizer_bytes", 0)
-    print_comparison("优化器", format_bytes(ir_optim) if ir_optim else "-", format_bytes(calc_optim_raw) if calc_optim_raw else "-")
-    print_comparison_with_diff(
-        "合计",
-        format_bytes(ir_mem.get("total_bytes", 0)),
-        format_bytes(calc_mem.get("total_bytes", 0)),
-        ir_mem.get("total_bytes", 0),
-        calc_mem.get("total_bytes", 0),
-    )
     
-    # 总时间
-    print_section("总时间")
-    print_comparison_with_diff(
-        "迭代时间",
-        format_time(ir_time.get("iteration_time", 0)) if ir_time.get("iteration_time", 0) else "-",
-        format_time(calc_time.get("iteration_time", 0)),
-        ir_time.get("iteration_time", 0),
-        calc_time.get("iteration_time", 0),
-    )
-    print_comparison("前向", format_time(ir_time.get("forward_time", 0)) if ir_time.get("forward_time", 0) else "-", "-")
-    print_comparison("反向", format_time(ir_time.get("backward_time", 0)) if ir_time.get("backward_time", 0) else "-", "-")
-    print_comparison("通信", format_time(ir_time.get("communication_time", 0)) if ir_time.get("communication_time", 0) else "-", "-")
-    print_comparison("Bubble", format_time(ir_time.get("bubble_time", 0)) if ir_time.get("bubble_time", 0) else "-", "-")
-    print_comparison("优化器", format_time(ir_time.get("optimizer_time", 0)) if ir_time.get("optimizer_time", 0) else "-", "-")
+    mem_table.add_row("权重", format_bytes(ir_weight_bytes), format_bytes(calc_weight_bytes),
+                      format_diff(ir_weight_bytes, calc_weight_bytes))
+    mem_table.add_row("激活", format_bytes(ir_mem.get("activations_bytes", 0)),
+                      format_bytes(calc_mem.get("activations_bytes", 0)),
+                      format_diff(ir_mem.get("activations_bytes", 0), calc_mem.get("activations_bytes", 0)))
+    mem_table.add_row("梯度", format_bytes(ir_mem.get("gradients_bytes", 0)), "-", "-")
+    mem_table.add_row("优化器", format_bytes(ir_mem.get("optimizer_bytes", 0)),
+                      format_bytes(calc_optim_raw) if calc_optim_raw else "-", "-")
+    mem_table.add_row("合计", format_bytes(ir_mem.get("total_bytes", 0)),
+                      format_bytes(calc_mem.get("total_bytes", 0)),
+                      format_diff(ir_mem.get("total_bytes", 0), calc_mem.get("total_bytes", 0)),
+                      style="bold")
     
-    # 单层内存
-    print_section("单层内存")
-    print_comparison_with_diff(
-        "权重",
-        format_bytes(ir_block.get("memory", {}).get("weights_bytes", 0)) if ir_block else "-",
-        format_bytes(calc_block.get("memory", {}).get("weights_bytes", 0)),
-        ir_block.get("memory", {}).get("weights_bytes", 0) if ir_block else 0,
-        calc_block.get("memory", {}).get("weights_bytes", 0),
-    )
-    print_comparison_with_diff(
-        "激活",
-        format_bytes(ir_block.get("memory", {}).get("activations_bytes", 0)) if ir_block else "-",
-        format_bytes(calc_block.get("memory", {}).get("activations_bytes", 0)),
-        ir_block.get("memory", {}).get("activations_bytes", 0) if ir_block else 0,
-        calc_block.get("memory", {}).get("activations_bytes", 0),
-    )
-    print_comparison("优化器", format_bytes(ir_block.get("memory", {}).get("optimizer_bytes", 0)) if ir_block and not ir_basis.get("optimizer_sharding") else "-", format_bytes(calc_block.get("memory", {}).get("optimizer_bytes", 0)))
+    console.print(mem_table)
     
-    # 单层时间
-    print_section("单层时间")
-    print_comparison_with_diff(
-        "前向",
-        format_time(ir_block.get("time", {}).get("forward_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("forward_time", 0)),
-        ir_block.get("time", {}).get("forward_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("forward_time", 0),
-    )
-    print_comparison_with_diff(
-        "激活梯度",
-        format_time(ir_block.get("time", {}).get("agrad_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("agrad_time", 0)),
-        ir_block.get("time", {}).get("agrad_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("agrad_time", 0),
-    )
-    print_comparison_with_diff(
-        "权重梯度",
-        format_time(ir_block.get("time", {}).get("wgrad_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("wgrad_time", 0)),
-        ir_block.get("time", {}).get("wgrad_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("wgrad_time", 0),
-    )
-    print_comparison_with_diff(
-        "计算合计",
-        format_time(ir_block.get("time", {}).get("compute_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("compute_time", 0)),
-        ir_block.get("time", {}).get("compute_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("compute_time", 0),
-    )
-    print_comparison("TP通信(FW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_fw", 0)))
-    print_comparison("TP通信(BW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_bw", 0)))
-    print_comparison_with_diff(
-        "通信合计",
-        format_time(ir_block.get("time", {}).get("comm_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("comm_time", 0)),
-        ir_block.get("time", {}).get("comm_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("comm_time", 0),
-    )
-    print_comparison_with_diff(
-        "单层总计",
-        format_time(ir_block.get("time", {}).get("total_time", 0)) if ir_block else "-",
-        format_time(calc_block.get("time", {}).get("total_time", 0)),
-        ir_block.get("time", {}).get("total_time", 0) if ir_block else 0,
-        calc_block.get("time", {}).get("total_time", 0),
-    )
+    # === 总时间表格 ===
+    time_table = Table(title="总时间", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    time_table.add_column("指标", style="cyan", width=12)
+    time_table.add_column("IR", justify="right", style="green", width=12)
+    time_table.add_column("Calculon", justify="right", style="yellow", width=12)
+    time_table.add_column("Diff", justify="right", width=10)
+    
+    time_table.add_row("迭代时间", format_time(ir_time.get("iteration_time", 0)),
+                       format_time(calc_time.get("iteration_time", 0)),
+                       format_diff(ir_time.get("iteration_time", 0), calc_time.get("iteration_time", 0)),
+                       style="bold")
+    time_table.add_row("前向", format_time(ir_time.get("forward_time", 0)), "-", "-")
+    time_table.add_row("反向", format_time(ir_time.get("backward_time", 0)), "-", "-")
+    time_table.add_row("通信", format_time(ir_time.get("communication_time", 0)), "-", "-")
+    time_table.add_row("Bubble", format_time(ir_time.get("bubble_time", 0)), "-", "-")
+    time_table.add_row("优化器", format_time(ir_time.get("optimizer_time", 0)), "-", "-")
+    
+    console.print(time_table)
+    
+    # === 单层内存表格 ===
+    layer_mem_table = Table(title="单层内存", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    layer_mem_table.add_column("指标", style="cyan", width=12)
+    layer_mem_table.add_column("IR", justify="right", style="green", width=12)
+    layer_mem_table.add_column("Calculon", justify="right", style="yellow", width=12)
+    layer_mem_table.add_column("Diff", justify="right", width=10)
+    
+    ir_layer_weight = ir_block.get("memory", {}).get("weights_bytes", 0) if ir_block else 0
+    calc_layer_weight = calc_block.get("memory", {}).get("weights_bytes", 0)
+    layer_mem_table.add_row("权重", format_bytes(ir_layer_weight), format_bytes(calc_layer_weight),
+                            format_diff(ir_layer_weight, calc_layer_weight))
+    
+    ir_layer_act = ir_block.get("memory", {}).get("activations_bytes", 0) if ir_block else 0
+    calc_layer_act = calc_block.get("memory", {}).get("activations_bytes", 0)
+    layer_mem_table.add_row("激活", format_bytes(ir_layer_act), format_bytes(calc_layer_act),
+                            format_diff(ir_layer_act, calc_layer_act))
+    
+    ir_layer_optim = ir_block.get("memory", {}).get("optimizer_bytes", 0) if ir_block else 0
+    calc_layer_optim = calc_block.get("memory", {}).get("optimizer_bytes", 0)
+    layer_mem_table.add_row("优化器", format_bytes(ir_layer_optim), format_bytes(calc_layer_optim),
+                            format_diff(ir_layer_optim, calc_layer_optim) if ir_layer_optim and calc_layer_optim else "-")
+    
+    console.print(layer_mem_table)
+    
+    # === 单层时间表格 ===
+    layer_time_table = Table(title="单层时间", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    layer_time_table.add_column("指标", style="cyan", width=12)
+    layer_time_table.add_column("IR", justify="right", style="green", width=12)
+    layer_time_table.add_column("Calculon", justify="right", style="yellow", width=12)
+    layer_time_table.add_column("Diff", justify="right", width=10)
+    
+    def add_time_row(name, ir_key, calc_key):
+        ir_val = ir_block.get("time", {}).get(ir_key, 0) if ir_block else 0
+        calc_val = calc_block.get("time", {}).get(calc_key, 0)
+        layer_time_table.add_row(name, format_time(ir_val), format_time(calc_val),
+                                  format_diff(ir_val, calc_val))
+    
+    add_time_row("前向", "forward_time", "forward_time")
+    add_time_row("激活梯度", "agrad_time", "agrad_time")
+    add_time_row("权重梯度", "wgrad_time", "wgrad_time")
+    add_time_row("计算合计", "compute_time", "compute_time")
+    
+    layer_time_table.add_row("TP通信(FW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_fw", 0)), "-")
+    layer_time_table.add_row("TP通信(BW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_bw", 0)), "-")
+    
+    add_time_row("通信合计", "comm_time", "comm_time")
+    
+    ir_total = ir_block.get("time", {}).get("total_time", 0) if ir_block else 0
+    calc_total = calc_block.get("time", {}).get("total_time", 0)
+    layer_time_table.add_row("单层总计", format_time(ir_total), format_time(calc_total),
+                              format_diff(ir_total, calc_total), style="bold")
+    
+    console.print(layer_time_table)
     
     return {"ir": ir_result, "calculon": calc_stats}
 
@@ -606,21 +602,27 @@ def main():
     execution_cfg = cfg["execution"]
     model_name = cfg["model_name"]
     
-    print_header("GPT 模型训练仿真")
-    print(f"模型: {args.model}")
-    print(f"系统: {args.system}")
-    print(f"执行: {args.execution}")
+    # Header
+    console.print()
+    console.print(Panel.fit(
+        f"[bold cyan]GPT 模型训练仿真[/bold cyan]\n\n"
+        f"模型: [green]{args.model}[/green]\n"
+        f"系统: [green]{args.system}[/green]\n"
+        f"执行: [green]{args.execution}[/green]",
+        border_style="blue"
+    ))
     
-    # 1. 构建图 (使用层级结构)
-    print_section("构建计算图")
+    # 1. 构建图
+    console.print("\n[bold cyan]▶ 构建计算图[/bold cyan]")
     graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
-    print(f"  结构: {graph}")
-    print(f"  层数: {model_cfg['num_blocks']}")
+    console.print(f"  结构: {graph}")
+    console.print(f"  层数: {model_cfg['num_blocks']}")
     if args.verbose:
-        print(f"\n{graph.tree(max_depth=2)}")
+        console.print()
+        console.print(graph.tree(max_depth=2))
     
     # 2. 编译
-    print_section("编译")
+    console.print("\n[bold cyan]▶ 编译[/bold cyan]")
     compiler = create_compiler(
         execution_cfg,
         cfg["system_path"],
@@ -628,20 +630,22 @@ def main():
         debug=args.debug,
     )
     result = compiler.compile(graph)
-    print(f"  完成")
+    console.print("  [green]✓[/green] 完成")
     
     # 3. Calculon 对比
-    print_section("Calculon 仿真")
+    console.print("\n[bold cyan]▶ Calculon 仿真[/bold cyan]")
     try:
         calc_stats = run_calculon(model_cfg, execution_cfg, system_cfg)
-        print(f"  完成")
-        compare_results(model_name, execution_cfg, result, calc_stats)
+        console.print("  [green]✓[/green] 完成")
+        
+        console.print()
+        console.rule("[bold]IR 编译器 vs Calculon 对比[/bold]", style="blue")
+        compare_results(model_name, model_cfg, execution_cfg, result, calc_stats)
     except Exception as e:
-        print(f"  错误: {e}")
+        console.print(f"  [red]✗[/red] 错误: {e}")
     
-    print("\n" + "="*60)
-    print("  完成")
-    print("="*60)
+    console.print()
+    console.rule("[green]完成[/green]", style="green")
 
 
 if __name__ == "__main__":

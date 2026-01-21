@@ -466,6 +466,9 @@ class SchedulePass(Pass):
                 "index": first_layer_idx,
                 "weights_bytes": first_layer_weight_bytes,
                 "activations_bytes": first_layer_activation_bytes,
+                # Per-layer optimizer states (Adam: m + v in FP32 = 2 * params * 4 bytes = weights_fp16 * 4)
+                # But Calculon uses weights / 2 for comparison (block_optimizer_space)
+                "optimizer_bytes": first_layer_weight_bytes // 2,  # Match Calculon's calculation
                 "time": {
                     "forward": layer_fw_time,
                     "agrad": layer_agrad_time,

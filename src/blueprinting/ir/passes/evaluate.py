@@ -343,7 +343,8 @@ class EvaluatePass(Pass):
                 "memory": {
                     "weights_bytes": base.get("layer", {}).get("weights_bytes", 0),
                     "activations_bytes": base.get("layer", {}).get("activations_bytes", 0),
-                    "optimizer_bytes": optimizer_states,
+                    # Per-layer optimizer (before sharding, for comparison with Calculon)
+                    "optimizer_bytes": base.get("layer", {}).get("optimizer_bytes", 0),
                 },
                 "time": {
                     "forward_time": base.get("layer", {}).get("time", {}).get("forward", 0),
