@@ -563,8 +563,20 @@ def compare_results(model_name: str, model_cfg: Dict[str, Any], execution_cfg: D
     add_time_row("权重梯度", "wgrad_time", "wgrad_time")
     add_time_row("计算合计", "compute_time", "compute_time")
     
-    layer_time_table.add_row("TP通信(FW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_fw", 0)), "-")
-    layer_time_table.add_row("TP通信(BW)", "-", format_time(calc_block.get("time", {}).get("tp_comm_bw", 0)), "-")
+    ir_comm_fw = ir_block.get("time", {}).get("comm_fw", 0) if ir_block else 0
+    ir_comm_bw = ir_block.get("time", {}).get("comm_bw", 0) if ir_block else 0
+    layer_time_table.add_row(
+        "TP通信(FW)",
+        format_time(ir_comm_fw) if ir_comm_fw else "-",
+        format_time(calc_block.get("time", {}).get("tp_comm_fw", 0)),
+        format_diff(ir_comm_fw, calc_block.get("time", {}).get("tp_comm_fw", 0)) if ir_comm_fw else "-",
+    )
+    layer_time_table.add_row(
+        "TP通信(BW)",
+        format_time(ir_comm_bw) if ir_comm_bw else "-",
+        format_time(calc_block.get("time", {}).get("tp_comm_bw", 0)),
+        format_diff(ir_comm_bw, calc_block.get("time", {}).get("tp_comm_bw", 0)) if ir_comm_bw else "-",
+    )
     
     add_time_row("通信合计", "comm_time", "comm_time")
     
