@@ -89,12 +89,34 @@ class EvaluatePass(Pass):
             bubble=bubble_time,
         )
         
-        # Memory breakdown from timeline (simplified)
+        # Memory breakdown from metadata (computed by SchedulePass)
+        # total_weight_bytes is FP16 (from WorkloadPass with dtype_bytes=2)
+        total_weight_bytes_fp16 = self._eval_expr(timeline.metadata.get("total_weight_bytes", 0))
+        total_activation_bytes = self._eval_expr(timeline.metadata.get("total_activation_bytes", 0))
+        is_training = timeline.metadata.get("training", self.training)
+        
+        # Convert to FP32 master weights (to match Calculon's weight_space)
+        total_weight_bytes_fp32 = total_weight_bytes_fp16 * 2
+        
+        # Calculate gradients (FP16, same as compute weights)
+        gradients = total_weight_bytes_fp16 if is_training else 0
+        
+        # Calculate optimizer states
+        optimizer_states = 0
+        if is_training:
+            if self.optimizer == "adam":
+                # Adam optimizer states: m (FP32) + v (FP32) = 2 * weight_params * 4 bytes
+                # weight_params = total_weight_bytes_fp16 / 2
+                # optimizer_states = weight_params * 4 * 2 = total_weight_bytes_fp16 * 4
+                optimizer_states = total_weight_bytes_fp16 * 4  # m + v in FP32
+            elif self.optimizer == "sgd":
+                optimizer_states = 0
+        
         memory_breakdown = MemoryBreakdown(
-            weights=0,
-            activations=peak_memory,
-            gradients=0,
-            optimizer_states=0,
+            weights=total_weight_bytes_fp32,  # FP32 master weights (matches Calculon)
+            activations=total_activation_bytes if total_activation_bytes > 0 else peak_memory,
+            gradients=gradients,  # FP16 gradients
+            optimizer_states=optimizer_states,  # m + v in FP32
         )
         
         # Compute total FLOPs from metadata
@@ -120,6 +142,16 @@ class EvaluatePass(Pass):
                 "subs": {str(k): v for k, v in self._subs_dict.items()},
             },
         )
+        
+        comparison_metrics = self._build_comparison_metrics(
+            timeline,
+            memory_breakdown=memory_breakdown,
+            time_breakdown=time_breakdown,
+            peak_memory=peak_memory,
+            e2e_time=e2e_time,
+        )
+        timeline.metadata["comparison_metrics"] = comparison_metrics
+        result.config["comparison_metrics"] = comparison_metrics
         
         # Add warnings
         capacity = timeline.metadata.get("memory_capacity", float("inf"))
@@ -167,6 +199,16 @@ class EvaluatePass(Pass):
             },
         )
         
+        comparison_metrics = self._build_comparison_metrics(
+            schedule,
+            memory_breakdown=memory_breakdown,
+            time_breakdown=time_breakdown,
+            peak_memory=peak_memory,
+            e2e_time=e2e_time,
+        )
+        schedule.metadata["comparison_metrics"] = comparison_metrics
+        result.config["comparison_metrics"] = comparison_metrics
+        
         # Add warnings if memory exceeds capacity
         capacity = schedule.metadata.get("memory_capacity", float("inf"))
         if peak_memory > capacity:
@@ -197,6 +239,124 @@ class EvaluatePass(Pass):
         
         # Still symbolic after substitution - return 0 as fallback
         return 0.0
+    
+    def _build_comparison_metrics(
+        self,
+        ir: Union[ScheduleIR, TimelineIR],
+        memory_breakdown: Optional[MemoryBreakdown],
+        time_breakdown: Optional[TimeBreakdown],
+        peak_memory: float,
+        e2e_time: float,
+    ) -> Dict[str, Any]:
+        """Build a normalized metrics dict for IR/Calculon comparisons."""
+        base = ir.metadata.get("comparison_base", {})
+        per_gpu_base = base.get("per_gpu", {})
+        
+        weights_fp16 = self._eval_expr(
+            per_gpu_base.get("weights_fp16_bytes", ir.metadata.get("total_weight_bytes", 0))
+        )
+        weights_fp32 = weights_fp16 * 2
+        weights_basis = "fp16"
+        
+        activation_block = self._eval_expr(per_gpu_base.get("activation_block_bytes", 0))
+        activation_peak = peak_memory
+        
+        gradients_raw = weights_fp16 if ir.metadata.get("training", self.training) else 0
+        optimizer_raw = memory_breakdown.optimizer_states if memory_breakdown else 0
+        
+        optimizer_sharding = ir.metadata.get("optimizer_sharding", False) or ir.metadata.get("zero", 0) > 0
+        gradients = 0
+        optimizer_states = 0 if optimizer_sharding else optimizer_raw
+        
+        activations = activation_block if activation_block > 0 else (
+            memory_breakdown.activations if memory_breakdown else activation_peak
+        )
+        
+        weights_display = weights_fp16 if weights_basis == "fp16" else weights_fp32
+        total_memory = weights_display + activations + optimizer_states
+        
+        forward = time_breakdown.forward if time_breakdown else 0
+        backward = time_breakdown.backward if time_breakdown else 0
+        optimizer_time = time_breakdown.optimizer if time_breakdown else 0
+        comm = time_breakdown.communication if time_breakdown else 0
+        bubble = time_breakdown.bubble if time_breakdown else 0
+        
+        # Prefer optimizer metadata if available (more explicit than time_breakdown)
+        if "optimizer_time" in ir.metadata:
+            optimizer_time = self._eval_expr(ir.metadata.get("optimizer_time", optimizer_time))
+        
+        recompute_time = 0
+        if "recompute_time" in ir.metadata:
+            recompute_time = self._eval_expr(ir.metadata.get("recompute_time", 0))
+        
+        per_mb = base.get("per_mb", {})
+        per_mb_compute = self._eval_expr(per_mb.get("compute_time", 0))
+        per_mb_comm = self._eval_expr(per_mb.get("comm_time", 0))
+        per_mb_total = self._eval_expr(per_mb.get("total_time", per_mb_compute + per_mb_comm))
+        num_microbatches = ir.metadata.get("num_microbatches", 1)
+        pp = ir.metadata.get("pp", getattr(ir, "num_stages", 1))
+        
+        if num_microbatches and per_mb_total:
+            pipeline_span = num_microbatches + max(pp - 1, 0)
+            bubble = per_mb_total * max(pp - 1, 0)
+            forward = 0
+            backward = 0
+            comm = 0
+            e2e_time = per_mb_total * pipeline_span + optimizer_time + recompute_time
+        
+        comparison_metrics = {
+            "schema": "comparison_v1",
+            "units": {
+                "memory": "bytes",
+                "time": "seconds",
+            },
+            "basis": {
+                "weights": weights_basis,
+                "activations": base.get("activation_basis", "unknown"),
+                "gradients": "fp16",
+                "optimizer_states": "fp32",
+                "optimizer_sharding": optimizer_sharding,
+            },
+            "per_gpu": {
+                "memory": {
+                    "weights_fp16_bytes": weights_fp16,
+                    "weights_fp32_bytes": weights_fp32,
+                    "activations_bytes": activations,
+                    "activations_block_bytes": activation_block,
+                    "activations_peak_bytes": activation_peak,
+                    "gradients_bytes": gradients,
+                    "optimizer_bytes": optimizer_states,
+                    "gradients_raw_bytes": gradients_raw,
+                    "optimizer_raw_bytes": optimizer_raw,
+                    "total_bytes": total_memory,
+                },
+                "time": {
+                    "iteration_time": e2e_time,
+                    "forward_time": forward,
+                    "backward_time": backward,
+                    "optimizer_time": optimizer_time,
+                    "communication_time": comm,
+                    "bubble_time": bubble,
+                },
+            },
+            "block": {
+                "memory": {
+                    "weights_bytes": base.get("layer", {}).get("weights_bytes", 0),
+                    "activations_bytes": base.get("layer", {}).get("activations_bytes", 0),
+                    "optimizer_bytes": optimizer_states,
+                },
+                "time": {
+                    "forward_time": base.get("layer", {}).get("time", {}).get("forward", 0),
+                    "agrad_time": base.get("layer", {}).get("time", {}).get("agrad", 0),
+                    "wgrad_time": base.get("layer", {}).get("time", {}).get("wgrad", 0),
+                    "compute_time": base.get("layer", {}).get("time", {}).get("compute", 0),
+                    "comm_time": base.get("layer", {}).get("time", {}).get("comm", 0),
+                    "total_time": base.get("layer", {}).get("time", {}).get("total", 0),
+                },
+            },
+        }
+        
+        return comparison_metrics
     
     def _compute_memory_breakdown(self, schedule: ScheduleIR) -> MemoryBreakdown:
         """Compute detailed memory breakdown."""

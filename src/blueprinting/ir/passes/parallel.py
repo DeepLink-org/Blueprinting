@@ -78,6 +78,8 @@ class ParallelPass(Pass):
         For TP:
         - Column parallel Linear (e.g., QKV, gate/up): split output dim
         - Row parallel Linear (e.g., out proj, down): split input dim
+        - Attention: split across heads
+        - Element-wise ops (SiLU, Mul) after column parallel: operate on split data
         - Communication inserted between row and column parallel
         """
         nodes_to_add = []
@@ -94,7 +96,7 @@ class ParallelPass(Pass):
                     # Row parallel: input is split, need AllReduce after
                     self._adjust_row_parallel(node)
                     
-                    # Insert AllReduce communication
+                    # Insert communication
                     if self.tp_comm_type == "ar":
                         comm_node = self._create_allreduce_node(node, ir)
                         if comm_node:
@@ -106,6 +108,27 @@ class ParallelPass(Pass):
                                 if src == node_id:
                                     ir.edges.remove((src, dst))
                                     edges_to_add.append((comm_node.id, dst))
+                    elif self.tp_comm_type == "rs_ag":
+                        rs_node = self._create_reducescatter_node(node, ir)
+                        ag_node = self._create_allgather_node(node, ir)
+                        if rs_node and ag_node:
+                            nodes_to_add.extend([rs_node, ag_node])
+                            edges_to_add.append((node_id, rs_node.id))
+                            edges_to_add.append((rs_node.id, ag_node.id))
+                            
+                            # Update successors to use AllGather output
+                            for src, dst in list(ir.edges):
+                                if src == node_id:
+                                    ir.edges.remove((src, dst))
+                                    edges_to_add.append((ag_node.id, dst))
+            
+            elif node.op_type == "Attention" and shard == "tp_col":
+                # Attention is split across heads
+                self._adjust_attention_parallel(node)
+            
+            elif node.op_type in ("SiLU", "Mul", "Add") and shard == "tp_col":
+                # Element-wise ops on split tensor
+                self._adjust_elementwise_parallel(node)
             
             elif node.op_type in ("RMSNorm", "Add") and self.sequence_parallel:
                 # Sequence parallel: these ops operate on split sequence
@@ -245,6 +268,53 @@ class ParallelPass(Pass):
         if node.flops_bw is not None:
             node.flops_bw = node.flops_bw / self.tp
     
+    def _adjust_attention_parallel(self, node: OpNode) -> None:
+        """Adjust Attention node for tensor parallelism.
+        
+        Attention is split across heads, so FLOPs and memory are divided by TP.
+        """
+        node.shard = "tp_col"
+        
+        # FLOPs are proportional to num_heads, divide by tp
+        if node.flops_fw is not None:
+            node.flops_fw = node.flops_fw / self.tp
+        if node.flops_bw is not None:
+            node.flops_bw = node.flops_bw / self.tp
+        if node.flops_agrad is not None:
+            node.flops_agrad = node.flops_agrad / self.tp
+        if node.flops_wgrad is not None:
+            node.flops_wgrad = node.flops_wgrad / self.tp
+        if node.flops is not None:
+            node.flops = node.flops / self.tp
+        
+        # Memory is also divided (Q, K, V, Scores are all split)
+        if node.memory_fw is not None:
+            node.memory_fw = node.memory_fw / self.tp
+        if node.memory_bw is not None:
+            node.memory_bw = node.memory_bw / self.tp
+    
+    def _adjust_elementwise_parallel(self, node: OpNode) -> None:
+        """Adjust element-wise ops (SiLU, Mul) for tensor parallelism.
+        
+        These ops operate on split tensors from column parallel layers.
+        """
+        node.shard = "tp_col"
+        
+        # FLOPs and memory are proportional to tensor size, divide by tp
+        if node.flops_fw is not None:
+            node.flops_fw = node.flops_fw / self.tp
+        if node.flops_bw is not None:
+            node.flops_bw = node.flops_bw / self.tp
+        if node.memory_fw is not None:
+            node.memory_fw = node.memory_fw / self.tp
+        if node.memory_bw is not None:
+            node.memory_bw = node.memory_bw / self.tp
+        
+        # Update num_elements attribute if present
+        num_elem = node.attrs.get("num_elements")
+        if num_elem is not None:
+            node.attrs["num_elements"] = num_elem / self.tp
+    
     def _create_allreduce_node(self, source_node: OpNode, ir: GraphIR) -> Optional[OpNode]:
         """Create an AllReduce communication node."""
         comm_id = f"{source_node.id}_allreduce"
@@ -259,7 +329,7 @@ class ParallelPass(Pass):
             inputs=[source_node.id],
             outputs=[f"{comm_id}_out"],
             attrs={
-                "num_peers": self.tp,
+                "tp": self.tp,
                 "data_size": batch_seq * data_size,
             },
         )
@@ -275,13 +345,72 @@ class ParallelPass(Pass):
         
         return comm_node
     
+    def _create_reducescatter_node(self, source_node: OpNode, ir: GraphIR) -> Optional[OpNode]:
+        """Create a ReduceScatter communication node."""
+        comm_id = f"{source_node.id}_reducescatter"
+        
+        data_size = source_node.attrs.get("out_features", Symbol("out_features"))
+        batch_seq = source_node.attrs.get("batch_seq", Symbol("batch_seq"))
+        
+        comm_node = OpNode(
+            id=comm_id,
+            op_type="ReduceScatter",
+            inputs=[source_node.id],
+            outputs=[f"{comm_id}_out"],
+            attrs={
+                "tp": self.tp,
+                "data_size": batch_seq * data_size,
+            },
+        )
+        
+        dtype_bytes = 2  # Assume float16
+        comm_bytes = (self.tp - 1) / self.tp * batch_seq * data_size * dtype_bytes
+        comm_node.comm_bytes_fw = comm_bytes
+        comm_node.comm_bytes_bw = comm_bytes
+        comm_node.comm_bytes = comm_node.comm_bytes_fw + comm_node.comm_bytes_bw
+        comm_node.flops_fw = 0
+        comm_node.flops_bw = 0
+        comm_node.flops = 0
+        
+        return comm_node
+    
+    def _create_allgather_node(self, source_node: OpNode, ir: GraphIR) -> Optional[OpNode]:
+        """Create an AllGather communication node."""
+        comm_id = f"{source_node.id}_allgather"
+        
+        data_size = source_node.attrs.get("out_features", Symbol("out_features"))
+        batch_seq = source_node.attrs.get("batch_seq", Symbol("batch_seq"))
+        
+        comm_node = OpNode(
+            id=comm_id,
+            op_type="AllGather",
+            inputs=[source_node.id],
+            outputs=[f"{comm_id}_out"],
+            attrs={
+                "tp": self.tp,
+                "data_size": batch_seq * data_size,
+            },
+        )
+        
+        dtype_bytes = 2  # Assume float16
+        comm_bytes = (self.tp - 1) / self.tp * batch_seq * data_size * dtype_bytes
+        comm_node.comm_bytes_fw = comm_bytes
+        comm_node.comm_bytes_bw = comm_bytes
+        comm_node.comm_bytes = comm_node.comm_bytes_fw + comm_node.comm_bytes_bw
+        comm_node.flops_fw = 0
+        comm_node.flops_bw = 0
+        comm_node.flops = 0
+        
+        return comm_node
+    
     def _apply_pipeline_parallel(self, ir: GraphIR) -> None:
         """Apply pipeline parallelism to the graph.
         
         Assigns each node to a pipeline stage based on layer index.
         """
+        import math
         num_layers = ir.metadata.get("num_layers", 1)
-        layers_per_stage = num_layers // self.pp
+        layers_per_stage = max(1, math.ceil(num_layers / self.pp))
         
         for node_id, node in ir.nodes.items():
             # Extract layer index from node ID (e.g., "layer5_q_proj" -> 5)

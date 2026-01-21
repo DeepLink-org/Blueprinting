@@ -109,6 +109,9 @@ class SchedulePass(Pass):
             num_stages=ir.metadata.get("pp", 1),
         )
         
+        # Preserve graph metadata for downstream passes
+        schedule.metadata.update(ir.metadata)
+        
         # Get topological order
         topo_order = ir.topological_sort()
         
@@ -203,6 +206,149 @@ class SchedulePass(Pass):
             else:
                 device_time[device] = lazy_max(device_time[device], end_time)
         
+        # Compute memory breakdown per device (per GPU)
+        # We compute for device 0 as representative
+        device_weight_bytes = 0
+        device_flops = 0
+        
+        # Track activation bytes per layer (to compute single-layer working space)
+        import re
+        layer_activations = {}  # layer_idx -> peak activation for that layer
+        layer_activations_sum = {}  # layer_idx -> sum activation for reference
+        layer_weights = {}  # layer_idx -> total weight bytes for that layer
+        layer_flops = {}  # layer_idx -> flops breakdown
+        layer_times = {}  # layer_idx -> time breakdown (compute/comm)
+        other_activations = 0  # non-layer ops
+        
+        # Track per-microbatch time (per device)
+        per_mb_compute_time_by_device = {}
+        per_mb_comm_time_by_device = {}
+        
+        for op in schedule.ops:
+            # Track per-microbatch time across all devices (exclude optimizer/recompute)
+            if op.op_type not in ("OptimizerStep", "RecomputeStep"):
+                duration = op.duration
+                if isinstance(duration, (int, float)):
+                    if op.device not in per_mb_compute_time_by_device:
+                        per_mb_compute_time_by_device[op.device] = 0
+                        per_mb_comm_time_by_device[op.device] = 0
+                    if op.stream in ("comm", "nccl"):
+                        per_mb_comm_time_by_device[op.device] += duration
+                    else:
+                        per_mb_compute_time_by_device[op.device] += duration
+            
+            # Only count ops on device 0 (representative single GPU)
+            if op.device != 0:
+                continue
+            
+            # Sum weight bytes (already divided by TP in ParallelPass)
+            weight_bytes = op.attrs.get("weight_bytes", 0)
+            if isinstance(weight_bytes, Expr):
+                device_weight_bytes = device_weight_bytes + weight_bytes
+            else:
+                device_weight_bytes += weight_bytes
+            
+            # Track activation bytes per layer
+            activation_bytes = op.attrs.get("activation_bytes", 0)
+            if isinstance(activation_bytes, Expr):
+                activation_bytes = 0  # Skip symbolic
+            
+            # Extract layer index from op_id
+            match = re.search(r"layer(\d+)", op.op_id)
+            if match:
+                layer_idx = int(match.group(1))
+                if layer_idx not in layer_activations:
+                    layer_activations[layer_idx] = 0
+                    layer_activations_sum[layer_idx] = 0
+                    layer_weights[layer_idx] = 0
+                    layer_flops[layer_idx] = {"fw": 0, "agrad": 0, "wgrad": 0}
+                    layer_times[layer_idx] = {"compute": 0, "comm": 0}
+                
+                layer_activations_sum[layer_idx] += activation_bytes
+                layer_activations[layer_idx] = max(layer_activations[layer_idx], activation_bytes)
+            else:
+                other_activations += activation_bytes
+            
+            # Track per-layer weights
+            if match:
+                if isinstance(weight_bytes, Expr):
+                    weight_bytes_val = _to_python_float(weight_bytes) or 0
+                else:
+                    weight_bytes_val = weight_bytes
+                layer_weights[layer_idx] += weight_bytes_val
+            
+            # Track per-layer FLOPs
+            if match:
+                flops_fw = op.attrs.get("flops_fw", 0)
+                flops_bw = op.attrs.get("flops_bw", 0)
+                flops_agrad = op.attrs.get("flops_agrad", 0)
+                flops_wgrad = op.attrs.get("flops_wgrad", 0)
+                
+                flops_fw = _to_python_float(flops_fw) or 0
+                flops_bw = _to_python_float(flops_bw) or 0
+                flops_agrad = _to_python_float(flops_agrad) or 0
+                flops_wgrad = _to_python_float(flops_wgrad) or 0
+                
+                if flops_agrad == 0 and flops_wgrad == 0 and flops_bw > 0:
+                    flops_agrad = flops_bw / 2
+                    flops_wgrad = flops_bw / 2
+                
+                layer_flops[layer_idx]["fw"] += flops_fw
+                layer_flops[layer_idx]["agrad"] += flops_agrad
+                layer_flops[layer_idx]["wgrad"] += flops_wgrad
+            
+            # Sum FLOPs
+            flops_fw = op.attrs.get("flops_fw", 0)
+            flops_bw = op.attrs.get("flops_bw", 0)
+            if isinstance(flops_fw, Expr):
+                device_flops = device_flops + flops_fw
+            else:
+                device_flops += flops_fw
+            if isinstance(flops_bw, Expr):
+                device_flops = device_flops + flops_bw
+            else:
+                device_flops += flops_bw
+            
+            # Track per-layer time (device 0 only)
+            if op.op_type not in ("OptimizerStep", "RecomputeStep"):
+                duration = op.duration
+                if isinstance(duration, (int, float)) and match:
+                    if op.stream in ("comm", "nccl"):
+                        layer_times[layer_idx]["comm"] += duration
+                    else:
+                        layer_times[layer_idx]["compute"] += duration
+        
+        # For activation memory, use single-layer working space (like Calculon's block_act_working_space)
+        # This is the memory needed to execute one layer, not accumulated across all layers
+        if layer_activations:
+            # Get activation peak for the first layer on this device (representative)
+            first_layer_idx = min(layer_activations.keys())
+            device_activation_bytes = layer_activations[first_layer_idx] + other_activations
+        else:
+            first_layer_idx = None
+            device_activation_bytes = other_activations
+        
+        first_layer_weight_bytes = layer_weights.get(first_layer_idx, 0) if first_layer_idx is not None else 0
+        first_layer_activation_bytes = layer_activations.get(first_layer_idx, 0) if first_layer_idx is not None else 0
+        
+        # Derive per-layer time breakdown using FLOPs ratios
+        layer_fw_time = 0
+        layer_agrad_time = 0
+        layer_wgrad_time = 0
+        layer_compute_time = 0
+        layer_comm_time = 0
+        if first_layer_idx is not None:
+            layer_compute_time = layer_times[first_layer_idx]["compute"]
+            layer_comm_time = layer_times[first_layer_idx]["comm"]
+            flops_fw = layer_flops[first_layer_idx]["fw"]
+            flops_agrad = layer_flops[first_layer_idx]["agrad"]
+            flops_wgrad = layer_flops[first_layer_idx]["wgrad"]
+            flops_total = flops_fw + flops_agrad + flops_wgrad
+            if flops_total > 0:
+                layer_fw_time = layer_compute_time * (flops_fw / flops_total)
+                layer_agrad_time = layer_compute_time * (flops_agrad / flops_total)
+                layer_wgrad_time = layer_compute_time * (flops_wgrad / flops_total)
+        
         # Store metadata
         schedule.metadata["strategy"] = self.strategy
         schedule.metadata["processing_mode"] = self.processing_mode
@@ -210,6 +356,60 @@ class SchedulePass(Pass):
         schedule.metadata["memory_bandwidth"] = self.memory_bandwidth
         schedule.metadata["network_bandwidth"] = self.network_bandwidth
         schedule.metadata["memory_capacity"] = self.memory_capacity
+        
+        # Store memory totals for EvaluatePass (per GPU, device 0)
+        schedule.metadata["total_weight_bytes"] = device_weight_bytes
+        schedule.metadata["total_activation_bytes"] = device_activation_bytes
+        schedule.metadata["total_flops"] = device_flops
+        schedule.metadata["training"] = self.training
+        
+        # Store comparison base metrics for consistent reporting
+        # Use the slowest (max) device time as per-microbatch time
+        per_mb_total_by_device = {}
+        for dev in per_mb_compute_time_by_device:
+            per_mb_total_by_device[dev] = (
+                per_mb_compute_time_by_device.get(dev, 0)
+                + per_mb_comm_time_by_device.get(dev, 0)
+            )
+        per_mb_total_time = max(per_mb_total_by_device.values()) if per_mb_total_by_device else 0
+        per_mb_compute_time = max(per_mb_compute_time_by_device.values()) if per_mb_compute_time_by_device else 0
+        per_mb_comm_time = max(per_mb_comm_time_by_device.values()) if per_mb_comm_time_by_device else 0
+        
+        schedule.metadata["comparison_base"] = {
+            "schema": "comparison_v1",
+            "units": {
+                "memory": "bytes",
+                "time": "seconds",
+            },
+            "per_gpu": {
+                "weights_fp16_bytes": device_weight_bytes,
+                "activation_block_bytes": device_activation_bytes,
+                "total_flops": device_flops,
+            },
+            "per_mb": {
+                "compute_time": per_mb_compute_time,
+                "comm_time": per_mb_comm_time,
+                "total_time": per_mb_total_time,
+            },
+            "activation_basis": "single_layer_peak",
+            "layer": {
+                "index": first_layer_idx,
+                "weights_bytes": first_layer_weight_bytes,
+                "activations_bytes": first_layer_activation_bytes,
+                "time": {
+                    "forward": layer_fw_time,
+                    "agrad": layer_agrad_time,
+                    "wgrad": layer_wgrad_time,
+                    "compute": layer_compute_time,
+                    "comm": layer_comm_time,
+                    "total": layer_compute_time + layer_comm_time,
+                },
+            },
+            "layer_activations": layer_activations,
+            "layer_activations_sum": layer_activations_sum,
+            "layer_weights": layer_weights,
+            "layer_flops": layer_flops,
+        }
         
         return schedule
     

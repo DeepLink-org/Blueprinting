@@ -170,11 +170,20 @@ class OptimizerPass(Pass):
         seen_mbs = set()
         
         # ScheduleIR.ops is a list of ScheduledOp
+        # Only count ops on device 0 (representative single GPU, per-GPU memory)
         for op in ir.ops:
             # Count microbatches
             mb_match = mb_pattern.search(op.op_id)
             if mb_match:
                 seen_mbs.add(int(mb_match.group(1)))
+            
+            # Only count device 0 for per-GPU weight calculation
+            if op.device != 0:
+                # Still track max end time across all devices
+                end = op.end
+                if isinstance(end, (int, float)):
+                    max_end_time = max(max_end_time, end)
+                continue
             
             # Extract layer name (remove _FW, _BW, _mb0, _mb1 suffixes)
             op_id = op.op_id
