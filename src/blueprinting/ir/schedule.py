@@ -6,6 +6,7 @@ including timing and memory lifecycle information.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
+from collections import Counter
 
 from sympy import Expr, Symbol
 
@@ -73,7 +74,7 @@ class ScheduledOp:
         return self.start + self.duration
     
     def __repr__(self) -> str:
-        return f"ScheduledOp({self.op_id}, device={self.device}, start={self.start}, dur={self.duration})"
+        return f"ScheduledOp({self.op_id}, type={self.op_type}, dev={self.device}, start={self.start}, dur={self.duration})"
 
 
 @dataclass
@@ -217,4 +218,37 @@ class ScheduleIR:
         return total
     
     def __repr__(self) -> str:
-        return f"ScheduleIR(ops={len(self.ops)}, devices={self.num_devices})"
+        parts = [
+            f"ops={len(self.ops)}",
+            f"devices={self.num_devices}",
+            f"stages={self.num_stages}",
+            f"tensors={len(self.tensors)}",
+        ]
+        op_types = Counter(op.op_type for op in self.ops)
+        if op_types:
+            top = ", ".join(f"{k}:{v}" for k, v in op_types.most_common(5))
+            parts.append(f"op_types={{ {top} }}")
+        meta_keys = list(self.metadata.keys())
+        if meta_keys:
+            sample = ", ".join(meta_keys[:6])
+            suffix = "..." if len(meta_keys) > 6 else ""
+            parts.append(f"metadata_keys=[{sample}{suffix}]")
+        return f"ScheduleIR({', '.join(parts)})"
+
+    def summary(self) -> str:
+        """Return a readable multi-line summary of the schedule."""
+        op_types = Counter(op.op_type for op in self.ops)
+        top_ops = "\n".join(
+            f"  - {k}: {v}" for k, v in op_types.most_common(8)
+        ) if op_types else "  (none)"
+        meta_keys = list(self.metadata.keys())
+        meta_line = ", ".join(meta_keys) if meta_keys else "(none)"
+        return (
+            "ScheduleIR Summary\n"
+            f"- ops: {len(self.ops)}\n"
+            f"- devices: {self.num_devices}\n"
+            f"- stages: {self.num_stages}\n"
+            f"- tensors: {len(self.tensors)}\n"
+            f"- op_types:\n{top_ops}\n"
+            f"- metadata_keys: {meta_line}"
+        )

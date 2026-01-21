@@ -6,6 +6,7 @@ neural network computation graphs with symbolic expressions.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
+from collections import Counter
 
 from sympy import Expr, Symbol
 
@@ -209,4 +210,35 @@ class GraphIR:
         )
     
     def __repr__(self) -> str:
-        return f"GraphIR(nodes={len(self.nodes)}, edges={len(self.edges)})"
+        parts = [
+            f"nodes={len(self.nodes)}",
+            f"edges={len(self.edges)}",
+            f"tensors={len(self.tensors)}",
+        ]
+        op_types = Counter(node.op_type for node in self.nodes.values())
+        if op_types:
+            top = ", ".join(f"{k}:{v}" for k, v in op_types.most_common(5))
+            parts.append(f"op_types={{ {top} }}")
+        meta_keys = list(self.metadata.keys())
+        if meta_keys:
+            sample = ", ".join(meta_keys[:6])
+            suffix = "..." if len(meta_keys) > 6 else ""
+            parts.append(f"metadata_keys=[{sample}{suffix}]")
+        return f"GraphIR({', '.join(parts)})"
+
+    def summary(self) -> str:
+        """Return a readable multi-line summary of the graph."""
+        op_types = Counter(node.op_type for node in self.nodes.values())
+        top_ops = "\n".join(
+            f"  - {k}: {v}" for k, v in op_types.most_common(8)
+        ) if op_types else "  (none)"
+        meta_keys = list(self.metadata.keys())
+        meta_line = ", ".join(meta_keys) if meta_keys else "(none)"
+        return (
+            "GraphIR Summary\n"
+            f"- nodes: {len(self.nodes)}\n"
+            f"- edges: {len(self.edges)}\n"
+            f"- tensors: {len(self.tensors)}\n"
+            f"- op_types:\n{top_ops}\n"
+            f"- metadata_keys: {meta_line}"
+        )

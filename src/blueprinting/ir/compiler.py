@@ -42,7 +42,7 @@ class Compiler:
         print(f"E2E time: {result.e2e_time * 1e3:.2f} ms")
     """
     
-    def __init__(self, system_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, system_config: Optional[Dict[str, Any]] = None, debug: bool = False):
         """Initialize Compiler.
         
         Args:
@@ -50,6 +50,7 @@ class Compiler:
         """
         self.system_config = system_config or {}
         self.passes: List[Pass] = []
+        self.debug = debug
     
     def add_pass(self, p: Pass) -> "Compiler":
         """Add a pass to the compilation pipeline.
@@ -81,6 +82,8 @@ class Compiler:
         
         for p in self.passes:
             current = p.run(current)
+            if self.debug:
+                self._print_ir_snapshot(p, current)
         
         # Ensure we return a SimulationResult
         if isinstance(current, SimulationResult):
@@ -90,6 +93,16 @@ class Compiler:
             return EvaluatePass().run(current)
         else:
             raise ValueError(f"Unexpected final IR type: {type(current)}")
+
+    def _print_ir_snapshot(self, p: Pass, ir: Any) -> None:
+        """Print a concise snapshot of IR after each pass."""
+        name = getattr(p, "name", p.__class__.__name__)
+        if isinstance(ir, GraphIR):
+            print(f"[IR] {name}: GraphIR(nodes={len(ir.nodes)}, edges={len(ir.edges)})")
+        elif isinstance(ir, ScheduleIR):
+            print(f"[IR] {name}: ScheduleIR(ops={len(ir.ops)}, devices={ir.num_devices})")
+        else:
+            print(f"[IR] {name}: {type(ir).__name__}")
     
     def reset(self) -> "Compiler":
         """Clear all passes."""
