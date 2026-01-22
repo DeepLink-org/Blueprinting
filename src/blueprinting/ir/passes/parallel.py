@@ -353,13 +353,24 @@ class ParallelPass(Pass):
             return
         
         num_layers = ir.metadata.get("num_layers", len(ir.root.children))
+        if num_layers % self.pp != 0:
+            raise ValueError(
+                f"Pipeline parallelism requires num_layers to be a multiple of pp. "
+                f"Got num_layers={num_layers}, pp={self.pp}."
+            )
         layers_per_stage = max(1, math.ceil(num_layers / self.pp))
+        last_stage = min((max(num_layers - 1, 0)) // layers_per_stage, self.pp - 1)
+        extra_stage = min(last_stage + 1, self.pp - 1)
         
         for i, child in enumerate(ir.root.children):
             if isinstance(child, BlockNode):
                 layer_idx = self._extract_layer_index(child.name)
                 if layer_idx is None:
-                    layer_idx = i
+                    # Non-layer blocks (e.g., final output) can be placed on an extra stage
+                    # if pipeline stages are available beyond the last layer stage.
+                    child.device = extra_stage
+                    self._set_device_recursive(child, extra_stage)
+                    continue
                 
                 stage = min(layer_idx // layers_per_stage, self.pp - 1)
                 child.device = stage

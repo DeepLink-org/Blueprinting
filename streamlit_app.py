@@ -29,6 +29,11 @@ pg = st.navigation({
             default=True,
         ),
         st.Page(
+            "pages/LLM_Calc/ir_pipeline.py",
+            title="IR 变换可视化",
+            icon="🧭",
+        ),
+        st.Page(
             "pages/LLM_Calc/blockwise.py",
             title="块粒度",
             icon="🧱",

@@ -75,6 +75,20 @@ def load_configs(model: str, system: str, execution: str) -> Dict[str, Any]:
     }
 
 
+def _resolve_model_cfg(model_cfg):
+    if hasattr(model_cfg, "hidden"):
+        return model_cfg
+    with hp.scope(app=model_cfg) as ps:
+        return ps.app
+
+
+def _resolve_execution_cfg(execution_cfg):
+    if hasattr(execution_cfg, "tensor_par"):
+        return execution_cfg
+    with hp.scope(exe=execution_cfg) as ps:
+        return ps.exe
+
+
 # ============================================================================
 # 输出格式化
 # ============================================================================
@@ -283,14 +297,17 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
     """构建 Transformer 模型的 GraphIR (层级结构)"""
-    hidden = model["hidden"]
-    feedforward = model["feedforward"]
-    num_heads = model["attn_heads"]
-    head_dim = model["attn_size"]
-    num_layers = model["num_blocks"]
-    seq_len = model.get("seq_size", 2048)
-    micro_batch_size = execution["microbatch_size"]
-    tp = execution["tensor_par"]
+    model = _resolve_model_cfg(model)
+    execution = _resolve_execution_cfg(execution)
+
+    hidden = model.hidden | None
+    feedforward = model.feedforward | None
+    num_heads = model.attn_heads | None
+    head_dim = model.attn_size | None
+    num_layers = model.num_blocks | None
+    seq_len = model.seq_size | 2048
+    micro_batch_size = execution.microbatch_size | None
+    tp = execution.tensor_par | None
     batch_seq = micro_batch_size * seq_len
     
     builder = IRBuilder(model_name, "Transformer")
@@ -305,9 +322,9 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     builder.set_metadata("batch_size", micro_batch_size)
     builder.set_metadata("seq_len", seq_len)
     builder.set_metadata("tp", tp)
-    builder.set_metadata("optimizer_sharding", execution.get("optimizer_sharding", False))
-    builder.set_metadata("zero", execution.get("zero", 0))
-    builder.set_metadata("activation_recompute", execution.get("activation_recompute", "none"))
+    builder.set_metadata("optimizer_sharding", execution.optimizer_sharding | False)
+    builder.set_metadata("zero", execution.zero | 0)
+    builder.set_metadata("activation_recompute", execution.activation_recompute | "none")
     
     # Input
     x = builder.add_input("input_ids", shape=[micro_batch_size, seq_len, hidden])
@@ -377,12 +394,13 @@ def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int, 
     """创建编译器流水线"""
     compiler = Compiler(debug=debug)
     
-    tp = execution["tensor_par"]
-    pp = execution["pipeline_par"]
-    dp = execution["data_par"]
-    batch_size = execution["batch_size"]
-    micro_batch_size = execution["microbatch_size"]
-    gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
+    execution = _resolve_execution_cfg(execution)
+    tp = execution.tensor_par | 1
+    pp = execution.pipeline_par | 1
+    dp = execution.data_par | 1
+    batch_size = execution.batch_size | 1
+    micro_batch_size = execution.microbatch_size | 1
+    gradient_checkpointing = (execution.activation_recompute | "none") != "none"
     num_microbatches = batch_size // (micro_batch_size * dp)
     
     compiler.add_pass(WorkloadPass(dtype_bytes=2))
@@ -390,8 +408,8 @@ def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int, 
         tp=tp,
         pp=pp,
         dp=dp,
-        tp_comm_type=execution.get("tensor_par_comm_type", "ar"),
-        sequence_parallel=execution.get("sequence_par", False),
+        tp_comm_type=execution.tensor_par_comm_type | "ar",
+        sequence_parallel=execution.sequence_par | False,
     ))
     compiler.add_pass(SchedulePass(
         system_config=system_path,
@@ -609,10 +627,19 @@ def main():
     
     # 加载配置
     cfg = load_configs(args.model, args.system, args.execution)
-    model_cfg = cfg["model"]
+    raw_model_cfg = cfg["model"]
     system_cfg = cfg["system"]
-    execution_cfg = cfg["execution"]
+    raw_execution_cfg = cfg["execution"]
     model_name = cfg["model_name"]
+
+    # 默认执行配置里 PP 可能与层数不匹配，使用 hyperparameter 覆盖为 48
+    with hp.scope(app=raw_model_cfg, exe=raw_execution_cfg, **{"exe.pipeline_par": 48}) as ps:
+        model_cfg = ps.app
+        execution_cfg = ps.exe
+
+    execution_cfg_dict = dict(raw_execution_cfg)
+    execution_cfg_dict["pipeline_par"] = 48
+    model_cfg_dict = raw_model_cfg
     
     # Header
     console.print()
@@ -628,7 +655,7 @@ def main():
     console.print("\n[bold cyan]▶ 构建计算图[/bold cyan]")
     graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
     console.print(f"  结构: {graph}")
-    console.print(f"  层数: {model_cfg['num_blocks']}")
+    console.print(f"  层数: {model_cfg.num_blocks | 0}")
     if args.verbose:
         console.print()
         console.print(graph.tree(max_depth=2))
@@ -638,7 +665,7 @@ def main():
     compiler = create_compiler(
         execution_cfg,
         cfg["system_path"],
-        model_cfg.get("seq_size", 2048),
+        model_cfg.seq_size | 2048,
         debug=args.debug,
     )
     result = compiler.compile(graph)
@@ -647,12 +674,12 @@ def main():
     # 3. Calculon 对比
     console.print("\n[bold cyan]▶ Calculon 仿真[/bold cyan]")
     try:
-        calc_stats = run_calculon(model_cfg, execution_cfg, system_cfg)
+        calc_stats = run_calculon(model_cfg_dict, execution_cfg_dict, system_cfg)
         console.print("  [green]✓[/green] 完成")
         
         console.print()
         console.rule("[bold]IR 编译器 vs Calculon 对比[/bold]", style="blue")
-        compare_results(model_name, model_cfg, execution_cfg, result, calc_stats)
+        compare_results(model_name, model_cfg_dict, execution_cfg_dict, result, calc_stats)
     except Exception as e:
         console.print(f"  [red]✗[/red] 错误: {e}")
     

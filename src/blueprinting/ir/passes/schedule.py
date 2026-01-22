@@ -101,6 +101,12 @@ class SchedulePass(Pass):
             self._schedule_module(ir.root, schedule, device_time, ir)
         
         self._compute_metrics(schedule, ir)
+
+        # Align num_devices with actual scheduled devices to avoid
+        # inflating device count when TP/DP are modeled implicitly.
+        used_devices = {op.device for op in schedule.iter_ops()}
+        if used_devices:
+            schedule.num_devices = max(used_devices) + 1
         
         schedule.metadata["strategy"] = self.strategy
         schedule.metadata["processing_mode"] = self.processing_mode
