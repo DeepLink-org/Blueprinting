@@ -128,6 +128,7 @@ class PipelineSchedulePass(Pass):
         bubble_time = self._compute_bubble_time(scheduled_ops, num_mb, pp)
         new_ir.metadata["bubble_time"] = bubble_time
         
+        
         return new_ir
     
     def _split_ops(self, ir: ScheduleIR) -> Tuple[List[ScheduledOp], List[ScheduledOp], List[ScheduledOp]]:
@@ -206,12 +207,16 @@ class PipelineSchedulePass(Pass):
         num_mb: int,
         pp: int,
     ) -> List[ScheduledOp]:
-        """1F1B 调度: 稳态时一个 forward 后紧跟一个 backward.
+        """1F1B 调度: Pipeline Parallel 并行调度.
         
-        三个阶段:
-        1. Warmup: 填充 pipeline (前 pp 个 forward)
-        2. Steady state: 1F1B
-        3. Cooldown: 清空 pipeline (剩余 backward)
+        正确的 Pipeline 调度：
+        - 不同 stage 并行处理不同的 micro-batch
+        - Stage i 在时间 t 处理的 micro-batch = Stage 0 在时间 t-i*stage_time 处理的
+        
+        时间模型:
+        - per_stage_time = max(fw_time, bw_time) for 该 stage
+        - 总时间 = (num_mb + pp - 1) × per_stage_time
+        - bubble_time = (pp - 1) × per_stage_time
         """
         scheduled_ops = []
         
@@ -219,71 +224,60 @@ class PipelineSchedulePass(Pass):
         fw_by_stage = self._group_by_stage(forward_ops, pp)
         bw_by_stage = self._group_by_stage(backward_ops, pp)
         
-        # 每个 stage 的时间追踪
-        stage_time = [0.0] * pp
+        # 计算每个 stage 的时间
+        stage_fw_time = {}
+        stage_bw_time = {}
+        for stage in range(pp):
+            stage_fw_time[stage] = sum(op.duration for op in fw_by_stage.get(stage, []))
+            stage_bw_time[stage] = sum(op.duration for op in bw_by_stage.get(stage, []))
         
-        # 追踪每个 stage 已完成的 forward 和 backward 数量
-        fw_done = [0] * pp
-        bw_done = [0] * pp
+        # 使用最大 stage 时间作为基准（所有 stage 同步）
+        max_fw_time = max(stage_fw_time.values()) if stage_fw_time else 0
+        max_bw_time = max(stage_bw_time.values()) if stage_bw_time else 0
+        per_stage_time = max_fw_time + max_bw_time
         
-        # Warmup: 前 pp 个 forward
-        warmup_mbs = min(pp, num_mb)
-        for mb in range(warmup_mbs):
-            for stage in range(pp):
-                # 等待前一个 stage 完成
-                if stage > 0:
-                    stage_time[stage] = max(stage_time[stage], stage_time[stage - 1])
-                
-                for op in fw_by_stage.get(stage, []):
-                    new_op = self._copy_op_for_mb(op, mb, stage_time[stage])
-                    stage_time[stage] = new_op.start + new_op.duration
-                    scheduled_ops.append(new_op)
-                
-                fw_done[stage] += 1
         
-        # Steady state: 交替 1F1B
-        for mb in range(warmup_mbs, num_mb):
-            # Forward for micro-batch mb
-            for stage in range(pp):
-                if stage > 0:
-                    stage_time[stage] = max(stage_time[stage], stage_time[stage - 1])
-                
-                for op in fw_by_stage.get(stage, []):
-                    new_op = self._copy_op_for_mb(op, mb, stage_time[stage])
-                    stage_time[stage] = new_op.start + new_op.duration
-                    scheduled_ops.append(new_op)
-                
-                fw_done[stage] += 1
+        # 为每个 stage 生成独立的时间线
+        # Stage i 的起始偏移 = i × per_stage_time（pipeline filling）
+        
+        for stage in range(pp):
+            # Stage offset（pipeline 延迟）
+            stage_offset = stage * max_fw_time
             
-            # Backward for micro-batch (mb - pp + 1) 从最后一个 stage 开始
-            bw_mb = mb - pp + 1
-            if bw_mb >= 0:
-                for stage in reversed(range(pp)):
-                    if stage < pp - 1:
-                        stage_time[stage] = max(stage_time[stage], stage_time[stage + 1])
-                    
-                    for op in bw_by_stage.get(stage, []):
-                        new_op = self._copy_op_for_mb(op, bw_mb, stage_time[stage])
-                        stage_time[stage] = new_op.start + new_op.duration
-                        scheduled_ops.append(new_op)
-                    
-                    bw_done[stage] += 1
-        
-        # Cooldown: 剩余的 backward
-        for mb in range(max(0, num_mb - pp + 1), num_mb):
-            for stage in reversed(range(pp)):
-                if bw_done[stage] >= num_mb:
-                    continue
+            # 该 stage 的本地时间
+            local_time = 0.0
+            
+            # Forward: 处理所有 micro-batch
+            for mb in range(num_mb):
+                # 开始时间 = stage_offset + local_time
+                start_time = stage_offset + local_time
                 
-                if stage < pp - 1:
-                    stage_time[stage] = max(stage_time[stage], stage_time[stage + 1])
+                for op in fw_by_stage.get(stage, []):
+                    new_op = self._copy_op_for_mb(op, mb, start_time)
+                    start_time = new_op.start + new_op.duration
+                    scheduled_ops.append(new_op)
+                
+                # 更新本地时间（一个 stage 的 forward+backward 总时间）
+                # 在稳态，一个 micro-batch 占用 max(fw, bw) 时间
+                local_time += max_fw_time
+            
+            # Backward: 反向处理所有 micro-batch
+            # Backward 开始时间 = 该 micro-batch 的 forward 结束 + (pp-1-stage) × bw_time
+            local_time = 0.0
+            for mb in range(num_mb):
+                # Backward 开始时间考虑：
+                # 1. 该 stage 的 forward 已完成
+                # 2. 后面的 stage 的 backward 已完成
+                fw_end = stage_offset + (mb + 1) * max_fw_time
+                bw_delay = (pp - 1 - stage) * max_bw_time
+                start_time = fw_end + bw_delay + local_time
                 
                 for op in bw_by_stage.get(stage, []):
-                    new_op = self._copy_op_for_mb(op, mb, stage_time[stage])
-                    stage_time[stage] = new_op.start + new_op.duration
+                    new_op = self._copy_op_for_mb(op, mb, start_time)
+                    start_time = new_op.start + new_op.duration
                     scheduled_ops.append(new_op)
                 
-                bw_done[stage] += 1
+                local_time += max_bw_time
         
         return scheduled_ops
     

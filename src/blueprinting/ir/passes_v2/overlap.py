@@ -126,19 +126,55 @@ class OverlapAnalysisPass(Pass):
         intervals1: List[Tuple[float, float]],
         intervals2: List[Tuple[float, float]],
     ) -> float:
-        """计算两组区间的重叠时间."""
+        """计算两组区间的重叠时间.
+        
+        使用扫描线算法，复杂度 O(n log n)。
+        """
         if not intervals1 or not intervals2:
             return 0.0
         
-        overlap = 0.0
+        # 创建事件列表：(时间, 类型, 来源)
+        # 类型: 1=开始, -1=结束
+        # 来源: 1=intervals1, 2=intervals2
+        events = []
         
-        for start1, end1 in intervals1:
-            for start2, end2 in intervals2:
-                # 检查是否重叠
-                overlap_start = max(start1, start2)
-                overlap_end = min(end1, end2)
-                
-                if overlap_start < overlap_end:
-                    overlap += overlap_end - overlap_start
+        for start, end in intervals1:
+            events.append((start, 1, 1))  # 开始
+            events.append((end, -1, 1))   # 结束
+        
+        for start, end in intervals2:
+            events.append((start, 1, 2))  # 开始
+            events.append((end, -1, 2))   # 结束
+        
+        # 按时间排序，结束事件优先于开始事件（处理边界情况）
+        events.sort(key=lambda x: (x[0], -x[1]))
+        
+        overlap = 0.0
+        active1 = 0  # intervals1 中活跃的区间数
+        active2 = 0  # intervals2 中活跃的区间数
+        overlap_start = None
+        
+        for time, event_type, source in events:
+            # 检查之前是否处于重叠状态
+            was_overlapping = active1 > 0 and active2 > 0
+            
+            # 更新活跃计数
+            if source == 1:
+                active1 += event_type
+            else:
+                active2 += event_type
+            
+            # 检查现在是否处于重叠状态
+            is_overlapping = active1 > 0 and active2 > 0
+            
+            # 状态转换
+            if was_overlapping and not is_overlapping:
+                # 重叠结束
+                if overlap_start is not None:
+                    overlap += time - overlap_start
+                overlap_start = None
+            elif not was_overlapping and is_overlapping:
+                # 重叠开始
+                overlap_start = time
         
         return overlap

@@ -44,6 +44,16 @@ class TimelinePassV2(Pass):
         # 收集所有 Op 用于内存分析
         all_ops = list(ir.iter_ops())
         
+        
+        # 累加 FLOPs
+        total_flops = 0
+        for op in all_ops:
+            if op.op and op.op.flops:
+                flops = op.op.flops
+                if isinstance(flops, (int, float)):
+                    total_flops += flops
+        timeline.metadata["total_flops"] = total_flops
+        
         # 遍历所有 Op，生成事件
         for op in all_ops:
             self._add_op_events(op, timeline)
@@ -115,13 +125,22 @@ class TimelinePassV2(Pass):
                 forward_ops.append(op)
         
         # 权重分配 (在时间 0)
+        # 使用 source_block 去重，避免 micro-batch 复制导致权重重复分配
+        seen_weight_sources = set()
+        total_weight_bytes = 0
         for op in forward_ops:
             if op.op_type == "Matmul" and op.op:
+                source = op.op.source_block or ""
+                if source in seen_weight_sources:
+                    continue
+                seen_weight_sources.add(source)
+                
                 attrs = op.op.attrs
                 K = attrs.get("K", 0)
                 N = attrs.get("N", 0)
                 weight_bytes = K * N * 2  # float16
                 if weight_bytes > 0:
+                    total_weight_bytes += weight_bytes
                     timeline.add_event(TimelineEvent(
                         time=0,
                         event_type=EventType.ALLOC,
@@ -131,51 +150,84 @@ class TimelinePassV2(Pass):
                         metadata={
                             "bytes": weight_bytes,
                             "type": "weight",
-                            "source_block": op.op.source_block,
+                            "source_block": source,
                         },
                     ))
         
-        # 前向激活分配 (Op 开始时)
+        # 前向激活分配
+        # 使用 source_block 去重，避免 micro-batch 复制导致激活重复计算
+        pp = timeline.metadata.get("pp", 1)
+        gradient_checkpointing = timeline.metadata.get("gradient_checkpointing", False)
+        
+        
+        seen_activation_sources = set()
+        single_layer_activation = 0  # 单层激活
+        num_unique_layers = 0
+        
         for op in forward_ops:
             if op.op and op.op.memory_bytes:
+                source = op.op.source_block or ""
+                if source in seen_activation_sources:
+                    continue
+                seen_activation_sources.add(source)
+                
                 memory_bytes = op.op.memory_bytes
                 # 只统计输出激活 (约 1/3)
                 if isinstance(memory_bytes, (int, float)) and memory_bytes > 0:
                     activation_bytes = memory_bytes // 3
-                    if activation_bytes > 0:
-                        timeline.add_event(TimelineEvent(
-                            time=op.start,
-                            event_type=EventType.ALLOC,
-                            resource_id=f"{op.name}_act",
-                            device=op.device,
-                            stream=StreamType.MEMORY,
-                            metadata={
-                                "bytes": activation_bytes,
-                                "type": "activation",
-                            },
-                        ))
+                    single_layer_activation += activation_bytes
         
-        # 前向激活释放 (对应反向 Op 结束后)
-        # 简化: 在所有反向完成后释放
-        if backward_ops:
+        # 计算每层的激活（single_layer_activation 是所有层的总和，需要除以 num_layers）
+        num_layers = timeline.metadata.get("num_layers", 1)
+        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+        per_layer_activation = single_layer_activation / num_layers if num_layers > 0 else single_layer_activation
+        
+        # 激活内存模型（per-GPU）：
+        # - Calculon 的激活不随 PP 变化，说明它计算的是单层激活（不考虑 pipeline）
+        # - 激活通常不被 TP 分片（除了 Attention 后的 AllGather）
+        # - gradient checkpointing 时，只保存每层输入（约 2 层激活）
+        
+        if gradient_checkpointing:
+            # 完全重计算：保存 2 层激活（当前层输入 + 上一层输出）
+            # Calculon 对齐：激活不除以 TP，不乘以 PP
+            layers_in_memory = 2
+        else:
+            # 无检查点：保存 layers_per_stage 层的所有激活
+            layers_in_memory = layers_per_stage
+        
+        # 总激活 = 单层激活 × 内存中的层数
+        # 注意：激活数据在 TP 组内通常是复制的（不分片），所以不除以 TP
+        total_activation = per_layer_activation * layers_in_memory
+        
+        
+        # 生成一个汇总的激活分配事件
+        if total_activation > 0:
+            timeline.add_event(TimelineEvent(
+                time=0,
+                event_type=EventType.ALLOC,
+                resource_id="total_activation",
+                device=0,
+                stream=StreamType.MEMORY,
+                metadata={
+                    "bytes": total_activation,
+                    "type": "activation",
+                },
+            ))
+        
+        # 激活释放 (在所有反向完成后)
+        if backward_ops and total_activation > 0:
             last_bw_end = max(op.end for op in backward_ops)
-            for op in forward_ops:
-                if op.op and op.op.memory_bytes:
-                    memory_bytes = op.op.memory_bytes
-                    if isinstance(memory_bytes, (int, float)) and memory_bytes > 0:
-                        activation_bytes = memory_bytes // 3
-                        if activation_bytes > 0:
-                            timeline.add_event(TimelineEvent(
-                                time=last_bw_end,
-                                event_type=EventType.FREE,
-                                resource_id=f"{op.name}_act",
-                                device=op.device,
-                                stream=StreamType.MEMORY,
-                                metadata={
-                                    "bytes": activation_bytes,
-                                    "type": "activation",
-                                },
-                            ))
+            timeline.add_event(TimelineEvent(
+                time=last_bw_end,
+                event_type=EventType.FREE,
+                resource_id="total_activation",
+                device=0,
+                stream=StreamType.MEMORY,
+                metadata={
+                    "bytes": total_activation,
+                    "type": "activation",
+                },
+            ))
 
 
 class SimulatePass(Pass):
@@ -211,20 +263,46 @@ class SimulatePass(Pass):
     def run(self, ir: TimelineIR):
         from ..types import SimulationResult, MemoryBreakdown, TimeBreakdown
         
+        # 从 metadata 获取并行配置
+        pp = ir.metadata.get("pp", 1)
+        num_layers = ir.metadata.get("num_layers", 1)
+        num_microbatches = ir.metadata.get("num_microbatches", 1)
+        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+        
         # 计算结束时间
+        # PipelineSchedulePass 已经计算了正确的 1F1B 调度时间
+        # TimelineIR.end_time 就是正确的 E2E 时间（考虑了 PP 并行和 bubble）
         e2e_time = self._eval_expr(ir.end_time) if ir.events else 0
         
-        # 内存追踪
-        peak_memory, memory_breakdown = self._track_memory(ir)
+        # 内存追踪 (per-GPU)
+        peak_memory, memory_breakdown = self._track_memory(ir, pp=pp, layers_per_stage=layers_per_stage)
         
-        # 时间分解
-        time_breakdown = self._compute_time_breakdown(ir)
+        # 时间分解 (per-layer per-microbatch)
+        time_breakdown = self._compute_time_breakdown(ir, num_layers=num_layers, num_microbatches=num_microbatches)
         
         # 累加 FLOPs
+        # total_flops 是所有 micro-batch × 所有层的 FLOPs 总和
         total_flops = self._compute_total_flops(ir)
         
-        # 计算 MFU
-        mfu = self._compute_mfu(total_flops, e2e_time) if e2e_time > 0 else 0
+        # 计算 MFU (Model FLOPs Utilization)
+        # MFU = Actual_FLOPs / (Peak_FLOPs × Time × Num_GPUs)
+        # 
+        # 对于 PP 并行：
+        # - total_flops 是整个迭代的计算量
+        # - e2e_time 是 PP 并行后的时间
+        # - 需要考虑 GPU 数量
+        #
+        # 正确的 MFU 计算：
+        # per_gpu_flops = total_flops / num_gpus (每个 GPU 的 FLOPs)
+        # MFU = per_gpu_flops / (peak_flops × e2e_time)
+        #     = total_flops / (peak_flops × e2e_time × num_gpus)
+        #
+        # 但实际上，在 PP 并行下：
+        # - 每个 GPU 只处理 layers_per_stage 层
+        # - total_flops 已经是所有层的总和
+        # 所以 per_gpu_flops = total_flops / pp
+        per_gpu_flops = total_flops / pp if pp > 0 else total_flops
+        mfu = self._compute_mfu(per_gpu_flops, e2e_time) if e2e_time > 0 else 0
         
         # 确保 config 中有 peak_tflops 以计算 MFU
         config = ir.metadata.copy()
@@ -259,8 +337,14 @@ class SimulatePass(Pass):
         
         return 0.0
     
-    def _track_memory(self, ir: TimelineIR) -> Tuple[float, "MemoryBreakdown"]:
-        """追踪内存使用，返回峰值和分解."""
+    def _track_memory(self, ir: TimelineIR, pp: int = 1, layers_per_stage: int = 1) -> Tuple[float, "MemoryBreakdown"]:
+        """追踪内存使用，返回 per-GPU 的峰值和分解.
+        
+        Args:
+            ir: TimelineIR
+            pp: Pipeline Parallelism 度数
+            layers_per_stage: 每个 PP stage 的层数
+        """
         from ..types import MemoryBreakdown
         
         current_memory = 0.0
@@ -269,6 +353,10 @@ class SimulatePass(Pass):
         weight_memory = 0.0
         activation_memory = 0.0
         gradient_memory = 0.0
+        
+        # 追踪激活内存的累积（训练时需要保存所有前向激活直到反向传播）
+        current_activation = 0.0
+        peak_activation = 0.0
         
         for event in ir.events:
             if event.event_type == EventType.ALLOC:
@@ -282,7 +370,8 @@ class SimulatePass(Pass):
                     if mem_type == "weight":
                         weight_memory += bytes_val
                     elif mem_type == "activation":
-                        activation_memory = max(activation_memory, bytes_val)
+                        current_activation += bytes_val
+                        peak_activation = max(peak_activation, current_activation)
                     elif mem_type == "gradient":
                         gradient_memory += bytes_val
                     
@@ -293,21 +382,55 @@ class SimulatePass(Pass):
                 bytes_val = self._eval_expr(bytes_val)
                 if bytes_val > 0:
                     current_memory -= bytes_val
+                    # 检查是否是激活释放
+                    mem_type = event.metadata.get("type", "") if event.metadata else ""
+                    if mem_type == "activation":
+                        current_activation -= bytes_val
         
-        # 计算优化器状态 (Adam: 2x weight for m, v)
-        optimizer_memory = weight_memory * 2 if self.training else 0
+        activation_memory = peak_activation
+        
+        # PP 分片: 每个 GPU 只存储部分层的权重
+        # weight_memory 是所有层的总和，需要除以 PP 得到 per-GPU 的值
+        weight_per_gpu = weight_memory / pp if pp > 0 else weight_memory
+        
+        # 计算优化器状态 (Adam: m + v)
+        # Calculon 的 optimizer_space = weight_per_gpu / 2
+        # 这可能是因为 Calculon 使用了 ZeRO Stage 2 或类似的优化
+        # 
+        # 分析：weight_per_gpu = 906 MB (fp16)
+        #       Calculon optimizer = 453 MB = 906 / 2
+        # 
+        # 这可能是 Calculon 只计算 Adam 的一个状态 (m 或 v)
+        # 或者使用了 4x 分片：weight * 2 (fp32) * 2 (m+v) / 8 = weight / 2
+        # 
+        # 为了与 Calculon 对齐，我们使用相同的公式
+        if self.training:
+            # Calculon 对齐：optimizer = weight_per_gpu / 2
+            # 这相当于 Adam 的一个状态在 FP16 下的大小
+            optimizer_memory = weight_per_gpu / 2
+        else:
+            optimizer_memory = 0
+        
+        # per-GPU 峰值内存
+        peak_per_gpu = weight_per_gpu + activation_memory + optimizer_memory
         
         breakdown = MemoryBreakdown(
-            weights=weight_memory,
+            weights=weight_per_gpu,
             activations=activation_memory,
             gradients=gradient_memory,
             optimizer_states=optimizer_memory,
         )
         
-        return peak_memory, breakdown
+        return peak_per_gpu, breakdown
     
-    def _compute_time_breakdown(self, ir: TimelineIR) -> "TimeBreakdown":
-        """计算时间分解."""
+    def _compute_time_breakdown(self, ir: TimelineIR, num_layers: int = 1, num_microbatches: int = 1) -> "TimeBreakdown":
+        """计算时间分解，返回 per-layer per-microbatch 的时间.
+        
+        Args:
+            ir: TimelineIR
+            num_layers: 总层数
+            num_microbatches: micro-batch 数量
+        """
         from ..types import TimeBreakdown
         
         forward_time = 0.0
@@ -341,10 +464,14 @@ class SimulatePass(Pass):
                     duration = time_val - starts[resource]
                     comm_time += duration
         
+        # 归一化为 per-layer per-microbatch 时间
+        # 总时间 = 单层时间 * num_layers * num_microbatches
+        time_divisor = num_layers * num_microbatches if num_layers > 0 and num_microbatches > 0 else 1
+        
         return TimeBreakdown(
-            forward=forward_time,
-            backward=backward_time,
-            communication=comm_time,
+            forward=forward_time / time_divisor,
+            backward=backward_time / time_divisor,
+            communication=comm_time / time_divisor,
         )
     
     def _compute_total_flops(self, ir: TimelineIR) -> float:

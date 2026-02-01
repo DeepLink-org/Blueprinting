@@ -587,11 +587,20 @@ class SimulationResult:
     
     @property
     def mfu(self) -> float:
-        """Model FLOPs Utilization."""
+        """Model FLOPs Utilization.
+        
+        MFU = per_GPU_FLOPs / (peak_FLOPs × e2e_time)
+        
+        对于 PP 并行，每个 GPU 只处理部分层，
+        所以 per_GPU_FLOPs = total_flops / pp
+        """
         peak_tflops = self.config.get("peak_tflops", 0)
+        pp = self.config.get("pp", 1)
         if peak_tflops == 0 or self.e2e_time == 0:
             return 0
-        return self.total_flops / (peak_tflops * 1e12 * self.e2e_time)
+        # per-GPU FLOPs = total_flops / pp
+        per_gpu_flops = self.total_flops / pp if pp > 0 else self.total_flops
+        return per_gpu_flops / (peak_tflops * 1e12 * self.e2e_time)
     
     def __repr__(self) -> str:
         return (

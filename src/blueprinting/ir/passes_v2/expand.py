@@ -224,13 +224,24 @@ def _expand_linear(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str
     in_f = block.attrs.get("in_features", 4096)
     out_f = block.attrs.get("out_features", 4096)
     batch_seq = ctx.metadata.get("batch_size", 1) * ctx.metadata.get("seq_len", 2048)
+    shard = block.attrs.get("shard")
+    tp = ctx.metadata.get("tp", 1)
     
-    y = ctx.Matmul(x, None, M=batch_seq, K=in_f, N=out_f)
+    
+    # 根据 shard 策略调整维度
+    K = in_f
+    N = out_f
+    if shard == "tp_col":
+        # 列并行: 输出维度分片
+        N = out_f // tp
+    elif shard == "tp_row":
+        # 行并行: 输入维度分片
+        K = in_f // tp
+    
+    y = ctx.Matmul(x, None, M=batch_seq, K=K, N=N)
     
     # 如果有 shard，插入通信
-    shard = block.attrs.get("shard")
     if shard == "tp_row":
-        tp = ctx.metadata.get("tp", 8)
         data_size = batch_seq * out_f
         y = ctx.AllReduce(y, data_size=data_size, num_peers=tp)
     
@@ -266,13 +277,53 @@ def _expand_container(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: 
     return x
 
 
+def _expand_attention(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str) -> TensorRef:
+    """展开 Attention Block - 包含 QKV projection + Attention 计算 + Output projection."""
+    # 先递归展开子 Block (Q/K/V/O projections + norms)
+    for child in block.children:
+        child_path = f"{path}/{block.block_type}({block.name})"
+        x = expand_block(child, x, ctx, child_path)
+    
+    # 添加 Attention 核心计算 (QK^T 和 Score*V)
+    ctx._set_current_block(block, path)
+    
+    batch_size = ctx.metadata.get("batch_size", 1)
+    seq_len = ctx.metadata.get("seq_len", 2048)
+    hidden = ctx.metadata.get("hidden", 4096)
+    num_heads = ctx.metadata.get("num_heads", hidden // 128)  # 默认 head_dim=128
+    tp = ctx.metadata.get("tp", 1)
+    
+    # TP 分片后的 heads
+    heads_per_gpu = num_heads // tp
+    head_dim = hidden // num_heads
+    
+    # QK^T: batch matmul (B*H, seq, head_dim) @ (B*H, head_dim, seq) -> (B*H, seq, seq)
+    # FLOPs = 2 * B * heads_per_gpu * seq * head_dim * seq
+    qk_M = batch_size * heads_per_gpu * seq_len
+    qk_K = head_dim
+    qk_N = seq_len
+    ctx.Matmul(x, None, M=qk_M, K=qk_K, N=qk_N)
+    
+    # Softmax 在 _compute_softmax 中处理，这里添加一个 Softmax Op
+    ctx.Softmax(x, num_elements=batch_size * heads_per_gpu * seq_len * seq_len)
+    
+    # Score*V: batch matmul (B*H, seq, seq) @ (B*H, seq, head_dim) -> (B*H, seq, head_dim)
+    # FLOPs = 2 * B * heads_per_gpu * seq * seq * head_dim
+    sv_M = batch_size * heads_per_gpu * seq_len
+    sv_K = seq_len
+    sv_N = head_dim
+    ctx.Matmul(x, None, M=sv_M, K=sv_K, N=sv_N)
+    
+    return x
+
+
 # Block 类型到展开函数的映射
 _EXPAND_FUNCS = {
     "Linear": _expand_linear,
     "RMSNorm": _expand_rmsnorm,
     "LayerNorm": _expand_layernorm,
     "Embedding": _expand_embedding,
-    "Attention": _expand_container,
+    "Attention": _expand_attention,
     "FFN": _expand_container,
     "MLP": _expand_container,
     "TransformerLayer": _expand_container,
@@ -323,6 +374,11 @@ class ExpandPass(Pass):
             metadata=ir.metadata.copy(),
         )
         
+        # PP 并行配置
+        pp = ir.metadata.get("pp", 1)
+        num_layers = ir.metadata.get("num_layers", 1)
+        layers_per_stage = num_layers // pp if pp > 1 else num_layers
+        
         if ir.root:
             ctx = ExpandContext(
                 block=ir.root,
@@ -336,7 +392,32 @@ class ExpandPass(Pass):
             expand_block(ir.root, x, ctx)
             
             # 添加所有 Op 到 ScheduleIR
+            # 根据 source_block 中的 layer 索引分配 stage
             for op in ctx.ops:
-                schedule.add_op(op, stage=self.stage, device=self.device)
+                stage = self._compute_stage(op, pp, layers_per_stage)
+                op.stage = stage
+                schedule.add_op(op, stage=stage, device=self.device)
         
         return schedule
+    
+    def _compute_stage(self, op, pp: int, layers_per_stage: int) -> int:
+        """根据 Op 的 source_block 计算其所属的 stage.
+        
+        source_block 格式: "layer{N}/..." 或 "gpt3-175B/layer{N}/..."
+        """
+        if pp <= 1:
+            return 0
+        
+        source = op.op.source_block if op.op else ""
+        if not source:
+            return 0
+        
+        # 尝试从 source_block 中提取 layer 索引
+        import re
+        match = re.search(r'layer(\d+)', source)
+        if match:
+            layer_idx = int(match.group(1))
+            stage = layer_idx // layers_per_stage if layers_per_stage > 0 else 0
+            return min(stage, pp - 1)  # 确保 stage 在有效范围内
+        
+        return 0
