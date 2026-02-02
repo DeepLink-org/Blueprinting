@@ -46,8 +46,15 @@ class SchedulePass(Pass):
         peak_tflops: float = 312.0,      # A100 FP16 峰值
         memory_bandwidth: float = 2.0e12, # 2 TB/s
         network_bandwidth: float = 400e9, # 400 Gbps
+        network_efficiency: float = 0.65, # 网络效率 (与 Calculon 对齐)
+        network_latency: float = 10e-6,  # 10µs 网络延迟
+        compute_efficiency: float = 0.95, # 计算效率 (与 Calculon 对齐)
         # 数据类型
         dtype_bytes: int = 2,             # float16
+        # 通信模型参数 (与 Calculon 对齐)
+        # all_reduce_offset: Calculon 使用 offset=1 表示双向通信
+        # 公式: comm_size_effective = comm_size * (1 + offset/num_peers)
+        all_reduce_offset: float = 1.0,
     ):
         """初始化 SchedulePass.
         
@@ -55,13 +62,21 @@ class SchedulePass(Pass):
             peak_tflops: 计算峰值 (TFLOPS)
             memory_bandwidth: 内存带宽 (bytes/s)
             network_bandwidth: 网络带宽 (bytes/s)
+            network_efficiency: 网络效率 (0-1，默认 0.65 与 Calculon H100 配置对齐)
+            network_latency: 网络延迟 (seconds)
+            compute_efficiency: 计算效率 (0-1，默认 0.95)
             dtype_bytes: 数据类型字节数
+            all_reduce_offset: AllReduce 通信偏移量 (Calculon 模型，默认 1.0)
         """
         self.peak_tflops = peak_tflops
-        self.peak_flops = peak_tflops * 1e12
+        self.peak_flops = peak_tflops * 1e12 * compute_efficiency  # 应用效率
         self.memory_bandwidth = memory_bandwidth
         self.network_bandwidth = network_bandwidth
+        self.network_efficiency = network_efficiency
+        self.network_latency = network_latency
+        self.compute_efficiency = compute_efficiency
         self.dtype_bytes = dtype_bytes
+        self.all_reduce_offset = all_reduce_offset
     
     def run(self, ir: ScheduleIR) -> ScheduleIR:
         """执行调度计算."""
@@ -90,6 +105,7 @@ class SchedulePass(Pass):
             # 设置 start 时间 (顺序调度)
             op.start = current_time
             current_time = current_time + duration
+        
         
         return ir
     
@@ -190,20 +206,39 @@ class SchedulePass(Pass):
         op.comm_bytes = 0
     
     def _compute_collective(self, op: OpNode, attrs: Dict) -> None:
-        """计算集合通信 workload (AllReduce, AllGather, ReduceScatter)."""
+        """计算集合通信 workload (AllReduce, AllGather, ReduceScatter).
+        
+        使用与 Calculon 相同的通信模型:
+        - AllReduce: op_size = data_size * (1 + offset/num_peers)
+          其中 offset=1 表示双向通信（reduce + broadcast）
+        - AllGather/ReduceScatter: op_size = data_size * (n-1)/n
+        
+        这个模型的物理意义:
+        - AllReduce 的 offset=1 近似于两阶段通信（reduce-scatter + all-gather）
+        - 最终通信量 = 原始数据 + 每个节点的 chunk
+        """
         data_size = attrs.get("data_size", 1)
         num_peers = attrs.get("num_peers", 8)
         
         op.flops = 0
         op.memory_bytes = 0
         
-        # Ring AllReduce: 2 * (n-1)/n * data_size
-        # AllGather: (n-1)/n * data_size
-        # ReduceScatter: (n-1)/n * data_size
+        # 基础通信量 (bytes)
+        base_comm_bytes = data_size * self.dtype_bytes
+        
         if op.op_type == "AllReduce":
-            op.comm_bytes = 2 * (num_peers - 1) / num_peers * data_size * self.dtype_bytes
+            # Calculon 模型: comm_size * (1 + offset/num_peers)
+            # 这比 Ring 公式 2*(n-1)/n 更准确地反映了实际通信开销
+            op.comm_bytes = base_comm_bytes * (1 + self.all_reduce_offset / num_peers)
+        elif op.op_type == "AllGather":
+            # AllGather: 收集所有节点的数据，通信量 = (n-1)/n * data_size
+            op.comm_bytes = base_comm_bytes * (num_peers - 1) / num_peers
+        elif op.op_type == "ReduceScatter":
+            # ReduceScatter: 分散归约，通信量 = (n-1)/n * data_size
+            op.comm_bytes = base_comm_bytes * (num_peers - 1) / num_peers
         else:
-            op.comm_bytes = (num_peers - 1) / num_peers * data_size * self.dtype_bytes
+            op.comm_bytes = base_comm_bytes
+        
     
     def _compute_p2p(self, op: OpNode, attrs: Dict) -> None:
         """计算点对点通信 workload (Send, Recv)."""
@@ -231,9 +266,13 @@ class SchedulePass(Pass):
         else:
             memory_time = 0
         
-        # 通信时间
+        # 通信时间 (Calculon 模型: latency + comm_bytes / (bandwidth * efficiency))
+        # 这是一个物理上有意义的模型:
+        # - network_efficiency 反映了实际带宽利用率 (NVLink 通常 0.65)
+        # - network_latency 是固定的启动延迟
         if comm > 0:
-            comm_time = comm / self.network_bandwidth
+            effective_bandwidth = self.network_bandwidth * self.network_efficiency
+            comm_time = self.network_latency + comm / effective_bandwidth
         else:
             comm_time = 0
         

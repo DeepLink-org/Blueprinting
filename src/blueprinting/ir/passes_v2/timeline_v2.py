@@ -70,7 +70,9 @@ class TimelinePassV2(Pass):
     def _add_op_events(self, op: ScheduledOp, timeline: TimelineIR) -> None:
         """为单个 Op 添加计算/通信事件."""
         # 判断是计算还是通信
-        is_comm = op.op_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv")
+        # 注意: backward 通信 Op 的类型是 AllReduce_BW 等，需要检查基础类型
+        base_type = op.op_type.replace("_BW", "") if op.op_type else ""
+        is_comm = base_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv")
         
         if is_comm:
             start_type = EventType.COMM_START
