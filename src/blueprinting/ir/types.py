@@ -573,21 +573,17 @@ class TimelineIR:
         
         trace_events = []
         
-        # Track 分配:
-        # tid 1-3: Op 级别（按 Phase: Forward/Backward/Optimizer）
-        # tid 11-13: 通信（按 Phase）
+        # Track 分配 (简化版):
+        # tid 1: Compute (Forward + Backward + Optimizer 合并)
+        # tid 10: Communication (TP AllReduce + P2P Send/Recv)
         # tid 20: Micro-batch 级别聚合
-        # tid 21+: Layer 级别聚合
         phase_to_tid = {
-            Phase.FORWARD: 1,
-            Phase.BACKWARD: 2,
-            Phase.OPTIMIZER: 3,
+            Phase.FORWARD: 1,   # Compute
+            Phase.BACKWARD: 1,  # Compute (与 Forward 合并)
+            Phase.OPTIMIZER: 1, # Compute (与 Forward/Backward 合并)
         }
         
-        # 用于 Block 聚合的数据结构
-        # key: (device, layer_name, microbatch, phase) -> (start_time, end_time)
-        block_spans: Dict[tuple, List[float]] = defaultdict(list)
-        layer_spans: Dict[tuple, List[float]] = defaultdict(list)
+        # 用于 Micro-batch 聚合的数据结构
         microbatch_spans: Dict[tuple, List[float]] = defaultdict(list)
         
         def _eval_time(t) -> float:
@@ -599,26 +595,6 @@ class TimelineIR:
                 except:
                     return 0.0
             return 0.0
-        
-        def _extract_layer_name(source_block: Optional[str]) -> Optional[str]:
-            """从 source_block 提取 Layer 名称."""
-            if not source_block:
-                return None
-            # 匹配 TransformerLayer(layerN) 或 layer0, layer1 等
-            match = re.search(r'TransformerLayer\((layer\d+)\)', source_block)
-            if match:
-                return match.group(1)
-            return None
-        
-        def _extract_block_name(source_block: Optional[str]) -> Optional[str]:
-            """从 source_block 提取 Block 名称（Attention/FFN）."""
-            if not source_block:
-                return None
-            if 'Attention' in source_block:
-                return 'Attention'
-            elif 'FFN' in source_block or 'feedforward' in source_block.lower():
-                return 'FFN'
-            return None
         
         def _extract_microbatch(resource_id: str) -> Optional[str]:
             """从 resource_id 提取 micro-batch 编号."""
@@ -657,10 +633,16 @@ class TimelineIR:
             else:
                 cat = event.phase.value if event.phase else "compute"
             
-            # 确定 tid
-            base_tid = phase_to_tid.get(event.phase, 0)
-            stream_offset = 10 if event.stream == StreamType.COMM else 0
-            tid = base_tid + stream_offset
+            # 确定 tid (简化版)
+            is_p2p = event.op_type in ("Send", "Recv")
+            is_comm = event.stream == StreamType.COMM
+            
+            if is_p2p:
+                tid = 10  # P2P 也放到 Communication track
+            elif is_comm:
+                tid = 10  # Communication track (TP AllReduce 等)
+            else:
+                tid = phase_to_tid.get(event.phase, 1)  # Compute or Optimizer
             
             trace_event = {
                 "name": event.resource_id,
@@ -685,62 +667,18 @@ class TimelineIR:
             
             trace_events.append(trace_event)
             
-            # 收集 Block/Layer 聚合信息
+            # 收集 Micro-batch 聚合信息（排除 P2P 通信，只统计计算时间）
             if include_blocks and event.event_type in (
-                EventType.COMPUTE_START, EventType.COMPUTE_END,
-                EventType.COMM_START, EventType.COMM_END
+                EventType.COMPUTE_START, EventType.COMPUTE_END
             ):
-                source_block = event.metadata.get("source_block", "") if event.metadata else ""
-                layer_name = _extract_layer_name(source_block)
-                block_name = _extract_block_name(source_block)
+                # 只收集计算事件，不包括 P2P Send/Recv
                 mb = _extract_microbatch(event.resource_id)
-                
-                if layer_name and mb:
-                    # Layer 聚合
-                    layer_key = (event.device, layer_name, mb, event.phase)
-                    layer_spans[layer_key].append(time_val)
-                    
-                    # Micro-batch 聚合
+                if mb:
                     mb_key = (event.device, mb, event.phase)
                     microbatch_spans[mb_key].append(time_val)
-                    
-                    # Block 聚合 (Attention/FFN)
-                    if block_name:
-                        block_key = (event.device, layer_name, block_name, mb, event.phase)
-                        block_spans[block_key].append(time_val)
         
-        # 生成 Block/Layer 级别的聚合事件
+        # 生成 Micro-batch 级别聚合事件
         if include_blocks:
-            # Layer 级别聚合 (tid = 21 + layer_idx)
-            layer_indices = {}
-            # 按 (device, layer_name, mb, phase.value) 排序
-            for key, times in sorted(layer_spans.items(), key=lambda x: (x[0][0], x[0][1], x[0][2], x[0][3].value if x[0][3] else "")):
-                device, layer_name, mb, phase = key
-                if times:
-                    start = min(times) * time_scale
-                    end = max(times) * time_scale
-                    
-                    if layer_name not in layer_indices:
-                        layer_indices[layer_name] = len(layer_indices)
-                    layer_idx = layer_indices[layer_name]
-                    
-                    # 使用 X (complete event) 而不是 B/E
-                    trace_events.append({
-                        "name": f"{layer_name}/{mb}",
-                        "cat": "layer",
-                        "ph": "X",
-                        "ts": start,
-                        "dur": end - start,
-                        "pid": device,
-                        "tid": 21 + layer_idx,
-                        "args": {
-                            "layer": layer_name,
-                            "microbatch": mb,
-                            "phase": phase.value if phase else "",
-                        }
-                    })
-            
-            # Micro-batch 级别聚合 (tid = 20)
             for key, times in sorted(microbatch_spans.items(), key=lambda x: (x[0][0], x[0][1], x[0][2].value if x[0][2] else "")):
                 device, mb, phase = key
                 if times:
@@ -761,33 +699,93 @@ class TimelineIR:
                         }
                     })
         
+        # 生成 Flow events 可视化 P2P 通信
+        # 收集 Send 事件，并为每个 Send 生成到对应 Recv 的 Flow
+        flow_id = 0
+        send_events = {}  # (from_stage, to_stage, mb, data_type) -> (ts, device)
+        
+        for event in self.events:
+            if event.op_type == "Send" and event.metadata:
+                from_stage = event.metadata.get("from_stage")
+                to_stage = event.metadata.get("to_stage")
+                mb = event.metadata.get("mb")
+                data_type = event.metadata.get("data", "")
+                
+                if from_stage is not None and to_stage is not None and mb is not None:
+                    ts = _eval_time(event.time) * time_scale
+                    send_events[(from_stage, to_stage, mb, data_type)] = (ts, event.device)
+        
+        for event in self.events:
+            if event.op_type == "Recv" and event.metadata:
+                from_stage = event.metadata.get("from_stage")
+                to_stage = event.metadata.get("to_stage")
+                mb = event.metadata.get("mb")
+                data_type = event.metadata.get("data", "")
+                
+                key = (from_stage, to_stage, mb, data_type)
+                if key in send_events:
+                    send_ts, send_device = send_events[key]
+                    recv_ts = _eval_time(event.time) * time_scale
+                    recv_device = event.device
+                    
+                    # Flow start (at Send)
+                    trace_events.append({
+                        "name": f"p2p_{data_type}",
+                        "cat": "p2p_flow",
+                        "ph": "s",  # Flow start
+                        "ts": send_ts,
+                        "pid": send_device,
+                        "tid": 10,  # Communication track
+                        "id": flow_id,
+                        "args": {"from": f"Stage {from_stage}", "to": f"Stage {to_stage}", "mb": mb}
+                    })
+                    
+                    # Flow end (at Recv)
+                    trace_events.append({
+                        "name": f"p2p_{data_type}",
+                        "cat": "p2p_flow",
+                        "ph": "f",  # Flow end
+                        "ts": recv_ts,
+                        "pid": recv_device,
+                        "tid": 10,  # Communication track
+                        "id": flow_id,
+                        "bp": "e",  # Bind to enclosing slice
+                        "args": {"from": f"Stage {from_stage}", "to": f"Stage {to_stage}", "mb": mb}
+                    })
+                    
+                    flow_id += 1
+        
         # 添加元数据
         metadata = []
         
         devices = set(e.device for e in self.events)
-        for device in devices:
+        pp = self.metadata.get("pp", 1)
+        
+        for device in sorted(devices):
+            # 进程名称：GPU {device} (Stage {device})
+            stage_info = f" (Stage {device})" if pp > 1 else ""
             metadata.append({
                 "name": "process_name",
                 "ph": "M",
                 "pid": device,
-                "args": {"name": f"GPU {device}"}
+                "args": {"name": f"GPU {device}{stage_info}"}
+            })
+            
+            # 进程排序（确保 GPU 0 在最上面）
+            metadata.append({
+                "name": "process_sort_index",
+                "ph": "M",
+                "pid": device,
+                "args": {"sort_index": device}
             })
         
-        # 线程名称
+        # 线程名称 (简化版)
         thread_names = {
-            1: "Forward (Compute)",
-            2: "Backward (Compute)",
-            3: "Optimizer (Compute)",
-            11: "Forward (Comm)",
-            12: "Backward (Comm)",
-            13: "Optimizer (Comm)",
-            20: "Micro-batch",
+            1: "Compute",        # Forward + Backward + Optimizer 合并
+            10: "Communication", # TP AllReduce + P2P Send/Recv
         }
-        
-        # 添加 Layer track 名称
         if include_blocks:
-            for layer_name, idx in sorted(layer_indices.items(), key=lambda x: x[1]):
-                thread_names[21 + idx] = f"Layer: {layer_name}"
+            thread_names[20] = "Micro-batch"
         
         for tid, name in thread_names.items():
             for device in devices:
@@ -805,15 +803,16 @@ class TimelineIR:
             "metadata": self.metadata,
         }
     
-    def save_chrome_trace(self, path: str, time_unit: str = "ms") -> None:
+    def save_chrome_trace(self, path: str, time_unit: str = "ms", include_blocks: bool = True) -> None:
         """保存为 Chrome Trace JSON 文件.
         
         Args:
             path: 输出文件路径
             time_unit: 时间单位
+            include_blocks: 是否包含 Micro-batch 聚合轨道（默认开启，聚合只包含计算时间，P2P 单独显示）
         """
         import json
-        trace = self.to_chrome_trace(time_unit)
+        trace = self.to_chrome_trace(time_unit, include_blocks=include_blocks)
         with open(path, "w") as f:
             json.dump(trace, f, indent=2)
     

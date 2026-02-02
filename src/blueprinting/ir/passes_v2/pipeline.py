@@ -14,7 +14,7 @@ PP 调度模式:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum
 from copy import deepcopy
 
@@ -114,15 +114,17 @@ class PipelineSchedulePass(Pass):
             new_ir.add_op(op, stage=op.stage, device=op.device)
         
         # 添加优化器等其他 Op（在最后）
+        # 每个 stage 的 optimizer 在该 stage 的 backward 完成后执行
         if scheduled_ops:
             final_time = max(op.start + op.duration for op in scheduled_ops)
         else:
             final_time = 0
         
+        # 按 stage 分组 other_ops，保留原有的 stage 分配
         for op in other_ops:
             op.start = final_time
-            final_time += op.duration
-            new_ir.add_op(op, stage=0, device=0)
+            # 保留 op 原有的 stage 和 device
+            new_ir.add_op(op, stage=op.stage, device=op.device)
         
         # 计算 bubble time
         bubble_time = self._compute_bubble_time(scheduled_ops, num_mb, pp)
@@ -209,15 +211,23 @@ class PipelineSchedulePass(Pass):
     ) -> List[ScheduledOp]:
         """1F1B 调度: Pipeline Parallel 并行调度.
         
-        正确的 Pipeline 调度：
-        - 不同 stage 并行处理不同的 micro-batch
-        - Stage i 在时间 t 处理的 micro-batch = Stage 0 在时间 t-i*stage_time 处理的
+        1F1B (One Forward One Backward) 调度模式：
         
-        时间模型:
-        - per_stage_time = max(fw_time, bw_time) for 该 stage
-        - 总时间 = (num_mb + pp - 1) × per_stage_time
-        - bubble_time = (pp - 1) × per_stage_time
+        每个 stage 的执行顺序：
+        1. Warmup: 执行 (pp - 1 - stage) 个 Forward（填充 pipeline）
+        2. Steady State: 交替执行 1B + 1F（稳态）
+        3. Cooldown: 执行剩余的 Backward（排空 pipeline）
+        
+        关键约束：同一个 stage 在任意时刻只能执行一个操作。
+        
+        时间模型：
+        - 每个 stage 有独立的本地时间线
+        - stage 之间通过 P2P 通信同步
+        - Stage i 的 Forward 需要等待 Stage i-1 的激活
+        - Stage i 的 Backward 需要等待 Stage i+1 的梯度
         """
+        from ..types import OpNode, Phase
+        
         scheduled_ops = []
         
         # 按 stage 分组
@@ -231,55 +241,224 @@ class PipelineSchedulePass(Pass):
             stage_fw_time[stage] = sum(op.duration for op in fw_by_stage.get(stage, []))
             stage_bw_time[stage] = sum(op.duration for op in bw_by_stage.get(stage, []))
         
-        # 使用最大 stage 时间作为基准（所有 stage 同步）
+        # 使用最大 stage 时间作为基准
         max_fw_time = max(stage_fw_time.values()) if stage_fw_time else 0
         max_bw_time = max(stage_bw_time.values()) if stage_bw_time else 0
-        per_stage_time = max_fw_time + max_bw_time
         
+        # P2P 通信时间
+        p2p_time = min(max_fw_time, max_bw_time) * 0.01 if max_fw_time > 0 and max_bw_time > 0 else 0
         
-        # 为每个 stage 生成独立的时间线
-        # Stage i 的起始偏移 = i × per_stage_time（pipeline filling）
+        # 每个 stage 的当前时间（本地时间线）
+        stage_current_time = [0.0] * pp
         
-        for stage in range(pp):
-            # Stage offset（pipeline 延迟）
-            stage_offset = stage * max_fw_time
+        # 记录每个 (stage, mb) 的 Forward 完成时间，用于 P2P 和 Backward 依赖
+        fw_complete_time: Dict[Tuple[int, int], float] = {}
+        # 记录每个 (stage, mb) 的 Backward 完成时间
+        bw_complete_time: Dict[Tuple[int, int], float] = {}
+        
+        # 每个 stage 的下一个要执行的 Forward 和 Backward micro-batch
+        next_fw_mb = [0] * pp
+        next_bw_mb = [0] * pp
+        
+        def schedule_forward(stage: int, mb: int):
+            """调度一个 Forward pass."""
+            nonlocal stage_current_time
             
-            # 该 stage 的本地时间
-            local_time = 0.0
+            # 计算开始时间：取决于
+            # 1. 当前 stage 的本地时间（串行约束）
+            # 2. 上一个 stage 发送的激活到达时间（数据依赖）
+            start_time = stage_current_time[stage]
             
-            # Forward: 处理所有 micro-batch
-            for mb in range(num_mb):
-                # 开始时间 = stage_offset + local_time
-                start_time = stage_offset + local_time
-                
-                for op in fw_by_stage.get(stage, []):
-                    new_op = self._copy_op_for_mb(op, mb, start_time)
-                    start_time = new_op.start + new_op.duration
-                    scheduled_ops.append(new_op)
-                
-                # 更新本地时间（一个 stage 的 forward+backward 总时间）
-                # 在稳态，一个 micro-batch 占用 max(fw, bw) 时间
-                local_time += max_fw_time
+            if stage > 0:
+                # 等待上一个 stage 的 Forward 完成 + P2P 通信时间 (Send + Recv)
+                # 这样 Forward 计算在 P2P Recv 完成后才开始
+                prev_fw_complete = fw_complete_time.get((stage - 1, mb), 0)
+                start_time = max(start_time, prev_fw_complete + 2 * p2p_time)
             
-            # Backward: 反向处理所有 micro-batch
-            # Backward 开始时间 = 该 micro-batch 的 forward 结束 + (pp-1-stage) × bw_time
-            local_time = 0.0
-            for mb in range(num_mb):
-                # Backward 开始时间考虑：
-                # 1. 该 stage 的 forward 已完成
-                # 2. 后面的 stage 的 backward 已完成
-                fw_end = stage_offset + (mb + 1) * max_fw_time
-                bw_delay = (pp - 1 - stage) * max_bw_time
-                start_time = fw_end + bw_delay + local_time
+            # 调度 Forward ops
+            current = start_time
+            for op in fw_by_stage.get(stage, []):
+                new_op = self._copy_op_for_mb(op, mb, current)
+                current = new_op.start + new_op.duration
+                scheduled_ops.append(new_op)
+            
+            fw_complete_time[(stage, mb)] = current
+            stage_current_time[stage] = current
+            
+            # 添加 P2P Send/Recv（如果不是最后一个 stage）
+            # 注意：P2P 通信与计算并行（不阻塞当前 stage 的下一个操作）
+            if stage < pp - 1:
+                send_op = self._create_p2p_op(
+                    name=f"p2p_send_act_mb{mb}_s{stage}",
+                    op_type="Send",
+                    stage=stage,
+                    phase=Phase.FORWARD,
+                    start=current,
+                    duration=p2p_time,
+                    metadata={"from_stage": stage, "to_stage": stage + 1, "mb": mb, "data": "activation"},
+                )
+                scheduled_ops.append(send_op)
+                # 不更新 stage_current_time，P2P 不阻塞计算
                 
-                for op in bw_by_stage.get(stage, []):
-                    new_op = self._copy_op_for_mb(op, mb, start_time)
-                    start_time = new_op.start + new_op.duration
-                    scheduled_ops.append(new_op)
+                recv_op = self._create_p2p_op(
+                    name=f"p2p_recv_act_mb{mb}_s{stage+1}",
+                    op_type="Recv",
+                    stage=stage + 1,
+                    phase=Phase.FORWARD,
+                    start=current + p2p_time,
+                    duration=p2p_time,
+                    metadata={"from_stage": stage, "to_stage": stage + 1, "mb": mb, "data": "activation"},
+                )
+                scheduled_ops.append(recv_op)
+        
+        def schedule_backward(stage: int, mb: int):
+            """调度一个 Backward pass."""
+            nonlocal stage_current_time
+            
+            # 计算开始时间：取决于
+            # 1. 当前 stage 的本地时间（串行约束）
+            # 2. 当前 stage 的 Forward 完成时间（数据依赖）
+            # 3. 下一个 stage 发送的梯度到达时间（数据依赖）
+            start_time = stage_current_time[stage]
+            start_time = max(start_time, fw_complete_time.get((stage, mb), 0))
+            
+            if stage < pp - 1:
+                # 等待下一个 stage 的 Backward 完成 + P2P 通信时间 (Send + Recv)
+                # 这样 Backward 计算在 P2P Recv 完成后才开始
+                next_bw_complete = bw_complete_time.get((stage + 1, mb), 0)
+                start_time = max(start_time, next_bw_complete + 2 * p2p_time)
+            
+            # 调度 Backward ops
+            current = start_time
+            for op in bw_by_stage.get(stage, []):
+                new_op = self._copy_op_for_mb(op, mb, current)
+                current = new_op.start + new_op.duration
+                scheduled_ops.append(new_op)
+            
+            bw_complete_time[(stage, mb)] = current
+            stage_current_time[stage] = current
+            
+            # 添加 P2P Send/Recv（如果不是第一个 stage）
+            # 注意：P2P 通信与计算并行（不阻塞当前 stage 的下一个操作）
+            if stage > 0:
+                send_op = self._create_p2p_op(
+                    name=f"p2p_send_grad_mb{mb}_s{stage}",
+                    op_type="Send",
+                    stage=stage,
+                    phase=Phase.BACKWARD,
+                    start=current,
+                    duration=p2p_time,
+                    metadata={"from_stage": stage, "to_stage": stage - 1, "mb": mb, "data": "gradient"},
+                )
+                scheduled_ops.append(send_op)
+                # 不更新 stage_current_time，P2P 不阻塞计算
                 
-                local_time += max_bw_time
+                recv_op = self._create_p2p_op(
+                    name=f"p2p_recv_grad_mb{mb}_s{stage-1}",
+                    op_type="Recv",
+                    stage=stage - 1,
+                    phase=Phase.BACKWARD,
+                    start=current + p2p_time,
+                    duration=p2p_time,
+                    metadata={"from_stage": stage, "to_stage": stage - 1, "mb": mb, "data": "gradient"},
+                )
+                scheduled_ops.append(recv_op)
+        
+        # 1F1B 调度主循环
+        # 
+        # 关键：调度顺序必须遵循数据依赖：
+        # - Forward: stage 0 -> stage 1 -> ... -> stage pp-1 (激活传递方向)
+        # - Backward: stage pp-1 -> ... -> stage 1 -> stage 0 (梯度传递方向)
+        #
+        # 每轮迭代中，每个 stage 尽可能多地调度操作（直到约束不满足）
+        
+        max_iterations = (num_mb + pp) * 2  # 防止无限循环
+        iteration = 0
+        
+        while iteration < max_iterations:
+            iteration += 1
+            made_progress = False
+            
+            # 阶段 1: 调度 Forward (从低 stage 到高 stage)
+            # 每个 stage 尽可能多地调度 Forward（直到约束不满足）
+            for stage in range(pp):
+                warmup_count = pp - 1 - stage
+                
+                # 循环调度该 stage 的所有可调度 Forward
+                while next_fw_mb[stage] < num_mb:
+                    mb = next_fw_mb[stage]
+                    
+                    # 检查 1F1B 约束：in_flight 不能超过 warmup_count
+                    in_flight = next_fw_mb[stage] - next_bw_mb[stage]
+                    if in_flight > warmup_count:
+                        break  # 需要先执行 Backward
+                    
+                    # 检查数据依赖：上一个 stage 的 Forward 必须完成
+                    if stage > 0 and (stage - 1, mb) not in fw_complete_time:
+                        break  # 等待上一个 stage
+                    
+                    schedule_forward(stage, mb)
+                    next_fw_mb[stage] += 1
+                    made_progress = True
+            
+            # 阶段 2: 调度 Backward (从高 stage 到低 stage)
+            # 每个 stage 尽可能多地调度 Backward
+            for stage in reversed(range(pp)):
+                # 循环调度该 stage 的所有可调度 Backward
+                while next_bw_mb[stage] < num_mb:
+                    mb = next_bw_mb[stage]
+                    
+                    # 检查数据依赖：
+                    # 1. 当前 stage 的 Forward 必须完成
+                    if (stage, mb) not in fw_complete_time:
+                        break
+                    
+                    # 2. 下一个 stage 的 Backward 必须完成（如果存在）
+                    if stage < pp - 1 and (stage + 1, mb) not in bw_complete_time:
+                        break
+                    
+                    schedule_backward(stage, mb)
+                    next_bw_mb[stage] += 1
+                    made_progress = True
+            
+            # 检查是否完成
+            all_done = all(next_fw_mb[s] >= num_mb and next_bw_mb[s] >= num_mb for s in range(pp))
+            if all_done:
+                break
+            
+            if not made_progress:
+                break
         
         return scheduled_ops
+    
+    def _create_p2p_op(
+        self,
+        name: str,
+        op_type: str,
+        stage: int,
+        phase: "Phase",
+        start: float,
+        duration: float,
+        metadata: Dict[str, Any],
+    ) -> ScheduledOp:
+        """创建 P2P 通信 Op (Send/Recv)."""
+        from ..types import OpNode
+        
+        op_node = OpNode(
+            name=name,
+            op_type=op_type,
+            attrs=metadata,
+        )
+        
+        return ScheduledOp(
+            op=op_node,
+            device=stage,  # P2P Op 在对应 stage 的 device 上
+            stage=stage,
+            stream="comm",  # 通信流
+            phase=phase,
+            start=start,
+            duration=duration,
+        )
     
     def _group_by_stage(self, ops: List[ScheduledOp], pp: int) -> Dict[int, List[ScheduledOp]]:
         """将 Op 按 stage 分组."""
@@ -312,7 +491,7 @@ class PipelineSchedulePass(Pass):
         
         return ScheduledOp(
             op=new_op_node,
-            device=op.device,
+            device=op.stage,  # PP 并行: device = stage，每个 stage 在独立 GPU 上
             stage=op.stage,
             stream=op.stream,
             phase=op.phase,  # 保留原 op 的 phase

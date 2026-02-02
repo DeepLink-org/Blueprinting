@@ -90,6 +90,15 @@ class TimelinePassV2(Pass):
             end_type = EventType.COMPUTE_END
             stream = StreamType.COMPUTE
         
+        # 构建 metadata
+        # 包含 source_block 和 Op 的 attrs（如 P2P 信息）
+        event_metadata = {"source_block": op.op.source_block if op.op else None}
+        if op.op and op.op.attrs:
+            # 传递 P2P 相关的 attrs
+            for key in ("from_stage", "to_stage", "mb", "data", "micro_batch"):
+                if key in op.op.attrs:
+                    event_metadata[key] = op.op.attrs[key]
+        
         # Start 事件
         timeline.add_event(TimelineEvent(
             time=op.start,
@@ -99,7 +108,7 @@ class TimelinePassV2(Pass):
             stream=stream,
             op_type=op.op_type,
             phase=op.phase,
-            metadata={"source_block": op.op.source_block if op.op else None},
+            metadata=event_metadata,
         ))
         
         # End 事件
@@ -111,6 +120,7 @@ class TimelinePassV2(Pass):
             stream=stream,
             op_type=op.op_type,
             phase=op.phase,
+            metadata=event_metadata.copy(),
         ))
     
     def _add_memory_events(self, ops: List[ScheduledOp], timeline: TimelineIR) -> None:

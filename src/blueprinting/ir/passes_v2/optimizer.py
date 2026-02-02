@@ -118,14 +118,27 @@ class OptimizerPass(Pass):
             current_time = current_time + bw_op.duration
             ir.add_op(bw_op, stage=bw_op.stage, device=bw_op.device)
         
-        # 计算总权重
-        total_weight_bytes = self._compute_total_weights(forward_ops)
+        # 按 stage 分组计算权重，为每个 stage 创建独立的 optimizer op
+        weight_by_stage = self._compute_weights_by_stage(forward_ops)
         
-        # 生成优化器 Op
+        # 获取 PP 并行度
+        pp = ir.metadata.get("pp", 1)
+        num_stages = max(pp, max(weight_by_stage.keys()) + 1) if weight_by_stage else 1
+        
+        # 为每个 stage 生成优化器 Op（并行执行）
+        total_weight_bytes = sum(weight_by_stage.values())
         if total_weight_bytes > 0:
-            optimizer_op = self._create_optimizer_op(total_weight_bytes, current_time)
-            ir.add_op(optimizer_op, stage=0, device=0)
-            current_time = current_time + optimizer_op.duration
+            for stage in range(num_stages):
+                stage_weight = weight_by_stage.get(stage, 0)
+                if stage_weight > 0:
+                    optimizer_op = self._create_optimizer_op(stage_weight, current_time, stage)
+                    ir.add_op(optimizer_op, stage=stage, device=stage)
+            
+            # 更新 current_time（所有 stage 的 optimizer 并行执行，取最长时间）
+            if weight_by_stage:
+                max_stage_weight = max(weight_by_stage.values())
+                dummy_op = self._create_optimizer_op(max_stage_weight, current_time, 0)
+                current_time = current_time + dummy_op.duration
         
         # 更新 metadata
         ir.metadata["forward_ops"] = len(forward_ops)
@@ -273,8 +286,43 @@ class OptimizerPass(Pass):
         
         return total
     
-    def _create_optimizer_op(self, weight_bytes: float, start_time: float) -> ScheduledOp:
-        """创建优化器更新 Op."""
+    def _compute_weights_by_stage(self, forward_ops: List[ScheduledOp]) -> Dict[int, float]:
+        """按 stage 计算权重字节数."""
+        weights_by_stage: Dict[int, float] = {}
+        seen_sources: Dict[int, set] = {}
+        
+        for op in forward_ops:
+            if op.op_type == "Matmul" and op.op:
+                stage = op.stage
+                
+                # 初始化该 stage 的去重集合
+                if stage not in seen_sources:
+                    seen_sources[stage] = set()
+                    weights_by_stage[stage] = 0
+                
+                # 从 source_block 去重
+                source = op.op.source_block or ""
+                if source in seen_sources[stage]:
+                    continue
+                seen_sources[stage].add(source)
+                
+                # 计算权重: K * N * dtype_bytes
+                attrs = op.op.attrs
+                K = attrs.get("K", 1)
+                N = attrs.get("N", 1)
+                weight_bytes = K * N * self.config.dtype_bytes
+                weights_by_stage[stage] += weight_bytes
+        
+        return weights_by_stage
+    
+    def _create_optimizer_op(self, weight_bytes: float, start_time: float, stage: int = 0) -> ScheduledOp:
+        """创建优化器更新 Op.
+        
+        Args:
+            weight_bytes: 权重字节数
+            start_time: 开始时间
+            stage: PP stage (默认为 0)
+        """
         num_params = weight_bytes / self.config.dtype_bytes
         
         # 内存访问: 读写优化器状态
@@ -291,7 +339,7 @@ class OptimizerPass(Pass):
         duration = memory_time + compute_time  # 优化器是 element-wise，不能 overlap
         
         op = OpNode(
-            name="optimizer_step",
+            name=f"optimizer_step_s{stage}",
             op_type="OptimizerStep",
             inputs=[],
             outputs=[],
@@ -299,6 +347,7 @@ class OptimizerPass(Pass):
                 "weight_bytes": weight_bytes,
                 "num_params": num_params,
                 "optimizer_type": self.config.optimizer_type,
+                "stage": stage,
             },
             flops=total_flops,
             memory_bytes=total_memory,
@@ -306,8 +355,8 @@ class OptimizerPass(Pass):
         
         return ScheduledOp(
             op=op,
-            device=0,
-            stage=0,
+            device=stage,  # PP 并行: device = stage
+            stage=stage,
             stream="compute",
             phase=Phase.OPTIMIZER,
             start=start_time,
