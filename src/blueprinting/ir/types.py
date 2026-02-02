@@ -583,8 +583,41 @@ class TimeBreakdown:
     bubble: float = 0
     
     @property
+    def compute(self) -> float:
+        """计算时间 = forward + backward."""
+        return self.forward + self.backward
+    
+    @property
     def total(self) -> float:
+        """总时间 = compute + communication + bubble."""
         return self.forward + self.backward + self.communication + self.bubble
+
+
+@dataclass
+class BlockMetrics:
+    """单层（Block）指标.
+    
+    用于存储单个 Transformer 层的内存和时间指标。
+    """
+    # 单层内存
+    weights: Union[int, float] = 0
+    activations: Union[int, float] = 0
+    optimizer_states: Union[int, float] = 0
+    
+    # 单层时间 (per-layer per-microbatch)
+    forward_time: float = 0
+    backward_time: float = 0
+    communication_time: float = 0
+    
+    @property
+    def compute_time(self) -> float:
+        """计算时间 = forward + backward."""
+        return self.forward_time + self.backward_time
+    
+    @property
+    def total_time(self) -> float:
+        """总时间 = compute + communication."""
+        return self.forward_time + self.backward_time + self.communication_time
 
 
 @dataclass
@@ -594,15 +627,19 @@ class SimulationResult:
     Attributes:
         peak_memory: 峰值内存 (bytes)
         e2e_time: 端到端时间 (seconds)
-        memory_breakdown: 内存分解
-        time_breakdown: 时间分解
+        memory_breakdown: 内存分解 (per-GPU 总内存)
+        time_breakdown: 时间分解 (per-layer per-microbatch)
+        total_time_breakdown: 总时间分解 (整个迭代)
+        block_metrics: 单层指标 (单个 Transformer 层)
         total_flops: 总计算量
         config: 配置信息
     """
     peak_memory: Union[int, float] = 0
     e2e_time: float = 0
     memory_breakdown: Optional[MemoryBreakdown] = None
-    time_breakdown: Optional[TimeBreakdown] = None
+    time_breakdown: Optional[TimeBreakdown] = None  # per-layer per-microbatch
+    total_time_breakdown: Optional[TimeBreakdown] = None  # 整个迭代的总时间
+    block_metrics: Optional[BlockMetrics] = None  # 单层指标
     total_flops: Union[int, float] = 0
     config: Dict[str, Any] = field(default_factory=dict)
     
@@ -658,5 +695,6 @@ __all__ = [
     # Result
     "MemoryBreakdown",
     "TimeBreakdown",
+    "BlockMetrics",
     "SimulationResult",
 ]

@@ -265,7 +265,7 @@ class SimulatePass(Pass):
         self.training = training
     
     def run(self, ir: TimelineIR):
-        from ..types import SimulationResult, MemoryBreakdown, TimeBreakdown
+        from ..types import SimulationResult, MemoryBreakdown, TimeBreakdown, BlockMetrics
         
         # 从 metadata 获取并行配置
         pp = ir.metadata.get("pp", 1)
@@ -283,6 +283,29 @@ class SimulatePass(Pass):
         
         # 时间分解 (per-layer per-microbatch)
         time_breakdown = self._compute_time_breakdown(ir, num_layers=num_layers, num_microbatches=num_microbatches)
+        
+        # 计算总时间分解 (整个迭代)
+        # 在 PP 下，不同 stage 并行执行，所以用 layers_per_stage 而不是 num_layers
+        time_multiplier = layers_per_stage * num_microbatches
+        total_time_breakdown = TimeBreakdown(
+            forward=time_breakdown.forward * time_multiplier,
+            backward=time_breakdown.backward * time_multiplier,
+            communication=time_breakdown.communication * time_multiplier,
+            bubble=time_breakdown.bubble,  # bubble 已经是总时间
+        )
+        
+        # 计算单层指标 (BlockMetrics)
+        # 单层内存 = per-GPU 内存 / layers_per_stage
+        block_weights = memory_breakdown.weights / layers_per_stage if layers_per_stage > 0 else 0
+        block_optimizer = memory_breakdown.optimizer_states / layers_per_stage if layers_per_stage > 0 else 0
+        block_metrics = BlockMetrics(
+            weights=block_weights,
+            activations=memory_breakdown.activations,  # 激活是单层的
+            optimizer_states=block_optimizer,
+            forward_time=time_breakdown.forward,
+            backward_time=time_breakdown.backward,
+            communication_time=time_breakdown.communication,
+        )
         
         # 累加 FLOPs
         # total_flops 是所有 micro-batch × 所有层的 FLOPs 总和
@@ -317,6 +340,8 @@ class SimulatePass(Pass):
             peak_memory=peak_memory,
             e2e_time=e2e_time,
             time_breakdown=time_breakdown,
+            total_time_breakdown=total_time_breakdown,
+            block_metrics=block_metrics,
             memory_breakdown=memory_breakdown,
             total_flops=total_flops,
             config=config,
@@ -472,10 +497,27 @@ class SimulatePass(Pass):
         # 总时间 = 单层时间 * num_layers * num_microbatches
         time_divisor = num_layers * num_microbatches if num_layers > 0 and num_microbatches > 0 else 1
         
+        # 计算 bubble time
+        # 在 PP 并行下，各 stage 并行执行，累计时间会远大于 E2E 时间
+        # 因此不能用 E2E - compute_and_comm 来计算 bubble
+        # 
+        # 1F1B 调度的 bubble time 近似计算：
+        # bubble ≈ (PP - 1) × single_stage_time
+        # 其中 single_stage_time = (fw + bw + comm) / time_divisor × num_microbatches
+        pp = ir.metadata.get("pp", 1)
+        if pp > 1 and time_divisor > 0:
+            # 单个 stage 处理所有 micro-batch 的时间
+            single_stage_time = (forward_time + backward_time + comm_time) / pp
+            # bubble time = (pp - 1) × 单个 micro-batch 的 stage 时间
+            bubble_time = (pp - 1) * single_stage_time / num_microbatches
+        else:
+            bubble_time = 0
+        
         return TimeBreakdown(
             forward=forward_time / time_divisor,
             backward=backward_time / time_divisor,
             communication=comm_time / time_divisor,
+            bubble=bubble_time,  # bubble 是总时间
         )
     
     def _compute_total_flops(self, ir: TimelineIR) -> float:

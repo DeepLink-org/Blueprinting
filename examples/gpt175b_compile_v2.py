@@ -151,58 +151,59 @@ def format_diff(ir_val: float, calc_val: float) -> str:
 # 指标归一化
 # ============================================================================
 
-def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1, num_microbatches: int = 1) -> Dict[str, Any]:
+def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     """Normalize IR metrics to comparison schema.
     
-    SimulatePass 已经计算了 per-GPU 的正确指标，这里只做格式转换。
+    SimulatePass 已经计算了所有指标，这里只做格式转换。
     
     Args:
-        ir_result: IR simulation result (已经是 per-GPU 的指标)
-        num_layers: Total number of transformer layers
-        pp: Pipeline parallelism degree
-        num_microbatches: Number of micro-batches per iteration
+        ir_result: IR simulation result (SimulationResult)
     """
     if not ir_result:
         return {}
     
+    # 从 SimulationResult 获取各种指标
     ir_mb = getattr(ir_result, "memory_breakdown", None)
     ir_tb = getattr(ir_result, "time_breakdown", None)
+    ir_total_tb = getattr(ir_result, "total_time_breakdown", None)
+    ir_block = getattr(ir_result, "block_metrics", None)
     
-    # SimulatePass 已经输出 per-GPU 的内存指标
-    weights_fp16 = ir_mb.weights if ir_mb else 0
+    # per-GPU 内存指标
+    weights = ir_mb.weights if ir_mb else 0
     activations = ir_mb.activations if ir_mb else 0
     gradients = ir_mb.gradients if ir_mb else 0
     optimizer_states = ir_mb.optimizer_states if ir_mb else 0
     total_memory = ir_mb.total if ir_mb else 0
     
-    # 计算每个 PP stage 的层数
-    layers_per_stage = num_layers // pp if pp > 0 else num_layers
+    # 总时间指标
+    total_fw = ir_total_tb.forward if ir_total_tb else 0
+    total_bw = ir_total_tb.backward if ir_total_tb else 0
+    total_comm = ir_total_tb.communication if ir_total_tb else 0
+    total_bubble = ir_total_tb.bubble if ir_total_tb else 0
     
-    # 单层指标 (per-GPU 内存 / layers_per_stage)
-    block_weights = weights_fp16 / layers_per_stage if layers_per_stage > 0 else 0
-    block_activations = activations  # 激活是单层的
-    block_optimizer = optimizer_states / layers_per_stage if layers_per_stage > 0 else 0
-    
-    # SimulatePass 已经输出 per-layer per-microbatch 的时间
-    block_fw = ir_tb.forward if ir_tb else 0
-    block_bw = ir_tb.backward if ir_tb else 0
-    block_comm = ir_tb.communication if ir_tb else 0
+    # 单层指标（由 SimulatePass 计算）
+    block_weights = ir_block.weights if ir_block else 0
+    block_activations = ir_block.activations if ir_block else 0
+    block_optimizer = ir_block.optimizer_states if ir_block else 0
+    block_fw = ir_block.forward_time if ir_block else 0
+    block_bw = ir_block.backward_time if ir_block else 0
+    block_comm = ir_block.communication_time if ir_block else 0
+    block_compute = ir_block.compute_time if ir_block else 0
+    block_total = ir_block.total_time if ir_block else 0
     
     return {
         "schema": "comparison_v1",
         "units": {"memory": "bytes", "time": "seconds"},
         "basis": {
-            "weights": "fp16",  # IR V2 使用 fp16 存储权重
+            "weights": "fp16",
             "activations": "unknown",
             "gradients": "fp16",
             "optimizer_states": "fp32",
         },
         "per_gpu": {
             "memory": {
-                "weights_fp16_bytes": weights_fp16,
-                "weights_fp32_bytes": weights_fp16 * 2,  # 如果需要 fp32 副本
+                "weights_fp16_bytes": weights,
                 "activations_bytes": activations,
-                "activations_block_bytes": 0,
                 "activations_peak_bytes": getattr(ir_result, "peak_memory", 0),
                 "gradients_bytes": gradients,
                 "optimizer_bytes": optimizer_states,
@@ -210,25 +211,25 @@ def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1, num_microb
             },
             "time": {
                 "iteration_time": getattr(ir_result, "e2e_time", 0) or 0,
-                "forward_time": ir_tb.forward if ir_tb else 0,
-                "backward_time": ir_tb.backward if ir_tb else 0,
-                "communication_time": ir_tb.communication if ir_tb else 0,
-                "bubble_time": ir_tb.bubble if ir_tb else 0,
+                "forward_time": total_fw,
+                "backward_time": total_bw,
+                "communication_time": total_comm,
+                "bubble_time": total_bubble,
             },
         },
         "block": {
             "memory": {
-                "weights_bytes": block_weights,  # 已经是 fp16 字节数
+                "weights_bytes": block_weights,
                 "activations_bytes": block_activations,
                 "optimizer_bytes": block_optimizer,
             },
             "time": {
                 "forward_time": block_fw,
-                "agrad_time": block_bw / 2,  # 假设激活梯度和权重梯度各占一半
+                "agrad_time": block_bw / 2,  # Calculon 兼容：假设 agrad ≈ wgrad
                 "wgrad_time": block_bw / 2,
-                "compute_time": block_fw + block_bw,
+                "compute_time": block_compute,
                 "comm_time": block_comm,
-                "total_time": block_fw + block_bw + block_comm,
+                "total_time": block_total,
             },
         },
     }
@@ -276,10 +277,10 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
             },
             "time": {
                 "iteration_time": calc_stats.get("total_time", 0),
-                "forward_time": 0,
-                "backward_time": 0,
-                "communication_time": 0,
-                "bubble_time": 0,
+                "forward_time": calc_stats.get("fw_time", 0),
+                "backward_time": calc_stats.get("bw_time", 0),
+                "communication_time": calc_stats.get("tp_comm_exposed_time", 0) + calc_stats.get("dp_comm_exposed_time", 0) + calc_stats.get("pp_comm_exposed_time", 0),
+                "bubble_time": calc_stats.get("bubble_time", 0),
             },
         },
         "block": {
@@ -546,7 +547,7 @@ def compare_results(
     num_microbatches = batch_size // (micro_batch_size * dp) if micro_batch_size * dp > 0 else 1
     num_gpus = tp * pp * dp
     
-    ir_metrics = normalize_ir_metrics(ir_result, num_layers=num_layers, pp=pp, num_microbatches=num_microbatches)
+    ir_metrics = normalize_ir_metrics(ir_result)
     calc_metrics = normalize_calculon_stats(calc_stats) if calc_stats else {}
     
     ir_mem = ir_metrics.get("per_gpu", {}).get("memory", {})
@@ -609,10 +610,18 @@ def compare_results(
                        format_time(calc_time.get("iteration_time", 0)),
                        format_diff(ir_time.get("iteration_time", 0), calc_time.get("iteration_time", 0)) if calc_time.get("iteration_time") else "-",
                        style="bold")
-    time_table.add_row("前向", format_time(ir_time.get("forward_time", 0)), "-", "-")
-    time_table.add_row("反向", format_time(ir_time.get("backward_time", 0)), "-", "-")
-    time_table.add_row("通信", format_time(ir_time.get("communication_time", 0)), "-", "-")
-    time_table.add_row("Bubble", format_time(ir_time.get("bubble_time", 0)), "-", "-")
+    time_table.add_row("前向", format_time(ir_time.get("forward_time", 0)), 
+                       format_time(calc_time.get("forward_time", 0)) if calc_time.get("forward_time") else "-",
+                       format_diff(ir_time.get("forward_time", 0), calc_time.get("forward_time", 0)) if calc_time.get("forward_time") else "-")
+    time_table.add_row("反向", format_time(ir_time.get("backward_time", 0)),
+                       format_time(calc_time.get("backward_time", 0)) if calc_time.get("backward_time") else "-",
+                       format_diff(ir_time.get("backward_time", 0), calc_time.get("backward_time", 0)) if calc_time.get("backward_time") else "-")
+    time_table.add_row("通信", format_time(ir_time.get("communication_time", 0)),
+                       format_time(calc_time.get("communication_time", 0)) if calc_time.get("communication_time") else "-",
+                       format_diff(ir_time.get("communication_time", 0), calc_time.get("communication_time", 0)) if calc_time.get("communication_time") else "-")
+    time_table.add_row("Bubble", format_time(ir_time.get("bubble_time", 0)),
+                       format_time(calc_time.get("bubble_time", 0)) if calc_time.get("bubble_time") else "-",
+                       format_diff(ir_time.get("bubble_time", 0), calc_time.get("bubble_time", 0)) if calc_time.get("bubble_time") else "-")
     
     console.print(time_table)
     
