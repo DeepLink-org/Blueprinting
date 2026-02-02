@@ -553,52 +553,96 @@ class TimelineIR:
             return 0
         return max(e.time for e in self.events)
     
-    def to_chrome_trace(self, time_unit: str = "ms") -> Dict[str, Any]:
+    def to_chrome_trace(self, time_unit: str = "ms", include_blocks: bool = True) -> Dict[str, Any]:
         """导出为 Chrome Trace 格式.
         
         可以在 chrome://tracing 或 https://ui.perfetto.dev 中打开。
         
         Args:
             time_unit: 时间单位 ("ms" 或 "us")，Chrome Trace 使用微秒
+            include_blocks: 是否包含 Block/Layer 级别的聚合信息
             
         Returns:
             Chrome Trace 格式的字典
         """
+        import re
+        from collections import defaultdict
+        
         # Chrome Trace 使用微秒
         time_scale = 1000.0 if time_unit == "ms" else 1.0
         
         trace_events = []
         
-        # 将 device 映射到 pid，stream 映射到 tid
-        # 为了更好的可视化，按 phase 分组
+        # Track 分配:
+        # tid 1-3: Op 级别（按 Phase: Forward/Backward/Optimizer）
+        # tid 11-13: 通信（按 Phase）
+        # tid 20: Micro-batch 级别聚合
+        # tid 21+: Layer 级别聚合
         phase_to_tid = {
             Phase.FORWARD: 1,
             Phase.BACKWARD: 2,
             Phase.OPTIMIZER: 3,
         }
         
-        for event in self.events:
-            # 计算时间戳（微秒）
-            time_val = event.time
-            if isinstance(time_val, Expr):
+        # 用于 Block 聚合的数据结构
+        # key: (device, layer_name, microbatch, phase) -> (start_time, end_time)
+        block_spans: Dict[tuple, List[float]] = defaultdict(list)
+        layer_spans: Dict[tuple, List[float]] = defaultdict(list)
+        microbatch_spans: Dict[tuple, List[float]] = defaultdict(list)
+        
+        def _eval_time(t) -> float:
+            if isinstance(t, (int, float)):
+                return float(t)
+            if isinstance(t, Expr):
                 try:
-                    time_val = float(time_val)
-                except (TypeError, ValueError):
-                    time_val = 0
-            ts = time_val * time_scale  # 转换为微秒
+                    return float(t)
+                except:
+                    return 0.0
+            return 0.0
+        
+        def _extract_layer_name(source_block: Optional[str]) -> Optional[str]:
+            """从 source_block 提取 Layer 名称."""
+            if not source_block:
+                return None
+            # 匹配 TransformerLayer(layerN) 或 layer0, layer1 等
+            match = re.search(r'TransformerLayer\((layer\d+)\)', source_block)
+            if match:
+                return match.group(1)
+            return None
+        
+        def _extract_block_name(source_block: Optional[str]) -> Optional[str]:
+            """从 source_block 提取 Block 名称（Attention/FFN）."""
+            if not source_block:
+                return None
+            if 'Attention' in source_block:
+                return 'Attention'
+            elif 'FFN' in source_block or 'feedforward' in source_block.lower():
+                return 'FFN'
+            return None
+        
+        def _extract_microbatch(resource_id: str) -> Optional[str]:
+            """从 resource_id 提取 micro-batch 编号."""
+            match = re.search(r'_mb(\d+)', resource_id)
+            if match:
+                return f"mb{match.group(1)}"
+            return None
+        
+        for event in self.events:
+            time_val = _eval_time(event.time)
+            ts = time_val * time_scale
             
             # 确定 phase 类型
             ph = None
             if event.event_type == EventType.COMPUTE_START:
-                ph = "B"  # Begin
+                ph = "B"
             elif event.event_type == EventType.COMPUTE_END:
-                ph = "E"  # End
+                ph = "E"
             elif event.event_type == EventType.COMM_START:
                 ph = "B"
             elif event.event_type == EventType.COMM_END:
                 ph = "E"
             elif event.event_type == EventType.ALLOC:
-                ph = "i"  # Instant event
+                ph = "i"
             elif event.event_type == EventType.FREE:
                 ph = "i"
             
@@ -613,7 +657,7 @@ class TimelineIR:
             else:
                 cat = event.phase.value if event.phase else "compute"
             
-            # 确定 tid（按 phase 和 stream 分组）
+            # 确定 tid
             base_tid = phase_to_tid.get(event.phase, 0)
             stream_offset = 10 if event.stream == StreamType.COMM else 0
             tid = base_tid + stream_offset
@@ -627,7 +671,6 @@ class TimelineIR:
                 "tid": tid,
             }
             
-            # 添加额外信息
             if event.metadata:
                 trace_event["args"] = event.metadata.copy()
             else:
@@ -636,17 +679,91 @@ class TimelineIR:
             trace_event["args"]["op_type"] = event.op_type
             trace_event["args"]["phase"] = event.phase.value if event.phase else ""
             
-            # 对于内存事件，添加大小信息
             if event.event_type in (EventType.ALLOC, EventType.FREE):
                 trace_event["args"]["bytes"] = event.size
-                trace_event["s"] = "g"  # global scope for instant events
+                trace_event["s"] = "g"
             
             trace_events.append(trace_event)
+            
+            # 收集 Block/Layer 聚合信息
+            if include_blocks and event.event_type in (
+                EventType.COMPUTE_START, EventType.COMPUTE_END,
+                EventType.COMM_START, EventType.COMM_END
+            ):
+                source_block = event.metadata.get("source_block", "") if event.metadata else ""
+                layer_name = _extract_layer_name(source_block)
+                block_name = _extract_block_name(source_block)
+                mb = _extract_microbatch(event.resource_id)
+                
+                if layer_name and mb:
+                    # Layer 聚合
+                    layer_key = (event.device, layer_name, mb, event.phase)
+                    layer_spans[layer_key].append(time_val)
+                    
+                    # Micro-batch 聚合
+                    mb_key = (event.device, mb, event.phase)
+                    microbatch_spans[mb_key].append(time_val)
+                    
+                    # Block 聚合 (Attention/FFN)
+                    if block_name:
+                        block_key = (event.device, layer_name, block_name, mb, event.phase)
+                        block_spans[block_key].append(time_val)
+        
+        # 生成 Block/Layer 级别的聚合事件
+        if include_blocks:
+            # Layer 级别聚合 (tid = 21 + layer_idx)
+            layer_indices = {}
+            # 按 (device, layer_name, mb, phase.value) 排序
+            for key, times in sorted(layer_spans.items(), key=lambda x: (x[0][0], x[0][1], x[0][2], x[0][3].value if x[0][3] else "")):
+                device, layer_name, mb, phase = key
+                if times:
+                    start = min(times) * time_scale
+                    end = max(times) * time_scale
+                    
+                    if layer_name not in layer_indices:
+                        layer_indices[layer_name] = len(layer_indices)
+                    layer_idx = layer_indices[layer_name]
+                    
+                    # 使用 X (complete event) 而不是 B/E
+                    trace_events.append({
+                        "name": f"{layer_name}/{mb}",
+                        "cat": "layer",
+                        "ph": "X",
+                        "ts": start,
+                        "dur": end - start,
+                        "pid": device,
+                        "tid": 21 + layer_idx,
+                        "args": {
+                            "layer": layer_name,
+                            "microbatch": mb,
+                            "phase": phase.value if phase else "",
+                        }
+                    })
+            
+            # Micro-batch 级别聚合 (tid = 20)
+            for key, times in sorted(microbatch_spans.items(), key=lambda x: (x[0][0], x[0][1], x[0][2].value if x[0][2] else "")):
+                device, mb, phase = key
+                if times:
+                    start = min(times) * time_scale
+                    end = max(times) * time_scale
+                    
+                    trace_events.append({
+                        "name": f"{mb} ({phase.value})" if phase else mb,
+                        "cat": "microbatch",
+                        "ph": "X",
+                        "ts": start,
+                        "dur": end - start,
+                        "pid": device,
+                        "tid": 20,
+                        "args": {
+                            "microbatch": mb,
+                            "phase": phase.value if phase else "",
+                        }
+                    })
         
         # 添加元数据
         metadata = []
         
-        # 进程名称
         devices = set(e.device for e in self.events)
         for device in devices:
             metadata.append({
@@ -664,7 +781,14 @@ class TimelineIR:
             11: "Forward (Comm)",
             12: "Backward (Comm)",
             13: "Optimizer (Comm)",
+            20: "Micro-batch",
         }
+        
+        # 添加 Layer track 名称
+        if include_blocks:
+            for layer_name, idx in sorted(layer_indices.items(), key=lambda x: x[1]):
+                thread_names[21 + idx] = f"Layer: {layer_name}"
+        
         for tid, name in thread_names.items():
             for device in devices:
                 metadata.append({
