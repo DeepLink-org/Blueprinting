@@ -226,8 +226,7 @@ def _expand_linear(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str
     out_f = block.attrs.get("out_features", 4096)
     batch_seq = ctx.metadata.get("batch_size", 1) * ctx.metadata.get("seq_len", 2048)
     shard = block.attrs.get("shard")
-    tp = ctx.metadata.get("tp", 1)
-    
+    tp = max(1, ctx.metadata.get("tp", 1))  # 避免 tp=0 导致除零
     
     # 根据 shard 策略调整维度
     K = in_f
@@ -263,6 +262,17 @@ def _expand_layernorm(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: 
     return ctx.LayerNorm(x, normalized_shape=hidden)
 
 
+def _expand_gelu(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str) -> TensorRef:
+    """展开 GELU Block."""
+    ctx._set_current_block(block, path)
+    # GELU 的 num_elements = feedforward / tp (因为在 TP 分片后)
+    feedforward = ctx.metadata.get("feedforward", ctx.metadata.get("hidden", 4096) * 4)
+    tp = max(1, ctx.metadata.get("tp", 1))
+    batch_seq = ctx.metadata.get("batch_size", 1) * ctx.metadata.get("seq_len", 2048)
+    num_elements = block.attrs.get("num_elements", batch_seq * feedforward // tp)
+    return ctx.GELU(x, num_elements=num_elements)
+
+
 def _expand_embedding(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str) -> TensorRef:
     """展开 Embedding Block."""
     ctx._set_current_block(block, path)
@@ -292,7 +302,7 @@ def _expand_attention(block: BlockNode, x: TensorRef, ctx: ExpandContext, path: 
     seq_len = ctx.metadata.get("seq_len", 2048)
     hidden = ctx.metadata.get("hidden", 4096)
     num_heads = ctx.metadata.get("num_heads", hidden // 128)  # 默认 head_dim=128
-    tp = ctx.metadata.get("tp", 1)
+    tp = max(1, ctx.metadata.get("tp", 1))  # 避免 tp=0 导致除零
     
     # TP 分片后的 heads
     heads_per_gpu = num_heads // tp
@@ -323,6 +333,7 @@ _EXPAND_FUNCS = {
     "Linear": _expand_linear,
     "RMSNorm": _expand_rmsnorm,
     "LayerNorm": _expand_layernorm,
+    "GELU": _expand_gelu,
     "Embedding": _expand_embedding,
     "Attention": _expand_attention,
     "FFN": _expand_container,

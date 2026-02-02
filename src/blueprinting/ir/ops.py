@@ -592,6 +592,16 @@ class FFNBlock(BlockDef):
     description = "Feed-forward network block"
 
 
+class GELUBlock(BlockDef):
+    """GELU activation block."""
+    block_type = "GELU"
+    description = "GELU activation block"
+    
+    optional_attrs = {
+        "num_elements": None,
+    }
+
+
 class MLPBlock(BlockDef):
     """MLP block."""
     block_type = "MLP"

@@ -180,6 +180,7 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     total_bw = ir_total_tb.backward if ir_total_tb else 0
     total_comm = ir_total_tb.communication if ir_total_tb else 0
     total_bubble = ir_total_tb.bubble if ir_total_tb else 0
+    total_recompute = ir_total_tb.recompute if ir_total_tb else 0
     
     # 单层指标（由 SimulatePass 计算）
     block_weights = ir_block.weights if ir_block else 0
@@ -190,6 +191,8 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     block_comm = ir_block.communication_time if ir_block else 0
     block_compute = ir_block.compute_time if ir_block else 0
     block_total = ir_block.total_time if ir_block else 0
+    block_comm_fw = ir_block.comm_fw if ir_block else 0
+    block_comm_bw = ir_block.comm_bw if ir_block else 0
     
     return {
         "schema": "comparison_v1",
@@ -210,6 +213,9 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
                 "total_bytes": total_memory,
             },
             "time": {
+                # 从 IR 获取实际的 recompute_time（由 OptimizerPass 生成）
+                "recompute_time": total_recompute,
+                "recomm_time": 0,  # TODO: 序列并行重通信时间
                 "iteration_time": getattr(ir_result, "e2e_time", 0) or 0,
                 "forward_time": total_fw,
                 "backward_time": total_bw,
@@ -225,9 +231,11 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
             },
             "time": {
                 "forward_time": block_fw,
-                "agrad_time": block_bw / 2,  # Calculon 兼容：假设 agrad ≈ wgrad
-                "wgrad_time": block_bw / 2,
+                "agrad_time": block_bw * 0.5,
+                "wgrad_time": block_bw * 0.5,
                 "compute_time": block_compute,
+                "comm_fw": block_comm_fw,  # TP 通信（前向）
+                "comm_bw": block_comm_bw,  # TP 通信（反向）
                 "comm_time": block_comm,
                 "total_time": block_total,
             },
@@ -236,10 +244,17 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
 
 
 def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize Calculon stats to comparison schema."""
+    """Normalize Calculon stats to comparison schema.
+    
+    注意：Calculon 在 full recompute 时：
+    - act_space = block_act_working_space (单层工作激活)
+    - act_checkpoint_size 是单独计算的 checkpoint 内存（1F1B 下的 micro-batch 堆积）
+    
+    为了公平对比，这里只使用 act_space，不包含 act_checkpoint_size。
+    """
     weight = calc_stats.get("weight_space", 0) or 0
     act = calc_stats.get("act_space", 0) or 0
-    optim = calc_stats.get("optimizer_space", 0) or 0  # 修正字段名
+    optim = calc_stats.get("optimizer_space", 0) or 0
     total_memory = weight + act + optim
     
     block_weight = calc_stats.get("block_weight_space", 0) or 0
@@ -250,10 +265,20 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
     block_agrad = calc_stats.get("block_agrad_time", 0)
     block_wgrad = calc_stats.get("block_wgrad_time", 0)
     block_compute = block_fw + block_agrad + block_wgrad
+    
     tp_fw = calc_stats.get("baseblock_fw_tp_time", 0)
     tp_bw = calc_stats.get("baseblock_agrad_tp_time", 0)
     block_comm = tp_fw + tp_bw
     block_total = block_compute + block_comm
+    
+    # 调试：分析 Calculon 的时间是否包含 TP 通信
+    # Calculon 的 block_fw_time 是否已经包含了 baseblock_fw_tp_time?
+    # 如果 block_fw = 纯计算 + tp_fw，那么 block_fw - tp_fw 应该是纯计算时间
+    # 
+    # 从 Calculon 源码分析：
+    # - block_fw_time = baseblock_fw_flops / system_flops_rate (纯计算)
+    # - baseblock_fw_tp_time = TP 通信时间
+    # - 两者是分开计算的，block_fw_time 不包含 TP 通信
     
     return {
         "schema": "comparison_v1",
@@ -268,7 +293,7 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
             "memory": {
                 "weights_fp16_bytes": weight,
                 "weights_fp32_bytes": weight * 2 if weight else 0,
-                "activations_bytes": act,
+                "activations_bytes": act,  # 只比较 act_space，不含 checkpoint
                 "activations_block_bytes": block_act,
                 "activations_peak_bytes": 0,
                 "gradients_bytes": 0,
@@ -281,6 +306,8 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
                 "backward_time": calc_stats.get("bw_time", 0),
                 "communication_time": calc_stats.get("tp_comm_exposed_time", 0) + calc_stats.get("dp_comm_exposed_time", 0) + calc_stats.get("pp_comm_exposed_time", 0),
                 "bubble_time": calc_stats.get("bubble_time", 0),
+                "recompute_time": calc_stats.get("recompute_time", 0),  # 激活重计算时间
+                "recomm_time": calc_stats.get("recomm_exposed_time", 0),  # 重通信时间
             },
         },
         "block": {
@@ -377,16 +404,20 @@ def build_transformer_graph_v2(
                     # Output projection (row parallel)
                     attn.Linear("out_proj", in_features=hidden, out_features=hidden, shard="tp_row")
                 
-                # FFN block
+                # FFN block (GPT-3 使用 GELU 激活，不是 SwiGLU)
+                # 结构: up_proj → GELU → down_proj
                 with layer.FFN("ffn") as ffn:
                     # Pre-norm
                     ffn.RMSNorm("norm", normalized_shape=hidden)
                     
-                    # Up projection (column parallel)
-                    ffn.Linear("fc1", in_features=hidden, out_features=feedforward, shard="tp_col")
+                    # Up projection (column parallel): hidden → feedforward
+                    ffn.Linear("up_proj", in_features=hidden, out_features=feedforward, shard="tp_col")
                     
-                    # Down projection (row parallel)
-                    ffn.Linear("fc2", in_features=feedforward, out_features=hidden, shard="tp_row")
+                    # GELU 激活函数
+                    ffn.GELU("gelu")
+                    
+                    # Down projection (row parallel): feedforward → hidden
+                    ffn.Linear("down_proj", in_features=feedforward, out_features=hidden, shard="tp_row")
     
     return m.build()
 
@@ -405,6 +436,7 @@ def create_compiler_v2(
     peak_tflops: float = 1000.0,  # H100 FP16 峰值
     memory_bandwidth: float = 3.35e12,  # H100 内存带宽 3.35 TB/s
     network_bandwidth: float = 450e9 * 0.65,  # NVLink 450 GB/s × 0.65 效率 (与 Calculon 对齐)
+    processing_mode: str = "no_overlap",  # 处理模式: "roofline" 或 "no_overlap"
     debug: bool = False,
 ) -> Pipeline:
     """创建新架构的编译流水线.
@@ -452,6 +484,7 @@ def create_compiler_v2(
         network_efficiency=0.65,  # NVLink 效率 (与 Calculon H100 配置对齐)
         network_latency=10e-6,  # 10µs 延迟
         compute_efficiency=0.95,  # 95% 计算效率
+        processing_mode=processing_mode,  # 处理模式 (与 Calculon 对齐)
         all_reduce_offset=1.0,  # AllReduce 通信偏移量 (Calculon 模型)
     ))
     
@@ -622,8 +655,12 @@ def compare_results(
     time_table.add_row("Bubble", format_time(ir_time.get("bubble_time", 0)),
                        format_time(calc_time.get("bubble_time", 0)) if calc_time.get("bubble_time") else "-",
                        format_diff(ir_time.get("bubble_time", 0), calc_time.get("bubble_time", 0)) if calc_time.get("bubble_time") else "-")
+    time_table.add_row("重计算", format_time(ir_time.get("recompute_time", 0)),
+                       format_time(calc_time.get("recompute_time", 0)) if calc_time.get("recompute_time") else "-",
+                       format_diff(ir_time.get("recompute_time", 0), calc_time.get("recompute_time", 0)) if calc_time.get("recompute_time") else "-")
     
     console.print(time_table)
+    
     
     # === 单层内存表格 ===
     layer_mem_table = Table(title="单层内存", box=box.ROUNDED, show_header=True, header_style="bold magenta")

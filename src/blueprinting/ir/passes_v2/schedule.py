@@ -55,6 +55,8 @@ class SchedulePass(Pass):
         # all_reduce_offset: Calculon 使用 offset=1 表示双向通信
         # 公式: comm_size_effective = comm_size * (1 + offset/num_peers)
         all_reduce_offset: float = 1.0,
+        # 处理模式: "roofline" (max(compute, memory)) 或 "no_overlap" (compute + memory)
+        processing_mode: str = "roofline",
     ):
         """初始化 SchedulePass.
         
@@ -77,6 +79,7 @@ class SchedulePass(Pass):
         self.compute_efficiency = compute_efficiency
         self.dtype_bytes = dtype_bytes
         self.all_reduce_offset = all_reduce_offset
+        self.processing_mode = processing_mode
     
     def run(self, ir: ScheduleIR) -> ScheduleIR:
         """执行调度计算."""
@@ -218,7 +221,7 @@ class SchedulePass(Pass):
         - 最终通信量 = 原始数据 + 每个节点的 chunk
         """
         data_size = attrs.get("data_size", 1)
-        num_peers = attrs.get("num_peers", 8)
+        num_peers = max(1, attrs.get("num_peers", 8))  # 避免 num_peers=0 导致除零
         
         op.flops = 0
         op.memory_bytes = 0
@@ -276,11 +279,15 @@ class SchedulePass(Pass):
         else:
             comm_time = 0
         
-        # Roofline: max(compute, memory)
+        # 处理模式: roofline (max) 或 no_overlap (sum)
         # 对于通信 Op，取通信时间
         if op.op_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv"):
             duration = comm_time
+        elif self.processing_mode == "no_overlap":
+            # no_overlap 模式: 计算和内存不重叠
+            duration = compute_time + memory_time
         else:
+            # roofline 模式: max(compute, memory)
             duration = _symbolic_max(compute_time, memory_time)
         
         return duration

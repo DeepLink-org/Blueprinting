@@ -77,8 +77,8 @@ class TimelinePassV2(Pass):
     def _add_op_events(self, op: ScheduledOp, timeline: TimelineIR) -> None:
         """为单个 Op 添加计算/通信事件."""
         # 判断是计算还是通信
-        # 使用 op_type 的基础类型判断（移除 _BW 后缀）
-        base_type = op.op_type.replace("_BW", "") if op.op_type else ""
+        # 使用 op_type 的基础类型判断（移除 _BW 和 _RE 后缀）
+        base_type = op.op_type.replace("_BW", "").replace("_RE", "") if op.op_type else ""
         is_comm = base_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv")
         
         if is_comm:
@@ -180,75 +180,128 @@ class TimelinePassV2(Pass):
         pp = timeline.metadata.get("pp", 1)
         gradient_checkpointing = timeline.metadata.get("gradient_checkpointing", False)
         
+        # ============================================================
+        # 为每个 Op 的激活引入生命周期追踪
+        # ============================================================
+        # 设计思路：
+        # 1. 前向传播：Op 输出激活在 Op 完成时分配 (ALLOC)
+        # 2. 反向传播：激活在对应反向 Op 完成后释放 (FREE)
+        # 3. 梯度检查点：只保留检查点位置的激活，layer 内部激活可复用
+        # 4. SimulatePass 通过追踪 ALLOC/FREE 事件计算峰值内存
+        # ============================================================
         
-        seen_activation_sources = set()
-        single_layer_activation = 0  # 单层激活
-        num_unique_layers = 0
-        
-        for op in forward_ops:
-            if op.op and op.op.memory_bytes:
-                source = op.op.source_block or ""
-                if source in seen_activation_sources:
-                    continue
-                seen_activation_sources.add(source)
-                
-                memory_bytes = op.op.memory_bytes
-                # 只统计输出激活 (约 1/3)
-                if isinstance(memory_bytes, (int, float)) and memory_bytes > 0:
-                    activation_bytes = memory_bytes // 3
-                    single_layer_activation += activation_bytes
-        
-        # 计算每层的激活（single_layer_activation 是所有层的总和，需要除以 num_layers）
+        dtype_bytes = 2  # fp16
         num_layers = timeline.metadata.get("num_layers", 1)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
-        per_layer_activation = single_layer_activation / num_layers if num_layers > 0 else single_layer_activation
         
-        # 激活内存模型（per-GPU）：
-        # - Calculon 的激活不随 PP 变化，说明它计算的是单层激活（不考虑 pipeline）
-        # - 激活通常不被 TP 分片（除了 Attention 后的 AllGather）
-        # - gradient checkpointing 时，只保存每层输入（约 2 层激活）
+        # 提取 forward_ops 中每层的第一个 Op 开始时间和最后一个 Op 结束时间
+        # 用于确定激活的生命周期
+        layer_ops: Dict[int, List[ScheduledOp]] = {}  # layer_idx -> ops
+        
+        import re
+        
+        for op in forward_ops:
+            if not op.op:
+                continue
+            # 从 source_block 提取 layer_idx
+            # 尝试多种格式: "layer_0.xxx", "layers.0.xxx", "transformer.h.0.xxx" 等
+            source = op.op.source_block or ""
+            layer_idx = None
+            
+            # 尝试匹配常见的层命名模式
+            patterns = [
+                r"TransformerLayer\(layer(\d+)\)",  # TransformerLayer(layer0)
+                r"layer[_\.]?(\d+)",     # layer_0, layer.0, layer0
+                r"layers[_\.](\d+)",     # layers_0, layers.0
+                r"\.h\.(\d+)\.",         # transformer.h.0.xxx
+                r"block[_\.](\d+)",      # block_0, block.0
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, source)
+                if match:
+                    layer_idx = int(match.group(1))
+                    break
+            
+            if layer_idx is not None:
+                if layer_idx not in layer_ops:
+                    layer_ops[layer_idx] = []
+                layer_ops[layer_idx].append(op)
+        
+        # 计算单层激活大小（只统计一层的激活）
+        # 使用 source_block 去重，每个唯一的 source_block 只计算一次
+        seen_sources = set()
+        per_layer_activation = 0
+        
+        # 只统计第一层的 Op 来计算单层激活（取检测到的最小层索引）
+        min_layer_idx = min(layer_ops.keys()) if layer_ops else 0
+        first_layer_ops = layer_ops.get(min_layer_idx, [])
+        for op in first_layer_ops:
+            if not op.op or not op.op.attrs:
+                continue
+            
+            source = op.op.source_block or ""
+            if source in seen_sources:
+                continue
+            seen_sources.add(source)
+            
+            attrs = op.op.attrs
+            op_activation = 0
+            
+            if op.op_type == "Matmul":
+                # 输入激活 + 输出激活
+                M = attrs.get("M", 0)
+                K = attrs.get("K", 0)
+                N = attrs.get("N", 0)
+                op_activation = (M * K + M * N) * dtype_bytes
+            elif op.op_type in ("RMSNorm", "LayerNorm"):
+                memory = op.op.memory_bytes or 0
+                op_activation = memory if memory else 0
+            elif op.op_type == "Softmax":
+                num_elements = attrs.get("num_elements", 0)
+                op_activation = num_elements * dtype_bytes * 2
+            
+            per_layer_activation += op_activation
+        
+        # ============================================================
+        # 生成激活内存事件（简化版本，符合 Calculon 语义）
+        # ============================================================
+        # Calculon 的激活计算语义：
+        # - 梯度检查点模式：峰值 = 单层激活（每层完成后立即释放重用）
+        # - 无检查点模式：峰值 = layers_per_stage × 单层激活
+        #
+        # 简化处理：直接生成一个峰值激活的 ALLOC 事件
+        # 这样 SimulatePass 会正确统计峰值
+        # ============================================================
         
         if gradient_checkpointing:
-            # 完全重计算：保存 2 层激活（当前层输入 + 上一层输出）
-            # Calculon 对齐：激活不除以 TP，不乘以 PP
-            layers_in_memory = 2
+            # 梯度检查点模式：峰值 = 单层激活
+            peak_activation = per_layer_activation
         else:
-            # 无检查点：保存 layers_per_stage 层的所有激活
-            layers_in_memory = layers_per_stage
+            # 无检查点模式：峰值 = layers_per_stage × 单层激活
+            peak_activation = per_layer_activation * layers_per_stage
         
-        # 总激活 = 单层激活 × 内存中的层数
-        # 注意：激活数据在 TP 组内通常是复制的（不分片），所以不除以 TP
-        total_activation = per_layer_activation * layers_in_memory
-        
-        
-        # 生成一个汇总的激活分配事件
-        if total_activation > 0:
+        # 生成一个汇总的激活事件
+        if peak_activation > 0:
             timeline.add_event(TimelineEvent(
                 time=0,
                 event_type=EventType.ALLOC,
-                resource_id="total_activation",
+                resource_id="peak_activation",
                 device=0,
                 stream=StreamType.MEMORY,
-                metadata={
-                    "bytes": total_activation,
-                    "type": "activation",
-                },
+                metadata={"bytes": peak_activation, "type": "activation"},
             ))
-        
-        # 激活释放 (在所有反向完成后)
-        if backward_ops and total_activation > 0:
-            last_bw_end = max(op.end for op in backward_ops)
-            timeline.add_event(TimelineEvent(
-                time=last_bw_end,
-                event_type=EventType.FREE,
-                resource_id="total_activation",
-                device=0,
-                stream=StreamType.MEMORY,
-                metadata={
-                    "bytes": total_activation,
-                    "type": "activation",
-                },
-            ))
+            
+            # 在反向结束后释放
+            if backward_ops:
+                last_bw_end = max(op.end for op in backward_ops)
+                timeline.add_event(TimelineEvent(
+                    time=last_bw_end,
+                    event_type=EventType.FREE,
+                    resource_id="peak_activation",
+                    device=0,
+                    stream=StreamType.MEMORY,
+                    metadata={"bytes": peak_activation, "type": "activation"},
+                ))
 
 
 class SimulatePass(Pass):
@@ -297,14 +350,14 @@ class SimulatePass(Pass):
         layers_per_stage = ir.metadata.get("layers_per_stage", 1)
         total_flops = ir.metadata.get("total_flops", 0)
         
-        # ========== 观测 E2E 时间 ==========
-        e2e_time = self._eval_expr(ir.end_time) if ir.events else 0
-        
         # ========== 观测内存（遍历事件统计） ==========
         peak_memory, memory_breakdown = self._observe_memory(ir)
         
         # ========== 观测时间（遍历事件统计总时间） ==========
-        total_time_breakdown = self._observe_time(ir)
+        total_time_breakdown, total_comm_fw, total_comm_bw, iteration_time = self._observe_time(ir)
+        
+        # ========== E2E 时间 = 最后一个 op 结束 - 第一个 op 开始 ==========
+        e2e_time = iteration_time
         
         # ========== 派生指标（从观测结果计算） ==========
         # per-layer per-microbatch 时间
@@ -316,6 +369,10 @@ class SimulatePass(Pass):
             bubble=total_time_breakdown.bubble,  # bubble 是总时间
         )
         
+        # per-layer per-microbatch 通信时间分解
+        comm_fw_per_layer = total_comm_fw / time_divisor if time_divisor > 0 else 0
+        comm_bw_per_layer = total_comm_bw / time_divisor if time_divisor > 0 else 0
+        
         # 单层指标
         block_metrics = BlockMetrics(
             weights=memory_breakdown.weights / layers_per_stage if layers_per_stage > 0 else 0,
@@ -324,6 +381,8 @@ class SimulatePass(Pass):
             forward_time=time_breakdown.forward,
             backward_time=time_breakdown.backward,
             communication_time=time_breakdown.communication,
+            comm_fw=comm_fw_per_layer,
+            comm_bw=comm_bw_per_layer,
         )
         
         # ========== 输出配置 ==========
@@ -380,7 +439,17 @@ class SimulatePass(Pass):
         current_activation = 0.0
         peak_activation = 0.0
         
-        for event in ir.events:
+        # 按时间排序事件（FREE 在同一时间优先于 ALLOC）
+        # 这样才能正确计算峰值内存（先释放后分配，允许内存复用）
+        def event_sort_key(e):
+            # 同一时间内，FREE 在 ALLOC 之前（先释放后分配）
+            # 使用 (time, type_order) 排序
+            type_order = 1 if e.event_type == EventType.ALLOC else 0
+            return (self._eval_expr(e.time), type_order)
+        
+        sorted_events = sorted(ir.events, key=event_sort_key)
+        
+        for event in sorted_events:
             if event.event_type == EventType.ALLOC:
                 bytes_val = event.metadata.get("bytes", 0) if event.metadata else 0
                 bytes_val = self._eval_expr(bytes_val)
@@ -445,23 +514,37 @@ class SimulatePass(Pass):
         
         return peak_per_gpu, breakdown
     
-    def _observe_time(self, ir: TimelineIR) -> TimeBreakdown:
-        """观测时间，返回总时间（遍历事件统计）.
+    def _observe_time(self, ir: TimelineIR) -> Tuple["TimeBreakdown", float, float, float]:
+        """观测时间，返回总时间、通信分解和迭代时间（遍历事件统计）.
         
         这是观测者模式：只统计，不计算。
         返回的是单个 PP stage 执行的实际时间（考虑 PP 并行）。
         
         注意：累计时间是所有 stage 的总和，但各 stage 并行执行，
         所以实际时间 = 累计时间 / pp
+        
+        Returns:
+            TimeBreakdown: 时间分解
+            float: 前向阶段的通信时间 (comm_fw)
+            float: 反向阶段的通信时间 (comm_bw)
         """
         from ..types import TimeBreakdown
         
+        # 通过 Phase 分类累加时间
         forward_cumulative = 0.0
-        backward_cumulative = 0.0
+        backward_cumulative = 0.0  # 包含 recompute + agrad + wgrad
         comm_cumulative = 0.0
+        comm_fw_cumulative = 0.0
+        comm_bw_cumulative = 0.0
         
-        # 配对 START/END 事件，统计累计时间
+        # 记录迭代的开始和结束时间
+        iteration_start = float('inf')
+        iteration_end = 0.0
+        
+        # 配对 START/END 事件
         starts: Dict[str, float] = {}
+        start_phases: Dict[str, "Phase"] = {}
+        start_op_types: Dict[str, str] = {}
         
         for event in ir.events:
             resource = event.resource_id
@@ -469,43 +552,92 @@ class SimulatePass(Pass):
             
             if event.event_type in (EventType.COMPUTE_START, EventType.COMM_START):
                 starts[resource] = time_val
+                start_phases[resource] = event.phase
+                start_op_types[resource] = event.op_type or ""
+                iteration_start = min(iteration_start, time_val)
             
             elif event.event_type == EventType.COMPUTE_END:
+                iteration_end = max(iteration_end, time_val)
                 if resource in starts:
                     duration = time_val - starts[resource]
-                    if event.phase == Phase.BACKWARD:
-                        backward_cumulative += duration
-                    elif event.phase == Phase.OPTIMIZER:
-                        backward_cumulative += duration
-                    else:
+                    phase = start_phases.get(resource, event.phase)
+                    op_type = start_op_types.get(resource, event.op_type or "")
+                    
+                    # 通过 Phase 分类，但 recompute（_RE 后缀）不计入 backward
+                    # 与 Calculon 对齐：bw_time = agrad + wgrad（不含 recompute）
+                    if phase == Phase.FORWARD:
                         forward_cumulative += duration
+                    elif phase == Phase.BACKWARD:
+                        # recompute Op 不计入 backward，单独统计
+                        if "_RE" not in op_type:
+                            backward_cumulative += duration
+                    elif phase == Phase.OPTIMIZER:
+                        backward_cumulative += duration  # optimizer 计入 backward
             
             elif event.event_type == EventType.COMM_END:
+                iteration_end = max(iteration_end, time_val)
                 if resource in starts:
                     duration = time_val - starts[resource]
                     comm_cumulative += duration
+                    phase = start_phases.get(resource, event.phase)
+                    if phase == Phase.BACKWARD:
+                        comm_bw_cumulative += duration
+                    else:
+                        comm_fw_cumulative += duration
         
-        # PP 并行：各 stage 并行执行，实际时间 = 累计时间 / pp
+        # PP 并行：各 stage 并行执行
         pp = ir.metadata.get("pp", 1)
         forward_time = forward_cumulative / pp if pp > 0 else forward_cumulative
         backward_time = backward_cumulative / pp if pp > 0 else backward_cumulative
         comm_time = comm_cumulative / pp if pp > 0 else comm_cumulative
+        comm_fw = comm_fw_cumulative / pp if pp > 0 else comm_fw_cumulative
+        comm_bw = comm_bw_cumulative / pp if pp > 0 else comm_bw_cumulative
+        
+        # 单独统计 recompute 时间（通过 _RE 后缀）
+        recompute_time = self._compute_recompute_time(ir, pp)
         
         # 计算 bubble time
-        # bubble = (pp - 1) × 单个 micro-batch 的 stage 时间
+        # 每个 stage 的实际执行时间 = FW + recompute + BW + comm
         num_microbatches = ir.metadata.get("num_microbatches", 1)
         if pp > 1 and num_microbatches > 0:
-            single_stage_time = forward_time + backward_time + comm_time
+            single_stage_time = forward_time + recompute_time + backward_time + comm_time
             bubble_time = (pp - 1) * single_stage_time / num_microbatches
         else:
             bubble_time = 0
+        
+        # 迭代时间 = 最后一个 op 结束时间 - 第一个 op 开始时间
+        iteration_time = iteration_end - iteration_start if iteration_start < float('inf') else 0
         
         return TimeBreakdown(
             forward=forward_time,
             backward=backward_time,
             communication=comm_time,
             bubble=bubble_time,
-        )
+            recompute=recompute_time,
+        ), comm_fw, comm_bw, iteration_time
+    
+    def _compute_recompute_time(self, ir: "TimelineIR", pp: int) -> float:
+        """单独统计 recompute 时间（通过 _RE 后缀识别）."""
+        recompute_cumulative = 0.0
+        starts: Dict[str, float] = {}
+        start_op_types: Dict[str, str] = {}
+        
+        for event in ir.events:
+            resource = event.resource_id
+            time_val = self._eval_expr(event.time)
+            
+            if event.event_type == EventType.COMPUTE_START:
+                starts[resource] = time_val
+                start_op_types[resource] = event.op_type or ""
+            
+            elif event.event_type == EventType.COMPUTE_END:
+                if resource in starts:
+                    op_type = start_op_types.get(resource, event.op_type or "")
+                    if "_RE" in op_type:
+                        duration = time_val - starts[resource]
+                        recompute_cumulative += duration
+        
+        return recompute_cumulative / pp if pp > 0 else recompute_cumulative
     
     def _compute_total_flops(self, ir: TimelineIR) -> float:
         """累加 FLOPs."""

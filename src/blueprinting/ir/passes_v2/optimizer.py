@@ -151,15 +151,79 @@ class OptimizerPass(Pass):
         """为前向 Op 生成对应的反向 Op.
         
         反向 Op 按逆序排列。
+        如果启用了 gradient_checkpointing，会在反向 Op 前插入 recompute Op。
         """
         backward_ops = []
         
         # 逆序遍历前向 Op
         for fw_op in reversed(forward_ops):
+            # 如果启用 gradient checkpointing，先生成 recompute Op
+            if self.config.gradient_checkpointing:
+                recompute_ops = self._create_recompute_for_op(fw_op)
+                backward_ops.extend(recompute_ops)
+            
+            # 生成反向 Op
             bw_ops = self._create_backward_for_op(fw_op)
             backward_ops.extend(bw_ops)
         
         return backward_ops
+    
+    def _create_recompute_for_op(self, fw_op: ScheduledOp) -> List[ScheduledOp]:
+        """为前向 Op 创建重计算 Op.
+        
+        重计算 Op 在反向传播时重新执行前向计算以恢复激活值。
+        仅在 gradient_checkpointing 启用时调用。
+        """
+        op_type = fw_op.op_type
+        
+        # 跳过不需要重计算的 Op
+        # 通信 Op 不需要重计算
+        if op_type in ("Send", "Recv", "OptimizerStep", "AllReduce", "AllGather", "ReduceScatter"):
+            return []
+        
+        # 根据 recompute_mode 决定哪些 Op 需要重计算
+        if self.config.recompute_mode == "attn_only":
+            # 只重计算 attention 相关的 Op
+            if not self._is_attention_op(fw_op):
+                return []
+        elif self.config.recompute_mode == "none":
+            return []
+        # recompute_mode == "full" 时重计算所有 Op
+        
+        # 创建 recompute Op
+        re_name = f"{fw_op.op.name}_recompute" if fw_op.op else f"recompute_{id(fw_op)}"
+        attrs = fw_op.op.attrs.copy() if fw_op.op else {}
+        attrs["is_recompute"] = True
+        
+        re_op = OpNode(
+            name=re_name,
+            op_type=f"{op_type}_RE",  # 用 _RE 后缀标记重计算 Op
+            inputs=[],
+            outputs=[],
+            attrs=attrs,
+            source_block=fw_op.op.source_block if fw_op.op else None,
+            flops=fw_op.op.flops if fw_op.op else 0,
+            memory_bytes=fw_op.op.memory_bytes if fw_op.op else 0,
+        )
+        
+        sched_re = ScheduledOp(
+            op=re_op,
+            device=fw_op.device,
+            stage=fw_op.stage,
+            stream=fw_op.stream,
+            phase=Phase.BACKWARD,  # recompute 属于 BACKWARD phase
+            start=0,  # 由调用者设置
+            duration=fw_op.duration,  # 重计算时间约等于前向时间
+        )
+        
+        return [sched_re]
+    
+    def _is_attention_op(self, op: ScheduledOp) -> bool:
+        """判断是否是 attention 相关的 Op."""
+        if not op.op or not op.op.source_block:
+            return False
+        source = op.op.source_block.lower()
+        return "attn" in source or "attention" in source
     
     def _create_backward_for_op(self, fw_op: ScheduledOp) -> List[ScheduledOp]:
         """为单个前向 Op 创建反向 Op.

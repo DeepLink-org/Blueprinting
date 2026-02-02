@@ -61,7 +61,7 @@ class Phase(Enum):
     
     用于区分 Op 属于哪个训练阶段:
     - FORWARD: 前向传播
-    - BACKWARD: 反向传播 (包括 agrad 和 wgrad)
+    - BACKWARD: 反向传播 (包括 recompute, agrad, wgrad)
     - OPTIMIZER: 优化器更新
     """
     FORWARD = "forward"
@@ -844,16 +844,17 @@ class TimeBreakdown:
     backward: float = 0
     communication: float = 0
     bubble: float = 0
+    recompute: float = 0  # 激活重计算时间 (gradient checkpointing)
     
     @property
     def compute(self) -> float:
-        """计算时间 = forward + backward."""
-        return self.forward + self.backward
+        """计算时间 = forward + backward + recompute."""
+        return self.forward + self.backward + self.recompute
     
     @property
     def total(self) -> float:
         """总时间 = compute + communication + bubble."""
-        return self.forward + self.backward + self.communication + self.bubble
+        return self.forward + self.backward + self.recompute + self.communication + self.bubble
 
 
 @dataclass
@@ -871,6 +872,10 @@ class BlockMetrics:
     forward_time: float = 0
     backward_time: float = 0
     communication_time: float = 0
+    
+    # TP 通信时间 (前向/反向分开)
+    comm_fw: float = 0  # 前向阶段的 TP 通信
+    comm_bw: float = 0  # 反向阶段的 TP 通信
     
     @property
     def compute_time(self) -> float:
