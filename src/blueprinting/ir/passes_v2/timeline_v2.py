@@ -330,6 +330,7 @@ class SimulatePass(Pass):
             memory_breakdown=memory_breakdown,
             total_flops=total_flops,
             config=config,
+            timeline=ir,  # 保存 TimelineIR 引用
         )
     
     def _eval_expr(self, expr) -> float:

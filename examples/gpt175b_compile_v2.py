@@ -726,6 +726,7 @@ def main():
     parser.add_argument("--layers", type=int, default=None, help="覆盖层数 (用于快速测试)")
     parser.add_argument("--debug", action="store_true", help="打印调试信息")
     parser.add_argument("--skip-calculon", action="store_true", help="跳过 Calculon 对比")
+    parser.add_argument("--trace", type=str, default=None, help="输出 Chrome Trace JSON 文件路径")
     parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
     args = parser.parse_args()
     
@@ -834,6 +835,12 @@ def main():
     console.print(f"  Peak Memory: {result.peak_memory/1e9:.2f} GB")
     console.print(f"  Total FLOPs: {result.total_flops:.2e}")
     console.print(f"  MFU: {result.mfu:.1%}")
+    
+    # 导出 Chrome Trace (可选)
+    if args.trace and result.timeline:
+        result.timeline.save_chrome_trace(args.trace)
+        console.print(f"\n  [green]✓[/green] Chrome Trace 已保存: {args.trace}")
+        console.print(f"    打开方式: chrome://tracing 或 https://ui.perfetto.dev")
     
     # 3. Calculon 对比 (可选)
     calc_stats = None

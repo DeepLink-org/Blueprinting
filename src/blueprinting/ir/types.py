@@ -553,6 +553,146 @@ class TimelineIR:
             return 0
         return max(e.time for e in self.events)
     
+    def to_chrome_trace(self, time_unit: str = "ms") -> Dict[str, Any]:
+        """导出为 Chrome Trace 格式.
+        
+        可以在 chrome://tracing 或 https://ui.perfetto.dev 中打开。
+        
+        Args:
+            time_unit: 时间单位 ("ms" 或 "us")，Chrome Trace 使用微秒
+            
+        Returns:
+            Chrome Trace 格式的字典
+        """
+        # Chrome Trace 使用微秒
+        time_scale = 1000.0 if time_unit == "ms" else 1.0
+        
+        trace_events = []
+        
+        # 将 device 映射到 pid，stream 映射到 tid
+        # 为了更好的可视化，按 phase 分组
+        phase_to_tid = {
+            Phase.FORWARD: 1,
+            Phase.BACKWARD: 2,
+            Phase.OPTIMIZER: 3,
+        }
+        
+        for event in self.events:
+            # 计算时间戳（微秒）
+            time_val = event.time
+            if isinstance(time_val, Expr):
+                try:
+                    time_val = float(time_val)
+                except (TypeError, ValueError):
+                    time_val = 0
+            ts = time_val * time_scale  # 转换为微秒
+            
+            # 确定 phase 类型
+            ph = None
+            if event.event_type == EventType.COMPUTE_START:
+                ph = "B"  # Begin
+            elif event.event_type == EventType.COMPUTE_END:
+                ph = "E"  # End
+            elif event.event_type == EventType.COMM_START:
+                ph = "B"
+            elif event.event_type == EventType.COMM_END:
+                ph = "E"
+            elif event.event_type == EventType.ALLOC:
+                ph = "i"  # Instant event
+            elif event.event_type == EventType.FREE:
+                ph = "i"
+            
+            if ph is None:
+                continue
+            
+            # 确定类别
+            if event.event_type in (EventType.COMM_START, EventType.COMM_END):
+                cat = "communication"
+            elif event.event_type in (EventType.ALLOC, EventType.FREE):
+                cat = "memory"
+            else:
+                cat = event.phase.value if event.phase else "compute"
+            
+            # 确定 tid（按 phase 和 stream 分组）
+            base_tid = phase_to_tid.get(event.phase, 0)
+            stream_offset = 10 if event.stream == StreamType.COMM else 0
+            tid = base_tid + stream_offset
+            
+            trace_event = {
+                "name": event.resource_id,
+                "cat": cat,
+                "ph": ph,
+                "ts": ts,
+                "pid": event.device,
+                "tid": tid,
+            }
+            
+            # 添加额外信息
+            if event.metadata:
+                trace_event["args"] = event.metadata.copy()
+            else:
+                trace_event["args"] = {}
+            
+            trace_event["args"]["op_type"] = event.op_type
+            trace_event["args"]["phase"] = event.phase.value if event.phase else ""
+            
+            # 对于内存事件，添加大小信息
+            if event.event_type in (EventType.ALLOC, EventType.FREE):
+                trace_event["args"]["bytes"] = event.size
+                trace_event["s"] = "g"  # global scope for instant events
+            
+            trace_events.append(trace_event)
+        
+        # 添加元数据
+        metadata = []
+        
+        # 进程名称
+        devices = set(e.device for e in self.events)
+        for device in devices:
+            metadata.append({
+                "name": "process_name",
+                "ph": "M",
+                "pid": device,
+                "args": {"name": f"GPU {device}"}
+            })
+        
+        # 线程名称
+        thread_names = {
+            1: "Forward (Compute)",
+            2: "Backward (Compute)",
+            3: "Optimizer (Compute)",
+            11: "Forward (Comm)",
+            12: "Backward (Comm)",
+            13: "Optimizer (Comm)",
+        }
+        for tid, name in thread_names.items():
+            for device in devices:
+                metadata.append({
+                    "name": "thread_name",
+                    "ph": "M",
+                    "pid": device,
+                    "tid": tid,
+                    "args": {"name": name}
+                })
+        
+        return {
+            "traceEvents": metadata + trace_events,
+            "displayTimeUnit": "ms",
+            "metadata": self.metadata,
+        }
+    
+    def save_chrome_trace(self, path: str, time_unit: str = "ms") -> None:
+        """保存为 Chrome Trace JSON 文件.
+        
+        Args:
+            path: 输出文件路径
+            time_unit: 时间单位
+        """
+        import json
+        trace = self.to_chrome_trace(time_unit)
+        with open(path, "w") as f:
+            json.dump(trace, f, indent=2)
+    
     def __repr__(self) -> str:
         return f"TimelineIR(events={len(self.events)})"
 
@@ -633,6 +773,7 @@ class SimulationResult:
         block_metrics: 单层指标 (单个 Transformer 层)
         total_flops: 总计算量
         config: 配置信息
+        timeline: TimelineIR 引用 (用于导出 trace)
     """
     peak_memory: Union[int, float] = 0
     e2e_time: float = 0
@@ -642,6 +783,7 @@ class SimulationResult:
     block_metrics: Optional[BlockMetrics] = None  # 单层指标
     total_flops: Union[int, float] = 0
     config: Dict[str, Any] = field(default_factory=dict)
+    timeline: Optional["TimelineIR"] = None  # TimelineIR 引用，用于导出 Chrome Trace
     
     @property
     def mfu(self) -> float:
