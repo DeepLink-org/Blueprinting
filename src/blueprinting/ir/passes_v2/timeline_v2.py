@@ -15,7 +15,7 @@ from sympy import Expr
 
 from .base import Pass
 from ..types import (
-    ScheduleIR, ScheduledOp,
+    ScheduleIR, ScheduledOp, Phase,
     TimelineIR, TimelineEvent, EventType, StreamType, MemorySnapshot,
 )
 
@@ -70,7 +70,7 @@ class TimelinePassV2(Pass):
     def _add_op_events(self, op: ScheduledOp, timeline: TimelineIR) -> None:
         """为单个 Op 添加计算/通信事件."""
         # 判断是计算还是通信
-        # 注意: backward 通信 Op 的类型是 AllReduce_BW 等，需要检查基础类型
+        # 使用 op_type 的基础类型判断（移除 _BW 后缀）
         base_type = op.op_type.replace("_BW", "") if op.op_type else ""
         is_comm = base_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv")
         
@@ -91,6 +91,7 @@ class TimelinePassV2(Pass):
             device=op.device,
             stream=stream,
             op_type=op.op_type,
+            phase=op.phase,
             metadata={"source_block": op.op.source_block if op.op else None},
         ))
         
@@ -102,6 +103,7 @@ class TimelinePassV2(Pass):
             device=op.device,
             stream=stream,
             op_type=op.op_type,
+            phase=op.phase,
         ))
     
     def _add_memory_events(self, ops: List[ScheduledOp], timeline: TimelineIR) -> None:
@@ -452,10 +454,10 @@ class SimulatePass(Pass):
             elif event.event_type == EventType.COMPUTE_END:
                 if resource in starts:
                     duration = time_val - starts[resource]
-                    op_type = event.op_type or ""
-                    if "_BW" in op_type:
+                    # 使用 phase 判断阶段
+                    if event.phase == Phase.BACKWARD:
                         backward_time += duration
-                    elif "Optimizer" in op_type:
+                    elif event.phase == Phase.OPTIMIZER:
                         # 优化器时间计入 backward
                         backward_time += duration
                     else:

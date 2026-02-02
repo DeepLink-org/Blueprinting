@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Union
 from sympy import Expr
 
 from .base import Pass
-from ..types import ScheduleIR, ScheduledOp, OpNode
+from ..types import ScheduleIR, ScheduledOp, OpNode, Phase
 
 
 @dataclass
@@ -187,6 +187,7 @@ class OptimizerPass(Pass):
             device=fw_op.device,
             stage=fw_op.stage,
             stream=fw_op.stream,
+            phase=Phase.BACKWARD,
             start=0,  # 由调用者设置
             duration=bw_duration,
         )
@@ -308,6 +309,7 @@ class OptimizerPass(Pass):
             device=0,
             stage=0,
             stream="compute",
+            phase=Phase.OPTIMIZER,
             start=start_time,
             duration=duration,
         )

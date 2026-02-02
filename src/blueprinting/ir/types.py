@@ -53,6 +53,23 @@ if TYPE_CHECKING:
 
 
 # ==============================================================================
+# Common Enums
+# ==============================================================================
+
+class Phase(Enum):
+    """训练阶段枚举.
+    
+    用于区分 Op 属于哪个训练阶段:
+    - FORWARD: 前向传播
+    - BACKWARD: 反向传播 (包括 agrad 和 wgrad)
+    - OPTIMIZER: 优化器更新
+    """
+    FORWARD = "forward"
+    BACKWARD = "backward"
+    OPTIMIZER = "optimizer"
+
+
+# ==============================================================================
 # Layer 1: Graph IR (Block-level)
 # ==============================================================================
 
@@ -279,6 +296,7 @@ class ScheduledOp:
         device: 设备 ID
         stage: Pipeline 阶段
         stream: 执行流 (compute, comm)
+        phase: 训练阶段 (forward, backward, optimizer)
         
         # 时序信息
         start: 开始时间
@@ -291,6 +309,7 @@ class ScheduledOp:
     device: int = 0
     stage: int = 0
     stream: str = "compute"
+    phase: Phase = Phase.FORWARD
     
     # Timing
     start: Union[float, Expr] = 0
@@ -460,6 +479,7 @@ class TimelineEvent:
         stream: 执行流
         size: 字节数 (用于内存事件)
         op_type: Op 类型 (用于计算/通信事件)
+        phase: 训练阶段 (forward, backward, optimizer)
         metadata: 额外元数据
     """
     time: Union[float, Expr]
@@ -469,6 +489,7 @@ class TimelineEvent:
     stream: StreamType = StreamType.COMPUTE
     size: Union[int, Expr] = 0
     op_type: str = ""
+    phase: Phase = Phase.FORWARD
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def __lt__(self, other: "TimelineEvent") -> bool:
@@ -617,6 +638,8 @@ class SimulationResult:
 # ==============================================================================
 
 __all__ = [
+    # Common
+    "Phase",
     # Graph IR
     "BlockNode",
     "GraphIR",

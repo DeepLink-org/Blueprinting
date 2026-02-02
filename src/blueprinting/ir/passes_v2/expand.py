@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from .base import Pass
 from ..types import (
     GraphIR, BlockNode,
-    ScheduleIR, OpNode, ScheduledOp,
+    ScheduleIR, OpNode, ScheduledOp, Phase,
 )
 from ..ops import get_block_def
 
@@ -87,6 +87,7 @@ class ExpandContext:
             device=self.device,
             stage=self.stage,
             stream="comm" if op_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv") else "compute",
+            phase=Phase.FORWARD,  # ExpandPass 生成的都是 forward Op
             # timing 由 SchedulePass 填充
             start=0,
             duration=0,

@@ -19,7 +19,7 @@ from enum import Enum
 from copy import deepcopy
 
 from .base import Pass
-from ..types import ScheduleIR, ScheduledOp, OpNode
+from ..types import ScheduleIR, ScheduledOp, OpNode, Phase
 
 
 class PPScheduleMode(Enum):
@@ -315,6 +315,7 @@ class PipelineSchedulePass(Pass):
             device=op.device,
             stage=op.stage,
             stream=op.stream,
+            phase=op.phase,  # 保留原 op 的 phase
             start=start_time,
             duration=op.duration,
         )
