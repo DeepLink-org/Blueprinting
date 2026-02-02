@@ -8,6 +8,7 @@
 - ALLOC / FREE 事件 (追踪内存分配)
 """
 
+from __future__ import annotations
 from typing import Dict, List, Optional, Set, Tuple, Union
 from collections import defaultdict
 
@@ -17,6 +18,7 @@ from .base import Pass
 from ..types import (
     ScheduleIR, ScheduledOp, Phase,
     TimelineIR, TimelineEvent, EventType, StreamType, MemorySnapshot,
+    MemoryBreakdown, TimeBreakdown,
 )
 
 
@@ -41,9 +43,14 @@ class TimelinePassV2(Pass):
             metadata=ir.metadata.copy(),
         )
         
+        # 计算并设置 layers_per_stage（上游 Pass 应该设置，这里做保底）
+        pp = ir.metadata.get("pp", 1)
+        num_layers = ir.metadata.get("num_layers", 1)
+        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+        timeline.metadata["layers_per_stage"] = layers_per_stage
+        
         # 收集所有 Op 用于内存分析
         all_ops = list(ir.iter_ops())
-        
         
         # 累加 FLOPs
         total_flops = 0
@@ -265,78 +272,56 @@ class SimulatePass(Pass):
         self.training = training
     
     def run(self, ir: TimelineIR):
+        """观测 TimelineIR，统计各项指标.
+        
+        SimulatePass 是观测者，只对 TimelineIR 进行统计，不做计算：
+        - 从事件统计总时间（forward, backward, communication）
+        - 从事件追踪峰值内存
+        - 从 metadata 读取配置，计算派生指标
+        """
         from ..types import SimulationResult, MemoryBreakdown, TimeBreakdown, BlockMetrics
         
-        # 从 metadata 获取并行配置
+        # ========== 从 metadata 读取配置（不计算） ==========
         pp = ir.metadata.get("pp", 1)
-        num_layers = ir.metadata.get("num_layers", 1)
         num_microbatches = ir.metadata.get("num_microbatches", 1)
-        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+        layers_per_stage = ir.metadata.get("layers_per_stage", 1)
+        total_flops = ir.metadata.get("total_flops", 0)
         
-        # 计算结束时间
-        # PipelineSchedulePass 已经计算了正确的 1F1B 调度时间
-        # TimelineIR.end_time 就是正确的 E2E 时间（考虑了 PP 并行和 bubble）
+        # ========== 观测 E2E 时间 ==========
         e2e_time = self._eval_expr(ir.end_time) if ir.events else 0
         
-        # 内存追踪 (per-GPU)
-        peak_memory, memory_breakdown = self._track_memory(ir, pp=pp, layers_per_stage=layers_per_stage)
+        # ========== 观测内存（遍历事件统计） ==========
+        peak_memory, memory_breakdown = self._observe_memory(ir)
         
-        # 时间分解 (per-layer per-microbatch)
-        time_breakdown = self._compute_time_breakdown(ir, num_layers=num_layers, num_microbatches=num_microbatches)
+        # ========== 观测时间（遍历事件统计总时间） ==========
+        total_time_breakdown = self._observe_time(ir)
         
-        # 计算总时间分解 (整个迭代)
-        # 在 PP 下，不同 stage 并行执行，所以用 layers_per_stage 而不是 num_layers
-        time_multiplier = layers_per_stage * num_microbatches
-        total_time_breakdown = TimeBreakdown(
-            forward=time_breakdown.forward * time_multiplier,
-            backward=time_breakdown.backward * time_multiplier,
-            communication=time_breakdown.communication * time_multiplier,
-            bubble=time_breakdown.bubble,  # bubble 已经是总时间
+        # ========== 派生指标（从观测结果计算） ==========
+        # per-layer per-microbatch 时间
+        time_divisor = layers_per_stage * num_microbatches if layers_per_stage > 0 and num_microbatches > 0 else 1
+        time_breakdown = TimeBreakdown(
+            forward=total_time_breakdown.forward / time_divisor,
+            backward=total_time_breakdown.backward / time_divisor,
+            communication=total_time_breakdown.communication / time_divisor,
+            bubble=total_time_breakdown.bubble,  # bubble 是总时间
         )
         
-        # 计算单层指标 (BlockMetrics)
-        # 单层内存 = per-GPU 内存 / layers_per_stage
-        block_weights = memory_breakdown.weights / layers_per_stage if layers_per_stage > 0 else 0
-        block_optimizer = memory_breakdown.optimizer_states / layers_per_stage if layers_per_stage > 0 else 0
+        # 单层指标
         block_metrics = BlockMetrics(
-            weights=block_weights,
-            activations=memory_breakdown.activations,  # 激活是单层的
-            optimizer_states=block_optimizer,
+            weights=memory_breakdown.weights / layers_per_stage if layers_per_stage > 0 else 0,
+            activations=memory_breakdown.activations,
+            optimizer_states=memory_breakdown.optimizer_states / layers_per_stage if layers_per_stage > 0 else 0,
             forward_time=time_breakdown.forward,
             backward_time=time_breakdown.backward,
             communication_time=time_breakdown.communication,
         )
         
-        # 累加 FLOPs
-        # total_flops 是所有 micro-batch × 所有层的 FLOPs 总和
-        total_flops = self._compute_total_flops(ir)
-        
-        # 计算 MFU (Model FLOPs Utilization)
-        # MFU = Actual_FLOPs / (Peak_FLOPs × Time × Num_GPUs)
-        # 
-        # 对于 PP 并行：
-        # - total_flops 是整个迭代的计算量
-        # - e2e_time 是 PP 并行后的时间
-        # - 需要考虑 GPU 数量
-        #
-        # 正确的 MFU 计算：
-        # per_gpu_flops = total_flops / num_gpus (每个 GPU 的 FLOPs)
-        # MFU = per_gpu_flops / (peak_flops × e2e_time)
-        #     = total_flops / (peak_flops × e2e_time × num_gpus)
-        #
-        # 但实际上，在 PP 并行下：
-        # - 每个 GPU 只处理 layers_per_stage 层
-        # - total_flops 已经是所有层的总和
-        # 所以 per_gpu_flops = total_flops / pp
-        per_gpu_flops = total_flops / pp if pp > 0 else total_flops
-        mfu = self._compute_mfu(per_gpu_flops, e2e_time) if e2e_time > 0 else 0
-        
-        # 确保 config 中有 peak_tflops 以计算 MFU
+        # ========== 输出配置 ==========
         config = ir.metadata.copy()
         config["peak_tflops"] = self.peak_tflops
         config["tokens_per_second"] = self._compute_throughput(ir, e2e_time)
         
-        result = SimulationResult(
+        return SimulationResult(
             peak_memory=peak_memory,
             e2e_time=e2e_time,
             time_breakdown=time_breakdown,
@@ -346,8 +331,6 @@ class SimulatePass(Pass):
             total_flops=total_flops,
             config=config,
         )
-        
-        return result
     
     def _eval_expr(self, expr) -> float:
         """计算表达式值（支持符号替换）."""
@@ -366,15 +349,14 @@ class SimulatePass(Pass):
         
         return 0.0
     
-    def _track_memory(self, ir: TimelineIR, pp: int = 1, layers_per_stage: int = 1) -> Tuple[float, "MemoryBreakdown"]:
-        """追踪内存使用，返回 per-GPU 的峰值和分解.
+    def _observe_memory(self, ir: TimelineIR) -> Tuple[float, MemoryBreakdown]:
+        """观测内存使用（遍历事件统计）.
         
-        Args:
-            ir: TimelineIR
-            pp: Pipeline Parallelism 度数
-            layers_per_stage: 每个 PP stage 的层数
+        这是观测者模式：只统计，不计算。
+        返回 per-GPU 的峰值内存和内存分解。
         """
         from ..types import MemoryBreakdown
+        pp = ir.metadata.get("pp", 1)
         
         current_memory = 0.0
         peak_memory = 0.0
@@ -452,21 +434,22 @@ class SimulatePass(Pass):
         
         return peak_per_gpu, breakdown
     
-    def _compute_time_breakdown(self, ir: TimelineIR, num_layers: int = 1, num_microbatches: int = 1) -> "TimeBreakdown":
-        """计算时间分解，返回 per-layer per-microbatch 的时间.
+    def _observe_time(self, ir: TimelineIR) -> TimeBreakdown:
+        """观测时间，返回总时间（遍历事件统计）.
         
-        Args:
-            ir: TimelineIR
-            num_layers: 总层数
-            num_microbatches: micro-batch 数量
+        这是观测者模式：只统计，不计算。
+        返回的是单个 PP stage 执行的实际时间（考虑 PP 并行）。
+        
+        注意：累计时间是所有 stage 的总和，但各 stage 并行执行，
+        所以实际时间 = 累计时间 / pp
         """
         from ..types import TimeBreakdown
         
-        forward_time = 0.0
-        backward_time = 0.0
-        comm_time = 0.0
+        forward_cumulative = 0.0
+        backward_cumulative = 0.0
+        comm_cumulative = 0.0
         
-        # 配对 START/END 事件
+        # 配对 START/END 事件，统计累计时间
         starts: Dict[str, float] = {}
         
         for event in ir.events:
@@ -479,45 +462,38 @@ class SimulatePass(Pass):
             elif event.event_type == EventType.COMPUTE_END:
                 if resource in starts:
                     duration = time_val - starts[resource]
-                    # 使用 phase 判断阶段
                     if event.phase == Phase.BACKWARD:
-                        backward_time += duration
+                        backward_cumulative += duration
                     elif event.phase == Phase.OPTIMIZER:
-                        # 优化器时间计入 backward
-                        backward_time += duration
+                        backward_cumulative += duration
                     else:
-                        forward_time += duration
+                        forward_cumulative += duration
             
             elif event.event_type == EventType.COMM_END:
                 if resource in starts:
                     duration = time_val - starts[resource]
-                    comm_time += duration
+                    comm_cumulative += duration
         
-        # 归一化为 per-layer per-microbatch 时间
-        # 总时间 = 单层时间 * num_layers * num_microbatches
-        time_divisor = num_layers * num_microbatches if num_layers > 0 and num_microbatches > 0 else 1
+        # PP 并行：各 stage 并行执行，实际时间 = 累计时间 / pp
+        pp = ir.metadata.get("pp", 1)
+        forward_time = forward_cumulative / pp if pp > 0 else forward_cumulative
+        backward_time = backward_cumulative / pp if pp > 0 else backward_cumulative
+        comm_time = comm_cumulative / pp if pp > 0 else comm_cumulative
         
         # 计算 bubble time
-        # 在 PP 并行下，各 stage 并行执行，累计时间会远大于 E2E 时间
-        # 因此不能用 E2E - compute_and_comm 来计算 bubble
-        # 
-        # 1F1B 调度的 bubble time 近似计算：
-        # bubble ≈ (PP - 1) × single_stage_time
-        # 其中 single_stage_time = (fw + bw + comm) / time_divisor × num_microbatches
-        pp = ir.metadata.get("pp", 1)
-        if pp > 1 and time_divisor > 0:
-            # 单个 stage 处理所有 micro-batch 的时间
-            single_stage_time = (forward_time + backward_time + comm_time) / pp
-            # bubble time = (pp - 1) × 单个 micro-batch 的 stage 时间
+        # bubble = (pp - 1) × 单个 micro-batch 的 stage 时间
+        num_microbatches = ir.metadata.get("num_microbatches", 1)
+        if pp > 1 and num_microbatches > 0:
+            single_stage_time = forward_time + backward_time + comm_time
             bubble_time = (pp - 1) * single_stage_time / num_microbatches
         else:
             bubble_time = 0
         
         return TimeBreakdown(
-            forward=forward_time / time_divisor,
-            backward=backward_time / time_divisor,
-            communication=comm_time / time_divisor,
-            bubble=bubble_time,  # bubble 是总时间
+            forward=forward_time,
+            backward=backward_time,
+            communication=comm_time,
+            bubble=bubble_time,
         )
     
     def _compute_total_flops(self, ir: TimelineIR) -> float:
