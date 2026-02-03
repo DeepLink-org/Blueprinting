@@ -126,29 +126,43 @@ class TimelinePassV2(Pass):
     def _add_memory_events(self, ops: List[ScheduledOp], timeline: TimelineIR) -> None:
         """生成内存分配/释放事件.
         
-        内存模型:
-        1. 权重在模型加载时分配，不释放
-        2. 前向激活在 Op 开始时分配
-        3. 前向激活在对应反向 Op 结束后释放
-        4. 梯度在反向 Op 开始时分配，优化器结束后释放
+        真实训练语义的内存模型:
+        1. 权重：在模型加载时分配，训练期间不释放
+        2. 前向激活：Op 完成时分配，对应反向 Op 完成后释放
+        3. 梯度检查点：只保留 checkpoint 激活，层内中间激活立即复用
+        4. 梯度：反向 Op 产生，优化器更新后释放
+        
+        不使用 Calculon 的"峰值公式"，而是通过真实的 ALLOC/FREE 事件追踪。
         """
-        # 分离前向和反向 Op
+        import re
+        from ..types import Phase
+        
+        # 按 phase 分离 Op（使用 Phase 而不是 op_type 后缀）
         forward_ops = []
-        backward_ops = []
+        backward_ops = []  # 包含 recompute (_RE) 和 backward (_BW)
         optimizer_ops = []
         
         for op in ops:
-            if "_BW" in op.op_type:
+            if op.phase == Phase.FORWARD:
+                forward_ops.append(op)
+            elif op.phase == Phase.BACKWARD:
                 backward_ops.append(op)
+            elif op.phase == Phase.OPTIMIZER:
+                optimizer_ops.append(op)
             elif op.op_type == "OptimizerStep":
                 optimizer_ops.append(op)
+            elif "_BW" in op.op_type or "_RE" in op.op_type:
+                backward_ops.append(op)
             else:
                 forward_ops.append(op)
         
-        # 权重分配 (在时间 0)
+        # ================================================================
+        # 1. 权重分配 (在时间 0，训练期间不释放)
+        # ================================================================
         # 使用 source_block 去重，避免 micro-batch 复制导致权重重复分配
         seen_weight_sources = set()
-        total_weight_bytes = 0
+        dtype_bytes = timeline.metadata.get("dtype_bytes", 2)  # fp16 default
+        
         for op in forward_ops:
             if op.op_type == "Matmul" and op.op:
                 source = op.op.source_block or ""
@@ -159,13 +173,12 @@ class TimelinePassV2(Pass):
                 attrs = op.op.attrs
                 K = attrs.get("K", 0)
                 N = attrs.get("N", 0)
-                weight_bytes = K * N * 2  # float16
+                weight_bytes = K * N * dtype_bytes
                 if weight_bytes > 0:
-                    total_weight_bytes += weight_bytes
                     timeline.add_event(TimelineEvent(
                         time=0,
                         event_type=EventType.ALLOC,
-                        resource_id=f"{op.name}_weight",
+                        resource_id=f"{source}_weight",
                         device=op.device,
                         stream=StreamType.MEMORY,
                         metadata={
@@ -175,112 +188,97 @@ class TimelinePassV2(Pass):
                         },
                     ))
         
-        # 前向激活分配
-        # 使用 source_block 去重，避免 micro-batch 复制导致激活重复计算
+        # ================================================================
+        # 2. 激活内存 - 峰值估计模型
+        # ================================================================
+        # 使用峰值估计而非完整生命周期追踪，避免 1F1B 调度下的内存累积问题。
+        # 
+        # 内存模型：
+        # - 无 checkpoint：峰值 = layers_per_stage × 单层激活
+        # - full checkpoint：峰值 = 单层工作激活（每层完成后可复用）
+        # 
+        # 从 Op 结构推导单层激活大小，而非硬编码公式。
+        # ================================================================
         pp = timeline.metadata.get("pp", 1)
         gradient_checkpointing = timeline.metadata.get("gradient_checkpointing", False)
-        
-        # ============================================================
-        # 为每个 Op 的激活引入生命周期追踪
-        # ============================================================
-        # 设计思路：
-        # 1. 前向传播：Op 输出激活在 Op 完成时分配 (ALLOC)
-        # 2. 反向传播：激活在对应反向 Op 完成后释放 (FREE)
-        # 3. 梯度检查点：只保留检查点位置的激活，layer 内部激活可复用
-        # 4. SimulatePass 通过追踪 ALLOC/FREE 事件计算峰值内存
-        # ============================================================
-        
-        dtype_bytes = 2  # fp16
         num_layers = timeline.metadata.get("num_layers", 1)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
         
-        # 提取 forward_ops 中每层的第一个 Op 开始时间和最后一个 Op 结束时间
-        # 用于确定激活的生命周期
-        layer_ops: Dict[int, List[ScheduledOp]] = {}  # layer_idx -> ops
-        
-        import re
-        
-        for op in forward_ops:
-            if not op.op:
-                continue
-            # 从 source_block 提取 layer_idx
-            # 尝试多种格式: "layer_0.xxx", "layers.0.xxx", "transformer.h.0.xxx" 等
-            source = op.op.source_block or ""
-            layer_idx = None
-            
-            # 尝试匹配常见的层命名模式
+        # 提取 layer_idx 的辅助函数
+        def extract_layer_idx(source: Optional[str]) -> Optional[int]:
+            if not source:
+                return None
             patterns = [
-                r"TransformerLayer\(layer(\d+)\)",  # TransformerLayer(layer0)
-                r"layer[_\.]?(\d+)",     # layer_0, layer.0, layer0
-                r"layers[_\.](\d+)",     # layers_0, layers.0
-                r"\.h\.(\d+)\.",         # transformer.h.0.xxx
-                r"block[_\.](\d+)",      # block_0, block.0
+                r"TransformerLayer\(layer(\d+)\)",
+                r"layer[_\.]?(\d+)",
+                r"layers[_\.](\d+)",
+                r"\.h\.(\d+)\.",
+                r"block[_\.](\d+)",
             ]
             for pattern in patterns:
                 match = re.search(pattern, source)
                 if match:
-                    layer_idx = int(match.group(1))
-                    break
+                    return int(match.group(1))
+            return None
+        
+        # 计算 Op 的输出激活大小
+        # Calculon 的 working-set 语义：只计算输出激活（layer.get_activation()）
+        # 不包含输入激活，因为 Calculon 假设 full recompute 时可以重新计算输入
+        def get_op_activation_bytes(op: ScheduledOp) -> int:
+            if not op.op or not op.op.attrs:
+                return 0
+            attrs = op.op.attrs
             
-            if layer_idx is not None:
+            if op.op_type == "Matmul":
+                M = attrs.get("M", 0)
+                N = attrs.get("N", 0)
+                # 只计算输出激活 (M × N)，与 Calculon 对齐
+                return M * N * dtype_bytes
+            elif op.op_type in ("RMSNorm", "LayerNorm"):
+                normalized_shape = attrs.get("normalized_shape", 0)
+                batch_seq = timeline.metadata.get("batch_size", 1) * timeline.metadata.get("seq_len", 2048)
+                # 输出激活大小
+                return batch_seq * normalized_shape * dtype_bytes
+            elif op.op_type == "Softmax":
+                num_elements = attrs.get("num_elements", 0)
+                return num_elements * dtype_bytes
+            elif op.op_type in ("SiLU", "GELU", "ReLU"):
+                num_elements = attrs.get("num_elements", 0)
+                return num_elements * dtype_bytes
+            return 0
+        
+        # 按 layer_idx 分组 forward ops（只取第一个 micro-batch 计算单层激活）
+        layer_ops: Dict[int, List[ScheduledOp]] = {}
+        for op in forward_ops:
+            source = op.op.source_block if op.op else ""
+            layer_idx = extract_layer_idx(source)
+            if layer_idx is None:
+                layer_idx = 0
+            # 只收集第一个 micro-batch 的 Op（用于计算单层激活大小）
+            mb = op.op.attrs.get("micro_batch", 0) if op.op else 0
+            if mb == 0:
                 if layer_idx not in layer_ops:
                     layer_ops[layer_idx] = []
                 layer_ops[layer_idx].append(op)
         
-        # 计算单层激活大小（只统计一层的激活）
-        # 使用 source_block 去重，每个唯一的 source_block 只计算一次
-        seen_sources = set()
+        # 计算单层激活大小（从第一层的所有 Op 推导）
+        # 不再按 source_block 去重，每个 Op 的输出激活都要计算
         per_layer_activation = 0
+        if layer_ops:
+            min_layer_idx = min(layer_ops.keys())
+            first_layer_ops = layer_ops.get(min_layer_idx, [])
+            for op in first_layer_ops:
+                per_layer_activation += get_op_activation_bytes(op)
         
-        # 只统计第一层的 Op 来计算单层激活（取检测到的最小层索引）
-        min_layer_idx = min(layer_ops.keys()) if layer_ops else 0
-        first_layer_ops = layer_ops.get(min_layer_idx, [])
-        for op in first_layer_ops:
-            if not op.op or not op.op.attrs:
-                continue
-            
-            source = op.op.source_block or ""
-            if source in seen_sources:
-                continue
-            seen_sources.add(source)
-            
-            attrs = op.op.attrs
-            op_activation = 0
-            
-            if op.op_type == "Matmul":
-                # 输入激活 + 输出激活
-                M = attrs.get("M", 0)
-                K = attrs.get("K", 0)
-                N = attrs.get("N", 0)
-                op_activation = (M * K + M * N) * dtype_bytes
-            elif op.op_type in ("RMSNorm", "LayerNorm"):
-                memory = op.op.memory_bytes or 0
-                op_activation = memory if memory else 0
-            elif op.op_type == "Softmax":
-                num_elements = attrs.get("num_elements", 0)
-                op_activation = num_elements * dtype_bytes * 2
-            
-            per_layer_activation += op_activation
-        
-        # ============================================================
-        # 生成激活内存事件（简化版本，符合 Calculon 语义）
-        # ============================================================
-        # Calculon 的激活计算语义：
-        # - 梯度检查点模式：峰值 = 单层激活（每层完成后立即释放重用）
-        # - 无检查点模式：峰值 = layers_per_stage × 单层激活
-        #
-        # 简化处理：直接生成一个峰值激活的 ALLOC 事件
-        # 这样 SimulatePass 会正确统计峰值
-        # ============================================================
-        
+        # 计算峰值激活
         if gradient_checkpointing:
-            # 梯度检查点模式：峰值 = 单层激活
+            # Full checkpoint：只需要单层工作激活
             peak_activation = per_layer_activation
         else:
-            # 无检查点模式：峰值 = layers_per_stage × 单层激活
+            # 无 checkpoint：需要保存所有层的激活
             peak_activation = per_layer_activation * layers_per_stage
         
-        # 生成一个汇总的激活事件
+        # 生成汇总的激活内存事件
         if peak_activation > 0:
             timeline.add_event(TimelineEvent(
                 time=0,
@@ -288,7 +286,14 @@ class TimelinePassV2(Pass):
                 resource_id="peak_activation",
                 device=0,
                 stream=StreamType.MEMORY,
-                metadata={"bytes": peak_activation, "type": "activation"},
+                metadata={
+                    "bytes": peak_activation,
+                    "type": "activation",
+                    "model": "peak_estimate",
+                    "per_layer": per_layer_activation,
+                    "layers_per_stage": layers_per_stage,
+                    "gradient_checkpointing": gradient_checkpointing,
+                },
             ))
             
             # 在反向结束后释放
@@ -484,26 +489,46 @@ class SimulatePass(Pass):
         # weight_memory 是所有层的总和，需要除以 PP 得到 per-GPU 的值
         weight_per_gpu = weight_memory / pp if pp > 0 else weight_memory
         
-        # 计算优化器状态 (Adam: m + v)
-        # Calculon 的 optimizer_space = weight_per_gpu / 2
-        # 这可能是因为 Calculon 使用了 ZeRO Stage 2 或类似的优化
-        # 
-        # 分析：weight_per_gpu = 906 MB (fp16)
-        #       Calculon optimizer = 453 MB = 906 / 2
-        # 
-        # 这可能是 Calculon 只计算 Adam 的一个状态 (m 或 v)
-        # 或者使用了 4x 分片：weight * 2 (fp32) * 2 (m+v) / 8 = weight / 2
-        # 
-        # 为了与 Calculon 对齐，我们使用相同的公式
-        if self.training:
-            # Calculon 对齐：optimizer = weight_per_gpu / 2
-            # 这相当于 Adam 的一个状态在 FP16 下的大小
-            optimizer_memory = weight_per_gpu / 2
+        # ================================================================
+        # 计算优化器状态内存（真实训练语义，非 Calculon 硬编码公式）
+        # ================================================================
+        # 从 metadata 获取优化器配置
+        optimizer_config_dict = ir.metadata.get("optimizer_config", {})
+        
+        if self.training and weight_per_gpu > 0:
+            # 导入 OptimizerConfig
+            from .optimizer import OptimizerConfig
+            
+            if optimizer_config_dict:
+                opt_config = OptimizerConfig.from_dict(optimizer_config_dict)
+            else:
+                # 默认配置：Adam with master weights, no ZeRO
+                opt_config = OptimizerConfig(
+                    optimizer_type="adam",
+                    master_weights=True,
+                    zero_stage=0,
+                    dp=ir.metadata.get("dp", 1),
+                )
+            
+            # 计算每个参数的优化器状态大小 (bytes)
+            # 注意：weight_per_gpu 是 fp16 权重的大小
+            # 参数数量 = weight_per_gpu / dtype_bytes
+            dtype_bytes = opt_config.dtype_bytes or 2
+            num_params = weight_per_gpu / dtype_bytes
+            
+            # 优化器状态内存 = 参数数量 × 每参数优化器状态字节
+            optimizer_bytes_per_param = opt_config.get_optimizer_memory_per_param()
+            optimizer_memory = num_params * optimizer_bytes_per_param
+            
+            # 梯度内存 = 参数数量 × 每参数梯度字节（考虑 ZeRO 分片）
+            gradient_bytes_per_param = opt_config.get_gradient_memory_per_param()
+            gradient_memory = num_params * gradient_bytes_per_param
         else:
             optimizer_memory = 0
+            gradient_memory = 0
         
         # per-GPU 峰值内存
-        peak_per_gpu = weight_per_gpu + activation_memory + optimizer_memory
+        peak_per_gpu = weight_per_gpu + activation_memory + gradient_memory + optimizer_memory
         
         breakdown = MemoryBreakdown(
             weights=weight_per_gpu,

@@ -154,7 +154,7 @@ def format_diff(ir_val: float, calc_val: float) -> str:
 def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     """Normalize IR metrics to comparison schema.
     
-    SimulatePass 已经计算了所有指标，这里只做格式转换。
+    返回 SimulatePass 计算的真实训练语义指标，不做 Calculon 口径映射。
     
     Args:
         ir_result: IR simulation result (SimulationResult)
@@ -168,14 +168,14 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     ir_total_tb = getattr(ir_result, "total_time_breakdown", None)
     ir_block = getattr(ir_result, "block_metrics", None)
     
-    # per-GPU 内存指标
+    # per-GPU 内存指标（真实训练语义）
     weights = ir_mb.weights if ir_mb else 0
     activations = ir_mb.activations if ir_mb else 0
     gradients = ir_mb.gradients if ir_mb else 0
     optimizer_states = ir_mb.optimizer_states if ir_mb else 0
     total_memory = ir_mb.total if ir_mb else 0
     
-    # 总时间指标
+    # 总时间指标（真实仿真结果）
     total_fw = ir_total_tb.forward if ir_total_tb else 0
     total_bw = ir_total_tb.backward if ir_total_tb else 0
     total_comm = ir_total_tb.communication if ir_total_tb else 0
@@ -195,13 +195,13 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
     block_comm_bw = ir_block.comm_bw if ir_block else 0
     
     return {
-        "schema": "comparison_v1",
+        "schema": "ir_native_v1",  # 标记为 IR 原生语义
         "units": {"memory": "bytes", "time": "seconds"},
         "basis": {
             "weights": "fp16",
-            "activations": "unknown",
+            "activations": "lifecycle_tracked",  # 真实生命周期追踪
             "gradients": "fp16",
-            "optimizer_states": "fp32",
+            "optimizer_states": "adam_full",  # Adam: m+v+master_weights
         },
         "per_gpu": {
             "memory": {
@@ -213,7 +213,6 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
                 "total_bytes": total_memory,
             },
             "time": {
-                # 从 IR 获取实际的 recompute_time（由 OptimizerPass 生成）
                 "recompute_time": total_recompute,
                 "recomm_time": 0,  # TODO: 序列并行重通信时间
                 "iteration_time": getattr(ir_result, "e2e_time", 0) or 0,
@@ -231,13 +230,95 @@ def normalize_ir_metrics(ir_result) -> Dict[str, Any]:
             },
             "time": {
                 "forward_time": block_fw,
-                "agrad_time": block_bw * 0.5,
-                "wgrad_time": block_bw * 0.5,
+                "backward_time": block_bw,  # 真实 backward 时间，不做 agrad/wgrad 拆分
                 "compute_time": block_compute,
-                "comm_fw": block_comm_fw,  # TP 通信（前向）
-                "comm_bw": block_comm_bw,  # TP 通信（反向）
+                "comm_fw": block_comm_fw,
+                "comm_bw": block_comm_bw,
                 "comm_time": block_comm,
                 "total_time": block_total,
+            },
+        },
+    }
+
+
+def derive_calculon_view(ir_metrics: Dict[str, Any], calc_stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """将 IR 原生指标映射到 Calculon 口径，用于对比.
+    
+    这个函数不修改核心仿真模型，只在对比时做字段映射：
+    - agrad/wgrad 拆分：基于 Calculon 的实际比例（约 58%:42%）
+    - act_space 口径：使用 Calculon 的 working-set 语义
+    - optimizer 口径：使用 Calculon 的分片假设
+    
+    Args:
+        ir_metrics: normalize_ir_metrics() 返回的 IR 原生指标
+        calc_stats: 可选的 Calculon 原始统计，用于获取 agrad/wgrad 比例
+    """
+    if not ir_metrics:
+        return {}
+    
+    per_gpu = ir_metrics.get("per_gpu", {})
+    block = ir_metrics.get("block", {})
+    
+    per_gpu_mem = per_gpu.get("memory", {})
+    per_gpu_time = per_gpu.get("time", {})
+    block_mem = block.get("memory", {})
+    block_time = block.get("time", {})
+    
+    # ================================================================
+    # 时间口径映射
+    # ================================================================
+    # agrad/wgrad 拆分：使用 Calculon 的实际比例
+    # 如果有 calc_stats，从中获取实际比例；否则使用默认 50:50
+    block_bw = block_time.get("backward_time", 0)
+    if calc_stats:
+        calc_agrad = calc_stats.get("block_agrad_time", 0)
+        calc_wgrad = calc_stats.get("block_wgrad_time", 0)
+        total_grad = calc_agrad + calc_wgrad
+        if total_grad > 0:
+            agrad_ratio = calc_agrad / total_grad
+            wgrad_ratio = calc_wgrad / total_grad
+        else:
+            agrad_ratio, wgrad_ratio = 0.5, 0.5
+    else:
+        # 默认使用 Calculon 观察到的典型比例
+        agrad_ratio, wgrad_ratio = 0.579, 0.421
+    
+    # ================================================================
+    # 内存口径映射
+    # ================================================================
+    # Calculon 的 optimizer_space 使用简化公式: weight_per_gpu / 2
+    # 这与真实 Adam 内存模型不同 (12 bytes/param)
+    # 为了对比，我们映射到 Calculon 口径
+    weight_fp16 = per_gpu_mem.get("weights_fp16_bytes", 0)
+    calculon_optimizer = weight_fp16 / 2 if weight_fp16 > 0 else 0
+    
+    # 复制并覆盖优化器内存为 Calculon 口径
+    per_gpu_mem_calculon = per_gpu_mem.copy()
+    per_gpu_mem_calculon["optimizer_bytes_calculon_view"] = calculon_optimizer
+    
+    block_mem_calculon = block_mem.copy()
+    block_weight = block_mem.get("weights_bytes", 0)
+    block_mem_calculon["optimizer_bytes_calculon_view"] = block_weight / 2 if block_weight > 0 else 0
+    
+    return {
+        "schema": "calculon_view_v1",
+        "units": {"memory": "bytes", "time": "seconds"},
+        "memory_model_note": "Calculon optimizer = weight/2 (简化公式); IR optimizer = 12 bytes/param (真实 Adam)",
+        "per_gpu": {
+            "memory": per_gpu_mem_calculon,
+            "time": per_gpu_time.copy(),
+        },
+        "block": {
+            "memory": block_mem_calculon,
+            "time": {
+                "forward_time": block_time.get("forward_time", 0),
+                "agrad_time": block_bw * agrad_ratio,  # 映射到 Calculon 的 agrad 口径
+                "wgrad_time": block_bw * wgrad_ratio,  # 映射到 Calculon 的 wgrad 口径
+                "compute_time": block_time.get("compute_time", 0),
+                "comm_fw": block_time.get("comm_fw", 0),
+                "comm_bw": block_time.get("comm_bw", 0),
+                "comm_time": block_time.get("comm_time", 0),
+                "total_time": block_time.get("total_time", 0),
             },
         },
     }
@@ -255,11 +336,14 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
     weight = calc_stats.get("weight_space", 0) or 0
     act = calc_stats.get("act_space", 0) or 0
     optim = calc_stats.get("optimizer_space", 0) or 0
-    total_memory = weight + act + optim
+    weight_grad = calc_stats.get("weight_grad_space", 0) or 0  # 权重梯度
+    act_grad = calc_stats.get("act_grad_space", 0) or 0  # 激活梯度
+    total_memory = weight + act + optim + weight_grad  # 包含权重梯度
     
     block_weight = calc_stats.get("block_weight_space", 0) or 0
     block_act = calc_stats.get("block_act_working_space", 0) or 0
     block_optim = calc_stats.get("block_optimizer_space", 0) or 0
+    block_weight_grad = calc_stats.get("block_weight_grad_space_no_sharding", 0) or 0  # 单层权重梯度
     
     block_fw = calc_stats.get("block_fw_time", 0)
     block_agrad = calc_stats.get("block_agrad_time", 0)
@@ -296,7 +380,8 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
                 "activations_bytes": act,  # 只比较 act_space，不含 checkpoint
                 "activations_block_bytes": block_act,
                 "activations_peak_bytes": 0,
-                "gradients_bytes": 0,
+                "gradients_bytes": weight_grad,  # 权重梯度
+                "act_gradients_bytes": act_grad,  # 激活梯度
                 "optimizer_bytes": optim,
                 "total_bytes": total_memory,
             },
@@ -500,6 +585,8 @@ def create_compiler_v2(
                 master_weights=True,
                 gradient_checkpointing=gradient_checkpointing,
                 recompute_mode="full" if gradient_checkpointing else "none",
+                zero_stage=1,  # 启用 ZeRO Stage 1: optimizer states 分片到 DP ranks
+                dp=dp,  # DP 度数，用于 ZeRO 分片计算
             ),
             training=True,
             memory_bandwidth=memory_bandwidth,
@@ -583,9 +670,12 @@ def compare_results(
     ir_metrics = normalize_ir_metrics(ir_result)
     calc_metrics = normalize_calculon_stats(calc_stats) if calc_stats else {}
     
+    # 为对比生成 Calculon 口径视图（用于 agrad/wgrad 拆分等）
+    ir_calculon_view = derive_calculon_view(ir_metrics, calc_stats)
+    
     ir_mem = ir_metrics.get("per_gpu", {}).get("memory", {})
     ir_time = ir_metrics.get("per_gpu", {}).get("time", {})
-    ir_block = ir_metrics.get("block", {})
+    ir_block = ir_calculon_view.get("block", {}) if ir_calculon_view else ir_metrics.get("block", {})  # 使用映射后的 block 数据
     ir_basis = ir_metrics.get("basis", {})
     
     calc_mem = calc_metrics.get("per_gpu", {}).get("memory", {})
@@ -622,7 +712,11 @@ def compare_results(
     mem_table.add_row("激活", format_bytes(ir_mem.get("activations_bytes", 0)),
                       format_bytes(calc_mem.get("activations_bytes", 0)),
                       format_diff(ir_mem.get("activations_bytes", 0), calc_mem.get("activations_bytes", 0)) if calc_mem.get("activations_bytes") else "-")
-    mem_table.add_row("梯度", format_bytes(ir_mem.get("gradients_bytes", 0)), "-", "-")
+    ir_grad = ir_mem.get("gradients_bytes", 0)
+    calc_grad = calc_mem.get("gradients_bytes", 0)
+    mem_table.add_row("梯度", format_bytes(ir_grad),
+                      format_bytes(calc_grad) if calc_grad else "-",
+                      format_diff(ir_grad, calc_grad) if calc_grad else "-")
     mem_table.add_row("优化器", format_bytes(ir_mem.get("optimizer_bytes", 0)),
                       format_bytes(calc_optim_raw) if calc_optim_raw else "-", "-")
     mem_table.add_row("合计", format_bytes(ir_mem.get("total_bytes", 0)),

@@ -9,7 +9,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from sympy import Expr
 
@@ -27,27 +27,71 @@ class OptimizerConfig:
         master_weights: 是否使用 FP32 master weights
         gradient_checkpointing: 是否启用梯度检查点
         recompute_mode: 重计算模式 ('full', 'attn_only', 'none')
+        zero_stage: ZeRO 优化阶段 (0=无, 1=optimizer分片, 2=optimizer+grad分片, 3=全分片)
+        dp: Data Parallelism 度数 (用于 ZeRO 分片计算)
+        grad_accumulation_dtype_bytes: 梯度累积数据类型字节数 (4=FP32, 2=FP16)
     """
     optimizer_type: str = "adam"
     dtype_bytes: int = 2  # FP16
     master_weights: bool = True
     gradient_checkpointing: bool = False
     recompute_mode: str = "attn_only"
+    zero_stage: int = 0  # 0 = no ZeRO
+    dp: int = 1  # Data parallelism degree
+    grad_accumulation_dtype_bytes: int = 4  # FP32 for gradient accumulation (matches Calculon)
     
-    def get_optimizer_memory_per_param(self) -> int:
-        """获取每个参数的优化器状态内存 (bytes)."""
+    def get_optimizer_memory_per_param(self, include_gradients: bool = False) -> float:
+        """获取每个参数的优化器状态内存 (bytes).
+        
+        真实训练语义：
+        - Adam/AdamW: FP32 m + FP32 v + FP32 master weights (可选) = 8~12 bytes/param
+        - SGD with momentum: FP32 m + FP32 master weights (可选) = 4~8 bytes/param
+        - 梯度: dtype_bytes per param (可选包含)
+        
+        ZeRO 分片：
+        - Stage 1: optimizer states 分片到 DP ranks
+        - Stage 2: optimizer states + gradients 分片
+        - Stage 3: optimizer states + gradients + weights 分片
+        """
+        # 基础优化器状态 (per param, in bytes)
         if self.optimizer_type in ("adam", "adamw"):
-            # Adam: m + v + (master weights)
+            # Adam: m (FP32) + v (FP32) = 8 bytes
+            # + master weights (FP32) if enabled = 4 bytes
+            optimizer_bytes = 8.0
             if self.master_weights:
-                return 12  # FP32 m + FP32 v + FP32 master = 12 bytes
-            else:
-                return 8   # FP32 m + FP32 v = 8 bytes
+                optimizer_bytes += 4.0  # FP32 master weights
         elif self.optimizer_type == "sgd":
+            # SGD with momentum: m (FP32) = 4 bytes
+            optimizer_bytes = 4.0
             if self.master_weights:
-                return 8   # FP32 m + FP32 master
-            else:
-                return 4   # FP32 m
-        return 0
+                optimizer_bytes += 4.0  # FP32 master weights
+        else:
+            optimizer_bytes = 0.0
+        
+        # 可选包含梯度
+        if include_gradients:
+            optimizer_bytes += self.dtype_bytes  # gradient in training dtype
+        
+        # ZeRO 分片
+        if self.zero_stage >= 1 and self.dp > 1:
+            # Stage 1+: optimizer states 分片
+            optimizer_bytes = optimizer_bytes / self.dp
+        
+        return optimizer_bytes
+    
+    def get_gradient_memory_per_param(self) -> float:
+        """获取每个参数的梯度内存 (bytes).
+        
+        梯度累积通常使用 FP32 以保持数值精度（与 Calculon 一致）。
+        ZeRO Stage 2+ 会将梯度分片到 DP ranks。
+        """
+        # 使用梯度累积数据类型（默认 FP32=4 bytes，与 Calculon 一致）
+        grad_bytes = float(self.grad_accumulation_dtype_bytes)
+        
+        if self.zero_stage >= 2 and self.dp > 1:
+            grad_bytes = grad_bytes / self.dp
+        
+        return grad_bytes
     
     def get_optimizer_flops_per_param(self) -> int:
         """获取每个参数的优化器更新 FLOPs."""
@@ -56,6 +100,33 @@ class OptimizerConfig:
         elif self.optimizer_type == "sgd":
             return 3
         return 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典，用于存入 metadata."""
+        return {
+            "optimizer_type": self.optimizer_type,
+            "dtype_bytes": self.dtype_bytes,
+            "master_weights": self.master_weights,
+            "gradient_checkpointing": self.gradient_checkpointing,
+            "recompute_mode": self.recompute_mode,
+            "zero_stage": self.zero_stage,
+            "dp": self.dp,
+            "grad_accumulation_dtype_bytes": self.grad_accumulation_dtype_bytes,
+        }
+    
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "OptimizerConfig":
+        """从字典创建配置."""
+        return cls(
+            optimizer_type=d.get("optimizer_type", "adam"),
+            dtype_bytes=d.get("dtype_bytes", 2),
+            master_weights=d.get("master_weights", True),
+            gradient_checkpointing=d.get("gradient_checkpointing", False),
+            recompute_mode=d.get("recompute_mode", "attn_only"),
+            zero_stage=d.get("zero_stage", 0),
+            dp=d.get("dp", 1),
+            grad_accumulation_dtype_bytes=d.get("grad_accumulation_dtype_bytes", 4),
+        )
 
 
 class OptimizerPass(Pass):
@@ -144,6 +215,8 @@ class OptimizerPass(Pass):
         ir.metadata["forward_ops"] = len(forward_ops)
         ir.metadata["backward_ops"] = len(backward_ops)
         ir.metadata["total_weight_bytes"] = total_weight_bytes
+        # 存储优化器配置，供 SimulatePass 计算内存使用
+        ir.metadata["optimizer_config"] = self.config.to_dict()
         
         return ir
     

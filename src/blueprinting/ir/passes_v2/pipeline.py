@@ -65,15 +65,21 @@ class PipelineSchedulePass(Pass):
         config: Optional[PipelineConfig] = None,
         # P2P 通信参数
         p2p_bandwidth: float = 50e9,  # 50 GB/s (NVLink per direction)
+        p2p_latency: float = 10e-6,   # 10µs 启动延迟
+        dtype_bytes: int = 2,         # fp16
     ):
         """初始化 PipelineSchedulePass.
         
         Args:
             config: PP 调度配置
             p2p_bandwidth: P2P 通信带宽 (bytes/s)
+            p2p_latency: P2P 通信延迟 (seconds)
+            dtype_bytes: 数据类型字节数 (default: fp16 = 2)
         """
         self.config = config or PipelineConfig()
         self.p2p_bandwidth = p2p_bandwidth
+        self.p2p_latency = p2p_latency
+        self.dtype_bytes = dtype_bytes
     
     def run(self, ir: ScheduleIR) -> ScheduleIR:
         """执行 PP 调度."""
@@ -94,12 +100,12 @@ class PipelineSchedulePass(Pass):
         
         # 根据模式生成调度
         if self.config.mode == PPScheduleMode.GPIPE:
-            scheduled_ops = self._schedule_gpipe(forward_ops, backward_ops, num_mb, pp)
+            scheduled_ops = self._schedule_gpipe(forward_ops, backward_ops, num_mb, pp, ir)
         elif self.config.mode == PPScheduleMode.ONE_F_ONE_B:
-            scheduled_ops = self._schedule_1f1b(forward_ops, backward_ops, num_mb, pp)
+            scheduled_ops = self._schedule_1f1b(forward_ops, backward_ops, num_mb, pp, ir)
         else:
             # 默认使用 1F1B
-            scheduled_ops = self._schedule_1f1b(forward_ops, backward_ops, num_mb, pp)
+            scheduled_ops = self._schedule_1f1b(forward_ops, backward_ops, num_mb, pp, ir)
         
         # 创建新的 ScheduleIR
         new_ir = ScheduleIR(
@@ -134,19 +140,35 @@ class PipelineSchedulePass(Pass):
         return new_ir
     
     def _split_ops(self, ir: ScheduleIR) -> Tuple[List[ScheduledOp], List[ScheduledOp], List[ScheduledOp]]:
-        """将 Op 分为前向、反向、其他."""
+        """将 Op 分为前向、反向、其他.
+        
+        使用 Phase 属性而非 op_type 后缀来分类：
+        - Phase.FORWARD -> forward_ops
+        - Phase.BACKWARD -> backward_ops (包含 recompute _RE 和 backward _BW)
+        - Phase.OPTIMIZER -> other_ops
+        """
         forward_ops = []
         backward_ops = []
         other_ops = []
         
         for op in ir.iter_ops():
-            op_type = op.op_type
-            if "_BW" in op_type:
+            # 优先使用 Phase 属性
+            if op.phase == Phase.FORWARD:
+                forward_ops.append(op)
+            elif op.phase == Phase.BACKWARD:
+                # recompute (_RE) 和 backward (_BW) 都属于 BACKWARD phase
                 backward_ops.append(op)
-            elif op_type in ("OptimizerStep", "RecomputeStep"):
+            elif op.phase == Phase.OPTIMIZER:
                 other_ops.append(op)
             else:
-                forward_ops.append(op)
+                # 兼容旧代码：如果没有 Phase 属性，使用 op_type 判断
+                op_type = op.op_type
+                if "_BW" in op_type or "_RE" in op_type:
+                    backward_ops.append(op)
+                elif op_type in ("OptimizerStep", "RecomputeStep"):
+                    other_ops.append(op)
+                else:
+                    forward_ops.append(op)
         
         return forward_ops, backward_ops, other_ops
     
@@ -156,6 +178,7 @@ class PipelineSchedulePass(Pass):
         backward_ops: List[ScheduledOp],
         num_mb: int,
         pp: int,
+        ir: ScheduleIR,
     ) -> List[ScheduledOp]:
         """GPipe 调度: 所有 forward 完成后再做 backward.
         
@@ -165,11 +188,20 @@ class PipelineSchedulePass(Pass):
         Device 2: -- -- F0 F1 F2 F3 B3 B2 B1 B0
         Device 3: -- -- -- F0 F1 F2 F3 B3 B2 B1 B0
         """
+        from ..types import Phase
         scheduled_ops = []
         
         # 按 stage 分组
         fw_by_stage = self._group_by_stage(forward_ops, pp)
         bw_by_stage = self._group_by_stage(backward_ops, pp)
+        
+        # 计算 P2P 通信时间（基于张量大小）
+        batch_size = ir.metadata.get("batch_size", 1)
+        seq_len = ir.metadata.get("seq_len", 2048)
+        hidden = ir.metadata.get("hidden", 4096)
+        activation_size = batch_size * seq_len * hidden
+        activation_bytes = activation_size * self.dtype_bytes
+        p2p_time = self.p2p_latency + activation_bytes / self.p2p_bandwidth if self.p2p_bandwidth > 0 else 0
         
         # 每个 stage 的时间追踪
         stage_time = [0.0] * pp
@@ -177,28 +209,60 @@ class PipelineSchedulePass(Pass):
         # Forward: mb0, mb1, mb2, ...
         for mb in range(num_mb):
             for stage in range(pp):
-                # 等待前一个 stage 完成
+                # 等待前一个 stage 完成 + P2P 通信时间
                 if stage > 0:
-                    stage_time[stage] = max(stage_time[stage], stage_time[stage - 1])
+                    stage_time[stage] = max(stage_time[stage], stage_time[stage - 1] + 2 * p2p_time)
                 
                 # 复制并调度该 stage 的前向 Op
                 for op in fw_by_stage.get(stage, []):
                     new_op = self._copy_op_for_mb(op, mb, stage_time[stage])
                     stage_time[stage] = new_op.start + new_op.duration
                     scheduled_ops.append(new_op)
+                
+                # 添加 P2P Send/Recv（如果不是最后一个 stage）
+                if stage < pp - 1:
+                    send_op = self._create_p2p_op(
+                        name=f"p2p_send_act_mb{mb}_s{stage}",
+                        op_type="Send",
+                        stage=stage,
+                        phase=Phase.FORWARD,
+                        start=stage_time[stage],
+                        duration=p2p_time,
+                        metadata={
+                            "from_stage": stage, "to_stage": stage + 1, "mb": mb,
+                            "data": "activation", "data_size": activation_size,
+                        },
+                    )
+                    scheduled_ops.append(send_op)
         
         # Backward: mb_{num_mb-1}, ..., mb1, mb0
         for mb in reversed(range(num_mb)):
             for stage in reversed(range(pp)):
-                # 等待后一个 stage 完成
+                # 等待后一个 stage 完成 + P2P 通信时间
                 if stage < pp - 1:
-                    stage_time[stage] = max(stage_time[stage], stage_time[stage + 1])
+                    stage_time[stage] = max(stage_time[stage], stage_time[stage + 1] + 2 * p2p_time)
                 
                 # 复制并调度该 stage 的反向 Op
                 for op in bw_by_stage.get(stage, []):
                     new_op = self._copy_op_for_mb(op, mb, stage_time[stage])
                     stage_time[stage] = new_op.start + new_op.duration
                     scheduled_ops.append(new_op)
+                
+                # 添加 P2P Send/Recv（如果不是第一个 stage）
+                if stage > 0:
+                    send_op = self._create_p2p_op(
+                        name=f"p2p_send_grad_mb{mb}_s{stage}",
+                        op_type="Send",
+                        stage=stage,
+                        phase=Phase.BACKWARD,
+                        start=stage_time[stage],
+                        duration=p2p_time,
+                        metadata={
+                            "from_stage": stage, "to_stage": stage - 1, "mb": mb,
+                            "data": "gradient", "data_size": activation_size,
+                        },
+                    )
+                    scheduled_ops.append(send_op)
         
         return scheduled_ops
     
@@ -208,6 +272,7 @@ class PipelineSchedulePass(Pass):
         backward_ops: List[ScheduledOp],
         num_mb: int,
         pp: int,
+        ir: ScheduleIR,
     ) -> List[ScheduledOp]:
         """1F1B 调度: Pipeline Parallel 并行调度.
         
@@ -241,12 +306,19 @@ class PipelineSchedulePass(Pass):
             stage_fw_time[stage] = sum(op.duration for op in fw_by_stage.get(stage, []))
             stage_bw_time[stage] = sum(op.duration for op in bw_by_stage.get(stage, []))
         
-        # 使用最大 stage 时间作为基准
-        max_fw_time = max(stage_fw_time.values()) if stage_fw_time else 0
-        max_bw_time = max(stage_bw_time.values()) if stage_bw_time else 0
+        # 从 metadata 获取激活张量大小（用于 P2P 通信）
+        # 激活大小 = batch_size * seq_len * hidden * dtype_bytes
+        batch_size = ir.metadata.get("batch_size", 1)
+        seq_len = ir.metadata.get("seq_len", 2048)
+        hidden = ir.metadata.get("hidden", 4096)
+        activation_size = batch_size * seq_len * hidden  # 元素数
+        activation_bytes = activation_size * self.dtype_bytes
         
-        # P2P 通信时间
-        p2p_time = min(max_fw_time, max_bw_time) * 0.01 if max_fw_time > 0 and max_bw_time > 0 else 0
+        # 计算 P2P 通信时间（基于实际张量大小和带宽）
+        # duration = latency + bytes / bandwidth
+        p2p_time_act = self.p2p_latency + activation_bytes / self.p2p_bandwidth if self.p2p_bandwidth > 0 else 0
+        # 梯度与激活大小相同
+        p2p_time_grad = p2p_time_act
         
         # 每个 stage 的当前时间（本地时间线）
         stage_current_time = [0.0] * pp
@@ -273,7 +345,7 @@ class PipelineSchedulePass(Pass):
                 # 等待上一个 stage 的 Forward 完成 + P2P 通信时间 (Send + Recv)
                 # 这样 Forward 计算在 P2P Recv 完成后才开始
                 prev_fw_complete = fw_complete_time.get((stage - 1, mb), 0)
-                start_time = max(start_time, prev_fw_complete + 2 * p2p_time)
+                start_time = max(start_time, prev_fw_complete + 2 * p2p_time_act)
             
             # 调度 Forward ops
             current = start_time
@@ -294,8 +366,11 @@ class PipelineSchedulePass(Pass):
                     stage=stage,
                     phase=Phase.FORWARD,
                     start=current,
-                    duration=p2p_time,
-                    metadata={"from_stage": stage, "to_stage": stage + 1, "mb": mb, "data": "activation"},
+                    duration=p2p_time_act,
+                    metadata={
+                        "from_stage": stage, "to_stage": stage + 1, "mb": mb,
+                        "data": "activation", "data_size": activation_size,
+                    },
                 )
                 scheduled_ops.append(send_op)
                 # 不更新 stage_current_time，P2P 不阻塞计算
@@ -305,9 +380,12 @@ class PipelineSchedulePass(Pass):
                     op_type="Recv",
                     stage=stage + 1,
                     phase=Phase.FORWARD,
-                    start=current + p2p_time,
-                    duration=p2p_time,
-                    metadata={"from_stage": stage, "to_stage": stage + 1, "mb": mb, "data": "activation"},
+                    start=current + p2p_time_act,
+                    duration=p2p_time_act,
+                    metadata={
+                        "from_stage": stage, "to_stage": stage + 1, "mb": mb,
+                        "data": "activation", "data_size": activation_size,
+                    },
                 )
                 scheduled_ops.append(recv_op)
         
@@ -326,7 +404,7 @@ class PipelineSchedulePass(Pass):
                 # 等待下一个 stage 的 Backward 完成 + P2P 通信时间 (Send + Recv)
                 # 这样 Backward 计算在 P2P Recv 完成后才开始
                 next_bw_complete = bw_complete_time.get((stage + 1, mb), 0)
-                start_time = max(start_time, next_bw_complete + 2 * p2p_time)
+                start_time = max(start_time, next_bw_complete + 2 * p2p_time_grad)
             
             # 调度 Backward ops
             current = start_time
@@ -347,8 +425,11 @@ class PipelineSchedulePass(Pass):
                     stage=stage,
                     phase=Phase.BACKWARD,
                     start=current,
-                    duration=p2p_time,
-                    metadata={"from_stage": stage, "to_stage": stage - 1, "mb": mb, "data": "gradient"},
+                    duration=p2p_time_grad,
+                    metadata={
+                        "from_stage": stage, "to_stage": stage - 1, "mb": mb,
+                        "data": "gradient", "data_size": activation_size,
+                    },
                 )
                 scheduled_ops.append(send_op)
                 # 不更新 stage_current_time，P2P 不阻塞计算
@@ -358,9 +439,12 @@ class PipelineSchedulePass(Pass):
                     op_type="Recv",
                     stage=stage - 1,
                     phase=Phase.BACKWARD,
-                    start=current + p2p_time,
-                    duration=p2p_time,
-                    metadata={"from_stage": stage, "to_stage": stage - 1, "mb": mb, "data": "gradient"},
+                    start=current + p2p_time_grad,
+                    duration=p2p_time_grad,
+                    metadata={
+                        "from_stage": stage, "to_stage": stage - 1, "mb": mb,
+                        "data": "gradient", "data_size": activation_size,
+                    },
                 )
                 scheduled_ops.append(recv_op)
         
