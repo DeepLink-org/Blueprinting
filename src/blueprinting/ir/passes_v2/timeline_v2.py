@@ -378,10 +378,10 @@ class SimulatePass(Pass):
         comm_fw_per_layer = total_comm_fw / time_divisor if time_divisor > 0 else 0
         comm_bw_per_layer = total_comm_bw / time_divisor if time_divisor > 0 else 0
         
-        # 单层指标
+        # 单层指标（与 Calculon block_*_space 对齐：均为 per-layer per-GPU）
         block_metrics = BlockMetrics(
             weights=memory_breakdown.weights / layers_per_stage if layers_per_stage > 0 else 0,
-            activations=memory_breakdown.activations,
+            activations=memory_breakdown.activations / layers_per_stage if layers_per_stage > 0 else memory_breakdown.activations,
             optimizer_states=memory_breakdown.optimizer_states / layers_per_stage if layers_per_stage > 0 else 0,
             forward_time=time_breakdown.forward,
             backward_time=time_breakdown.backward,
@@ -522,22 +522,23 @@ class SimulatePass(Pass):
             
             # 梯度内存（使用 Calculon 的内存优化策略）：
             # - 只保留 1 份完整梯度 (FP32) 用于当前层计算
-            # - (blocks_per_proc - 1) 份分片梯度 (FP32/dp) 用于累积
+            # - (blocks_per_proc - 1) 份分片梯度 (FP16/dp) 用于累积和通信
             # 这比简单的 layers_per_stage × per_layer_grad 更节省内存
             layers_per_stage = ir.metadata.get("layers_per_stage", 1)
             dp = opt_config.dp or 1
-            grad_dtype_bytes = opt_config.grad_accumulation_dtype_bytes or 4  # FP32
+            grad_dtype_bytes = opt_config.grad_accumulation_dtype_bytes or 4  # FP32 for accumulation
             
             # 单层参数数量
             single_layer_params = num_params / layers_per_stage if layers_per_stage > 0 else num_params
             
-            # 单层梯度（未分片，FP32）
+            # 单层梯度（未分片，FP32）- 用于当前层的梯度计算
             block_weight_grad_no_sharding = single_layer_params * grad_dtype_bytes
             
-            # 单层梯度（分片，FP32/dp）
-            block_weight_grad_sharded = block_weight_grad_no_sharding / dp if dp > 1 else block_weight_grad_no_sharding
+            # 单层梯度（分片，FP16/dp）- Calculon 使用 FP16 用于通信优化
+            # 与 Calculon 一致：sharded gradients 使用 training dtype (FP16)，然后除以 dp
+            block_weight_grad_sharded = single_layer_params * dtype_bytes / dp if dp > 1 else single_layer_params * dtype_bytes
             
-            # 总梯度内存 = 1份完整 + (layers_per_stage-1)份分片
+            # 总梯度内存 = 1份完整(FP32) + (layers_per_stage-1)份分片(FP16/dp)
             if layers_per_stage <= 1:
                 gradient_memory = block_weight_grad_no_sharding
             else:
