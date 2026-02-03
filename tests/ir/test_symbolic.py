@@ -343,7 +343,7 @@ class TestSymbolicEndToEnd:
     
     def test_symbolic_model_to_schedule(self):
         """测试符号模型到 Schedule 的转换."""
-        from src.blueprinting.ir.passes_v2 import ExpandPass
+        from src.blueprinting.ir.passes import ExpandPass
         
         H = Symbol('H', positive=True, integer=True)
         BS = Symbol('BS', positive=True, integer=True)

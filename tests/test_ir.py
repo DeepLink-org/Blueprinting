@@ -22,11 +22,11 @@ from src.blueprinting.ir.dsl import (
     Model, Transformer,
     print_graph, graph_to_tree,
 )
-from src.blueprinting.ir.passes_v2 import (
+from src.blueprinting.ir.passes import (
     PrintGraphPass, PrintSchedulePass, PrintTimelinePass,
     ExpandPass, TimelinePassV2,
+    Pipeline,
 )
-from src.blueprinting.ir.passes_v2.base import Pipeline
 
 
 def test_graph_ir_construction():

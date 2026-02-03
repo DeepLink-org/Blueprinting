@@ -1,73 +1,63 @@
-"""Base class for compiler passes."""
+"""Base class for v2 passes."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Union
+from typing import TypeVar
 
-from ..graph import GraphIR
-from ..schedule import ScheduleIR
-from ..result import SimulationResult
+from ..types import GraphIR, ScheduleIR, SimulationResult, TimelineIR
 
 # Type variable for IR types
-IR = TypeVar("IR", GraphIR, ScheduleIR, SimulationResult)
+IR = TypeVar("IR", GraphIR, ScheduleIR, TimelineIR, SimulationResult)
 
 
 class Pass(ABC):
     """Abstract base class for compiler passes.
-    
-    A Pass transforms an IR (Intermediate Representation) into
-    another IR or a final result. Passes can be chained together
-    to form a compilation pipeline.
-    
-    Example:
-        class MyPass(Pass):
-            def run(self, ir: GraphIR) -> GraphIR:
-                # Transform the graph
-                for node in ir.nodes.values():
-                    node.attrs["processed"] = True
-                return ir
+
+    A Pass transforms one IR type into another (or the same type).
+
+    Pass chain:
+        GraphIR → ScheduleIR → TimelineIR → SimulationResult
     """
-    
-    @abstractmethod
-    def run(self, ir: IR) -> IR:
-        """Execute the pass on the given IR.
-        
-        Args:
-            ir: Input IR (GraphIR, ScheduleIR, etc.)
-            
-        Returns:
-            Transformed IR or result
-        """
-        pass
-    
+
     @property
     def name(self) -> str:
-        """Name of this pass."""
+        """Pass name."""
         return self.__class__.__name__
-    
+
+    @abstractmethod
+    def run(self, ir: IR) -> IR:
+        """Execute the pass."""
+        pass
+
     def __repr__(self) -> str:
         return f"{self.name}()"
 
-
-class IdentityPass(Pass):
-    """A pass that does nothing (for testing)."""
-    
-    def run(self, ir: IR) -> IR:
-        return ir
+    def __call__(self, ir: IR) -> IR:
+        """Allow pass to be called as a function."""
+        return self.run(ir)
 
 
-class ComposedPass(Pass):
-    """A pass that composes multiple passes."""
-    
-    def __init__(self, *passes: Pass):
-        self.passes = list(passes)
-    
-    def run(self, ir: IR) -> IR:
+class Pipeline:
+    """A pipeline of passes.
+
+    Usage:
+        pipeline = Pipeline([
+            PrintGraphPass(),
+            ExpandPass(),
+            PrintSchedulePass(),
+        ])
+        result = pipeline.run(graph_ir)
+    """
+
+    def __init__(self, passes: list):
+        self.passes = passes
+
+    def run(self, ir):
+        """Run all passes in sequence."""
         result = ir
         for p in self.passes:
             result = p.run(result)
         return result
-    
-    @property
-    def name(self) -> str:
+
+    def __repr__(self) -> str:
         names = [p.name for p in self.passes]
-        return f"ComposedPass({', '.join(names)})"
+        return f"Pipeline({' → '.join(names)})"

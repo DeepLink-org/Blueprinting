@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.blueprinting.ir.dsl import Model, Transformer
-from src.blueprinting.ir.passes_v2 import (
+from src.blueprinting.ir.passes import (
     PrintGraphPass, PrintSchedulePass, PrintTimelinePass,
     ExpandPass, SchedulePass, TimelinePassV2,
     Pipeline,

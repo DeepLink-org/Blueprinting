@@ -21,38 +21,34 @@ TimelineIR (simulation view):
     - Fine-grained events for precise simulation
 """
 
-from .graph import (
-    NodeType,
-    TensorRef,
-    OpNode,
-    BlockNode,
-    ModuleNode,
-    GraphIR,
-)
-from .schedule import (
-    TensorLifetime,
-    ScheduledOp,
-    DeviceSchedule,
-    StageSchedule,
-    ScheduleIR,
-)
-from .timeline import TimelineIR, TimelineEvent, EventType, StreamType
-from .symmax import SymMax, sym_max, eval_lazy, clear_expr_cache, get_cache_stats
-from .result import SimulationResult
 from .builder import IRBuilder, build_transformer_layer, build_transformer_model
 from .compiler import Compiler
-from .system import SystemConfig, load_system_config
+from .graph import BlockNode, GraphIR, ModuleNode, NodeType, OpNode, TensorRef
 from .passes import (
-    Pass,
-    WorkloadPass,
-    ParallelPass,
-    SchedulePass,
-    TimelinePass,
-    OverlapAnalysisPass,
-    EvaluatePass,
-    OptimizerPass,
-    OptimizerConfig,
+                      ExpandPass,
+                      OptimizerConfig,
+                      OptimizerPass,
+                      OverlapAnalysisPass,
+                      ParallelPass,
+                      Pass,
+                      Pipeline,
+                      PipelineConfig,
+                      PipelineSchedulePass,
+                      PPScheduleMode,
+                      PrintGraphPass,
+                      PrintResultPass,
+                      PrintSchedulePass,
+                      PrintTimelinePass,
+                      SchedulePass,
+                      SimulatePass,
+                      TimelinePass,
+                      TimelinePassV2,
 )
+from .result import SimulationResult
+from .schedule import DeviceSchedule, ScheduledOp, ScheduleIR, StageSchedule, TensorLifetime
+from .symmax import SymMax, clear_expr_cache, eval_lazy, get_cache_stats, sym_max
+from .system import SystemConfig, load_system_config
+from .timeline import EventType, StreamType, TimelineEvent, TimelineIR
 
 __all__ = [
     # Graph IR - hierarchical
@@ -92,12 +88,21 @@ __all__ = [
     "load_system_config",
     # Passes
     "Pass",
-    "WorkloadPass",
+    "Pipeline",
+    "ExpandPass",
     "ParallelPass",
     "SchedulePass",
     "TimelinePass",
+    "TimelinePassV2",
+    "SimulatePass",
     "OverlapAnalysisPass",
-    "EvaluatePass",
     "OptimizerPass",
     "OptimizerConfig",
+    "PipelineSchedulePass",
+    "PipelineConfig",
+    "PPScheduleMode",
+    "PrintGraphPass",
+    "PrintSchedulePass",
+    "PrintTimelinePass",
+    "PrintResultPass",
 ]

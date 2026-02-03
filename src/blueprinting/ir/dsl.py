@@ -17,7 +17,7 @@ with Model("gpt2") as m:
             attn.Linear("k_proj", shard="tp_col")
             attn.Linear("v_proj", shard="tp_col")
             attn.Linear("o_proj", shard="tp_row")
-        
+
         with layer.FFN("ffn") as ffn:
             ffn.RMSNorm("input_norm")
             ffn.Linear("gate_proj", shard="tp_col")
@@ -39,45 +39,44 @@ print(graph)
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from typing import Any, Dict, List, Optional
+
+from .ops import list_blocks
 from .types import BlockNode, GraphIR
-from .ops import (
-    _BLOCK_REGISTRY, 
-    get_block_def,
-    list_blocks,
-)
 
 
 class BlockBuilder:
     """Block 构建器 - DSL 的核心类.
-    
+
     每个 BlockBuilder 对应一个 BlockNode，
     支持通过方法调用添加子 Block。
-    
+
     方法由 ops.py 中的 BlockDef 注册表自动生成。
     """
-    
-    def __init__(self, name: str, block_type: str, parent: Optional["BlockBuilder"] = None):
+
+    def __init__(
+        self, name: str, block_type: str, parent: Optional[BlockBuilder] = None
+    ):
         self.name = name
         self.block_type = block_type
         self.parent = parent
         self._children: List[BlockBuilder] = []
         self._attrs: Dict[str, Any] = {}
-    
-    def __enter__(self) -> "BlockBuilder":
+
+    def __enter__(self) -> BlockBuilder:
         return self
-    
+
     def __exit__(self, *args):
         pass
-    
-    def _add_child(self, name: str, block_type: str, **attrs) -> "BlockBuilder":
+
+    def _add_child(self, name: str, block_type: str, **attrs) -> BlockBuilder:
         """添加子 Block."""
         child = BlockBuilder(name, block_type, parent=self)
         child._attrs = attrs
         self._children.append(child)
         return child
-    
+
     def _to_block_node(self) -> BlockNode:
         """转换为 BlockNode."""
         node = BlockNode(
@@ -88,7 +87,7 @@ class BlockBuilder:
         for child in self._children:
             node.children.append(child._to_block_node())
         return node
-    
+
     def __repr__(self) -> str:
         return f"BlockBuilder({self.block_type}({self.name!r}), children={len(self._children)})"
 
@@ -97,10 +96,13 @@ class BlockBuilder:
 # 动态方法生成
 # ==============================================================================
 
+
 def _create_block_method(block_type: str):
     """为指定的 block_type 创建方法."""
+
     def method(self: BlockBuilder, name: str, **attrs) -> BlockBuilder:
         return self._add_child(name, block_type, **attrs)
+
     method.__name__ = block_type
     method.__doc__ = f"添加 {block_type} Block."
     return method
@@ -122,27 +124,28 @@ _register_block_methods(BlockBuilder)
 # Model 入口
 # ==============================================================================
 
+
 class Model(BlockBuilder):
     """模型构建器 - DSL 入口.
-    
+
     Usage:
         with Model("gpt2") as m:
             m.metadata(batch_size=4, seq_len=2048, hidden=4096)
             with m.Layer("layer0") as layer:
                 ...
-        
+
         graph = m.build()
     """
-    
+
     def __init__(self, name: str, module_type: str = "Transformer"):
         super().__init__(name, module_type, parent=None)
         self._metadata: Dict[str, Any] = {}
-    
-    def metadata(self, **kwargs) -> "Model":
+
+    def metadata(self, **kwargs) -> Model:
         """设置模型元数据."""
         self._metadata.update(kwargs)
         return self
-    
+
     def build(self) -> GraphIR:
         """构建 GraphIR."""
         root = self._to_block_node()
@@ -156,6 +159,7 @@ class Model(BlockBuilder):
 # ==============================================================================
 # 便捷别名
 # ==============================================================================
+
 
 def Transformer(name: str) -> Model:
     """创建 Transformer 模型."""
@@ -176,6 +180,7 @@ def LLaMA(name: str) -> Model:
 # 打印工具
 # ==============================================================================
 
+
 def print_graph(graph: GraphIR, verbose: bool = False) -> str:
     """打印 Graph IR 结构."""
     lines = []
@@ -183,51 +188,59 @@ def print_graph(graph: GraphIR, verbose: bool = False) -> str:
     if graph.metadata and verbose:
         lines.append(f"  metadata: {graph.metadata}")
     lines.append("")
-    
+
     def print_block(block: BlockNode, level: int = 0):
         prefix = "  " * level
         attrs_str = ""
         if block.attrs:
-            attrs_str = f" {{{', '.join(f'{k}={v!r}' for k, v in block.attrs.items())}}}"
-        
+            attrs_str = (
+                f" {{{', '.join(f'{k}={v!r}' for k, v in block.attrs.items())}}}"
+            )
+
         # 显示参数信息
         params_str = ""
         if block.has_params:
             params_str = f" [params: {block.params}]"
-        
-        lines.append(f"{prefix}{block.block_type}({block.name!r}){attrs_str}{params_str}")
+
+        lines.append(
+            f"{prefix}{block.block_type}({block.name!r}){attrs_str}{params_str}"
+        )
         for child in block.children:
             print_block(child, level + 1)
-    
+
     if graph.root:
         print_block(graph.root)
-    
+
     return "\n".join(lines)
 
 
 def graph_to_tree(graph: GraphIR) -> str:
     """将 Graph IR 转换为 ASCII 树形表示."""
     lines = []
-    
+
     def tree_block(block: BlockNode, prefix: str = "", is_last: bool = True):
         connector = "└── " if is_last else "├── "
         attrs_str = ""
         if block.attrs:
-            key_attrs = {k: v for k, v in block.attrs.items() if k in ("shard", "in_features", "out_features")}
+            key_attrs = {
+                k: v
+                for k, v in block.attrs.items()
+                if k in ("shard", "in_features", "out_features")
+            }
             if key_attrs:
                 attrs_str = f" [{', '.join(f'{k}={v}' for k, v in key_attrs.items())}]"
-        
+
         lines.append(f"{prefix}{connector}{block.block_type}({block.name}){attrs_str}")
-        
+
         child_prefix = prefix + ("    " if is_last else "│   ")
         for i, child in enumerate(block.children):
             tree_block(child, child_prefix, i == len(block.children) - 1)
-    
+
     if graph.root:
         lines.append(f"{graph.root.block_type}({graph.root.name})")
         for i, child in enumerate(graph.root.children):
             tree_block(child, "", i == len(graph.root.children) - 1)
-    
+
     return "\n".join(lines)
 
 
