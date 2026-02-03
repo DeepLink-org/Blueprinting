@@ -520,9 +520,28 @@ class SimulatePass(Pass):
             optimizer_bytes_per_param = opt_config.get_optimizer_memory_per_param()
             optimizer_memory = num_params * optimizer_bytes_per_param
             
-            # 梯度内存 = 参数数量 × 每参数梯度字节（考虑 ZeRO 分片）
-            gradient_bytes_per_param = opt_config.get_gradient_memory_per_param()
-            gradient_memory = num_params * gradient_bytes_per_param
+            # 梯度内存（使用 Calculon 的内存优化策略）：
+            # - 只保留 1 份完整梯度 (FP32) 用于当前层计算
+            # - (blocks_per_proc - 1) 份分片梯度 (FP32/dp) 用于累积
+            # 这比简单的 layers_per_stage × per_layer_grad 更节省内存
+            layers_per_stage = ir.metadata.get("layers_per_stage", 1)
+            dp = opt_config.dp or 1
+            grad_dtype_bytes = opt_config.grad_accumulation_dtype_bytes or 4  # FP32
+            
+            # 单层参数数量
+            single_layer_params = num_params / layers_per_stage if layers_per_stage > 0 else num_params
+            
+            # 单层梯度（未分片，FP32）
+            block_weight_grad_no_sharding = single_layer_params * grad_dtype_bytes
+            
+            # 单层梯度（分片，FP32/dp）
+            block_weight_grad_sharded = block_weight_grad_no_sharding / dp if dp > 1 else block_weight_grad_no_sharding
+            
+            # 总梯度内存 = 1份完整 + (layers_per_stage-1)份分片
+            if layers_per_stage <= 1:
+                gradient_memory = block_weight_grad_no_sharding
+            else:
+                gradient_memory = block_weight_grad_no_sharding + block_weight_grad_sharded * (layers_per_stage - 1)
         else:
             optimizer_memory = 0
             gradient_memory = 0
