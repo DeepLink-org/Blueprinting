@@ -40,7 +40,7 @@ print(graph)
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .ops import list_blocks
 from .types import BlockNode, GraphIR
@@ -56,13 +56,13 @@ class BlockBuilder:
     """
 
     def __init__(
-        self, name: str, block_type: str, parent: Optional[BlockBuilder] = None
+        self, name: str, block_type: str, parent: BlockBuilder | None = None
     ):
         self.name = name
         self.block_type = block_type
         self.parent = parent
-        self._children: List[BlockBuilder] = []
-        self._attrs: Dict[str, Any] = {}
+        self._children: list[BlockBuilder] = []
+        self._attrs: dict[str, Any] = {}
 
     def __enter__(self) -> BlockBuilder:
         return self
@@ -139,7 +139,7 @@ class Model(BlockBuilder):
 
     def __init__(self, name: str, module_type: str = "Transformer"):
         super().__init__(name, module_type, parent=None)
-        self._metadata: Dict[str, Any] = {}
+        self._metadata: dict[str, Any] = {}
 
     def metadata(self, **kwargs) -> Model:
         """设置模型元数据."""

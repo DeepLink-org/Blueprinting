@@ -351,11 +351,10 @@ class TimelineIR:
         for event in compute_events:
             if event.event_type == EventType.COMPUTE_START:
                 starts[event.resource_id] = event.time
-            elif event.event_type == EventType.COMPUTE_END:
-                if event.resource_id in starts:
-                    duration = event.time - starts[event.resource_id]
-                    total = total + duration
-                    del starts[event.resource_id]
+            elif event.event_type == EventType.COMPUTE_END and event.resource_id in starts:
+                duration = event.time - starts[event.resource_id]
+                total = total + duration
+                del starts[event.resource_id]
 
         return total
 
@@ -369,11 +368,10 @@ class TimelineIR:
         for event in comm_events:
             if event.event_type == EventType.COMM_START:
                 starts[event.resource_id] = event.time
-            elif event.event_type == EventType.COMM_END:
-                if event.resource_id in starts:
-                    duration = event.time - starts[event.resource_id]
-                    total = total + duration
-                    del starts[event.resource_id]
+            elif event.event_type == EventType.COMM_END and event.resource_id in starts:
+                duration = event.time - starts[event.resource_id]
+                total = total + duration
+                del starts[event.resource_id]
 
         return total
 

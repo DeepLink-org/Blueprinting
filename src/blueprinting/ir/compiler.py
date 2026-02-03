@@ -38,7 +38,7 @@ from .passes.optimizer import OptimizerConfig, OptimizerPass
 from .passes.parallel import ParallelPass
 from .passes.pipeline import PipelineSchedulePass
 from .passes.schedule import SchedulePass
-from .passes.timeline_v2 import SimulatePass, TimelinePassV2
+from .passes.timeline import SimulatePass, TimelinePass
 from .result import SimulationResult
 from .schedule import ScheduleIR
 from .timeline import TimelineIR
@@ -62,7 +62,7 @@ class Compiler:
             .add_pass(SchedulePass(system_config))
             .add_pass(OptimizerPass(OptimizerConfig()))  # 训练时
             .add_pass(PipelineSchedulePass())  # PP>1 时
-            .add_pass(TimelinePassV2())
+            .add_pass(TimelinePass())
             .add_pass(SimulatePass(subs={...})))
 
         # Compile
@@ -125,7 +125,7 @@ class Compiler:
             return SimulatePass().run(current)
         elif isinstance(current, ScheduleIR):
             # Need to convert to TimelineIR first
-            timeline = TimelinePassV2().run(current)
+            timeline = TimelinePass().run(current)
             return SimulatePass().run(timeline)
         else:
             raise ValueError(f"Unexpected final IR type: {type(current)}")
@@ -213,7 +213,7 @@ class Compiler:
         if pp > 1:
             compiler.add_pass(PipelineSchedulePass())
 
-        compiler.add_pass(TimelinePassV2())
+        compiler.add_pass(TimelinePass())
         compiler.add_pass(
             SimulatePass(subs=subs, peak_tflops=peak_tflops, training=training)
         )

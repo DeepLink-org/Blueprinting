@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.blueprinting.ir.dsl import Model, Transformer
 from src.blueprinting.ir.passes import (
     PrintGraphPass, PrintSchedulePass, PrintTimelinePass,
-    ExpandPass, SchedulePass, TimelinePassV2,
+    ExpandPass, SchedulePass, TimelinePass,
     Pipeline,
 )
 
@@ -100,7 +100,7 @@ def main():
         ExpandPass(),
         SchedulePass(),  # 新增: 计算 workload 和 timing
         PrintSchedulePass("Schedule IR (Op 级别)", max_ops=20),
-        TimelinePassV2(),
+        TimelinePass(),
         PrintTimelinePass("Timeline IR (Event 级别)", max_events=25),
     ])
     

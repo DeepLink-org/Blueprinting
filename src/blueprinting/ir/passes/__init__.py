@@ -35,10 +35,10 @@ from .overlap import OverlapAnalysisPass
 from .parallel import ParallelPass
 from .pipeline import PipelineConfig, PipelineSchedulePass, PPScheduleMode
 from .schedule import SchedulePass
-from .timeline_v2 import SimulatePass, TimelinePassV2
+from .timeline import SimulatePass, TimelinePass
 
 # Alias for backward compatibility
-TimelinePass = TimelinePassV2
+TimelinePass = TimelinePass
 
 __all__ = [
     # Base
@@ -59,7 +59,7 @@ __all__ = [
     "PipelineConfig",
     "PPScheduleMode",
     "TimelinePass",
-    "TimelinePassV2",
+    "TimelinePass",
     "SimulatePass",
     "OverlapAnalysisPass",
 ]

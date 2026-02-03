@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterator
 
 from sympy import Expr, Symbol
 
@@ -100,12 +100,12 @@ class BlockNode:
 
     name: str
     block_type: str
-    children: List[BlockNode] = field(default_factory=list)
-    attrs: Dict[str, Any] = field(default_factory=dict)
-    device: Optional[int] = None
+    children: list[BlockNode] = field(default_factory=list)
+    attrs: dict[str, Any] = field(default_factory=dict)
+    device: int | None = None
 
     @property
-    def block_def(self) -> Optional[BlockDef]:
+    def block_def(self) -> BlockDef | None:
         """获取关联的 BlockDef 类."""
         from .ops import get_block_def
 
@@ -118,7 +118,7 @@ class BlockNode:
         return block_def.has_params() if block_def else False
 
     @property
-    def params(self) -> List[str]:
+    def params(self) -> list[str]:
         """获取参数名称列表."""
         block_def = self.block_def
         return block_def.params if block_def else []
@@ -134,14 +134,14 @@ class BlockNode:
         for child in self.children:
             yield from child.iter_blocks()
 
-    def compute_flops(self) -> Optional[Union[int, Expr]]:
+    def compute_flops(self) -> int | Expr | None:
         """计算 FLOPs (委托给 BlockDef)."""
         block_def = self.block_def
         if block_def:
             return block_def.compute_flops(self.attrs)
         return None
 
-    def compute_param_bytes(self) -> Optional[Union[int, Expr]]:
+    def compute_param_bytes(self) -> int | Expr | None:
         """计算参数内存 (委托给 BlockDef)."""
         block_def = self.block_def
         if block_def:
@@ -176,9 +176,9 @@ class GraphIR:
     """
 
     name: str = "model"
-    root: Optional[BlockNode] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    symbols: Dict[str, Symbol] = field(default_factory=dict)
+    root: BlockNode | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    symbols: dict[str, Symbol] = field(default_factory=dict)
 
     def iter_blocks(self) -> Iterator[BlockNode]:
         """遍历所有 Block."""
@@ -229,20 +229,20 @@ class OpNode:
 
     name: str
     op_type: str
-    inputs: List[str] = field(default_factory=list)
-    outputs: List[str] = field(default_factory=list)
-    attrs: Dict[str, Any] = field(default_factory=dict)
+    inputs: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
+    attrs: dict[str, Any] = field(default_factory=dict)
 
     # Source tracking
-    source_block: Optional[str] = None
+    source_block: str | None = None
 
     # Workload (can be computed via OpDef or set directly)
-    flops: Optional[Union[int, Expr]] = None
-    memory_bytes: Optional[Union[int, Expr]] = None
-    comm_bytes: Optional[Union[int, Expr]] = None
+    flops: int | Expr | None = None
+    memory_bytes: int | Expr | None = None
+    comm_bytes: int | Expr | None = None
 
     @property
-    def op_def(self) -> Optional[OpDef]:
+    def op_def(self) -> OpDef | None:
         """获取关联的 OpDef 类."""
         from .ops import get_op_def
 
@@ -259,7 +259,7 @@ class OpNode:
         """是否是通信 Op."""
         return self.category == "comm"
 
-    def compute_flops(self) -> Optional[Union[int, Expr]]:
+    def compute_flops(self) -> int | Expr | None:
         """计算 FLOPs (委托给 OpDef)."""
         if self.flops is not None:
             return self.flops
@@ -268,7 +268,7 @@ class OpNode:
             return op_def.compute_flops(self.attrs)
         return None
 
-    def compute_memory(self) -> Optional[Union[int, Expr]]:
+    def compute_memory(self) -> int | Expr | None:
         """计算内存访问 (委托给 OpDef)."""
         if self.memory_bytes is not None:
             return self.memory_bytes
@@ -277,7 +277,7 @@ class OpNode:
             return op_def.compute_memory(self.attrs)
         return None
 
-    def compute_comm(self) -> Optional[Union[int, Expr]]:
+    def compute_comm(self) -> int | Expr | None:
         """计算通信量 (委托给 OpDef)."""
         if self.comm_bytes is not None:
             return self.comm_bytes
@@ -323,12 +323,12 @@ class ScheduledOp:
     phase: Phase = Phase.FORWARD
 
     # Timing
-    start: Union[float, Expr] = 0
-    duration: Union[float, Expr] = 0
+    start: float | Expr = 0
+    duration: float | Expr = 0
     event_seq: int = 0
 
     @property
-    def end(self) -> Union[float, Expr]:
+    def end(self) -> float | Expr:
         """结束时间."""
         return self.start + self.duration
 
@@ -354,14 +354,14 @@ class DeviceSchedule:
     """
 
     device_id: int
-    ops: List[ScheduledOp] = field(default_factory=list)
+    ops: list[ScheduledOp] = field(default_factory=list)
 
     def add_op(self, op: ScheduledOp) -> None:
         """添加 Op."""
         self.ops.append(op)
 
     @property
-    def end_time(self) -> Union[float, Expr]:
+    def end_time(self) -> float | Expr:
         """该设备的结束时间."""
         if not self.ops:
             return 0
@@ -381,7 +381,7 @@ class StageSchedule:
     """
 
     stage_id: int
-    devices: Dict[int, DeviceSchedule] = field(default_factory=dict)
+    devices: dict[int, DeviceSchedule] = field(default_factory=dict)
 
     def get_device(self, device_id: int) -> DeviceSchedule:
         """获取或创建设备调度."""
@@ -409,9 +409,9 @@ class ScheduleIR:
         metadata: 元数据
     """
 
-    stages: Dict[int, StageSchedule] = field(default_factory=dict)
+    stages: dict[int, StageSchedule] = field(default_factory=dict)
     num_devices: int = 1
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Event counter
     _event_seq: int = 0
@@ -496,15 +496,15 @@ class TimelineEvent:
         metadata: 额外元数据
     """
 
-    time: Union[float, Expr]
+    time: float | Expr
     event_type: EventType
     resource_id: str
     device: int = 0
     stream: StreamType = StreamType.COMPUTE
-    size: Union[int, Expr] = 0
+    size: int | Expr = 0
     op_type: str = ""
     phase: Phase = Phase.FORWARD
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __lt__(self, other: TimelineEvent) -> bool:
         """按时间排序."""
@@ -528,11 +528,11 @@ class MemorySnapshot:
         tensors: 活跃张量列表
     """
 
-    time: Union[float, Expr]
+    time: float | Expr
     device: int
-    allocated: Union[int, Expr] = 0
-    peak: Union[int, Expr] = 0
-    tensors: List[str] = field(default_factory=list)
+    allocated: int | Expr = 0
+    peak: int | Expr = 0
+    tensors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -550,9 +550,9 @@ class TimelineIR:
         metadata: 元数据
     """
 
-    events: List[TimelineEvent] = field(default_factory=list)
-    memory_snapshots: List[MemorySnapshot] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    events: list[TimelineEvent] = field(default_factory=list)
+    memory_snapshots: list[MemorySnapshot] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_event(self, event: TimelineEvent) -> None:
         """添加事件."""
@@ -563,7 +563,7 @@ class TimelineIR:
         self.events.sort()
 
     @property
-    def end_time(self) -> Union[float, Expr]:
+    def end_time(self) -> float | Expr:
         """时间线结束时间."""
         if not self.events:
             return 0
@@ -571,7 +571,7 @@ class TimelineIR:
 
     def to_chrome_trace(
         self, time_unit: str = "ms", include_blocks: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """导出为 Chrome Trace 格式.
 
         可以在 chrome://tracing 或 https://ui.perfetto.dev 中打开。
@@ -602,7 +602,7 @@ class TimelineIR:
         }
 
         # 用于 Micro-batch 聚合的数据结构
-        microbatch_spans: Dict[tuple, List[float]] = defaultdict(list)
+        microbatch_spans: dict[tuple, list[float]] = defaultdict(list)
 
         def _eval_time(t) -> float:
             if isinstance(t, (int, float)):
@@ -614,7 +614,7 @@ class TimelineIR:
                     return 0.0
             return 0.0
 
-        def _extract_microbatch(resource_id: str) -> Optional[str]:
+        def _extract_microbatch(resource_id: str) -> str | None:
             """从 resource_id 提取 micro-batch 编号."""
             match = re.search(r"_mb(\d+)", resource_id)
             if match:
@@ -795,7 +795,7 @@ class TimelineIR:
         # 添加元数据
         metadata = []
 
-        devices = set(e.device for e in self.events)
+        devices = {e.device for e in self.events}
         pp = self.metadata.get("pp", 1)
 
         for device in sorted(devices):
@@ -875,13 +875,13 @@ class TimelineIR:
 class MemoryBreakdown:
     """内存分解."""
 
-    weights: Union[int, float] = 0
-    activations: Union[int, float] = 0
-    gradients: Union[int, float] = 0
-    optimizer_states: Union[int, float] = 0
+    weights: int | float = 0
+    activations: int | float = 0
+    gradients: int | float = 0
+    optimizer_states: int | float = 0
 
     @property
-    def total(self) -> Union[int, float]:
+    def total(self) -> int | float:
         return self.weights + self.activations + self.gradients + self.optimizer_states
 
 
@@ -920,9 +920,9 @@ class BlockMetrics:
     """
 
     # 单层内存
-    weights: Union[int, float] = 0
-    activations: Union[int, float] = 0
-    optimizer_states: Union[int, float] = 0
+    weights: int | float = 0
+    activations: int | float = 0
+    optimizer_states: int | float = 0
 
     # 单层时间 (per-layer per-microbatch)
     forward_time: float = 0
@@ -960,15 +960,15 @@ class SimulationResult:
         timeline: TimelineIR 引用 (用于导出 trace)
     """
 
-    peak_memory: Union[int, float] = 0
+    peak_memory: int | float = 0
     e2e_time: float = 0
-    memory_breakdown: Optional[MemoryBreakdown] = None
-    time_breakdown: Optional[TimeBreakdown] = None  # per-layer per-microbatch
-    total_time_breakdown: Optional[TimeBreakdown] = None  # 整个迭代的总时间
-    block_metrics: Optional[BlockMetrics] = None  # 单层指标
-    total_flops: Union[int, float] = 0
-    config: Dict[str, Any] = field(default_factory=dict)
-    timeline: Optional[TimelineIR] = None  # TimelineIR 引用，用于导出 Chrome Trace
+    memory_breakdown: MemoryBreakdown | None = None
+    time_breakdown: TimeBreakdown | None = None  # per-layer per-microbatch
+    total_time_breakdown: TimeBreakdown | None = None  # 整个迭代的总时间
+    block_metrics: BlockMetrics | None = None  # 单层指标
+    total_flops: int | float = 0
+    config: dict[str, Any] = field(default_factory=dict)
+    timeline: TimelineIR | None = None  # TimelineIR 引用，用于导出 Chrome Trace
 
     @property
     def mfu(self) -> float:

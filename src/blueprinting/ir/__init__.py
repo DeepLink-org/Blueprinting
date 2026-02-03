@@ -42,7 +42,7 @@ from .passes import (
                       SchedulePass,
                       SimulatePass,
                       TimelinePass,
-                      TimelinePassV2,
+                      TimelinePass,
 )
 from .result import SimulationResult
 from .schedule import DeviceSchedule, ScheduledOp, ScheduleIR, StageSchedule, TensorLifetime
@@ -93,7 +93,7 @@ __all__ = [
     "ParallelPass",
     "SchedulePass",
     "TimelinePass",
-    "TimelinePassV2",
+    "TimelinePass",
     "SimulatePass",
     "OverlapAnalysisPass",
     "OptimizerPass",

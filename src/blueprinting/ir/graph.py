@@ -470,7 +470,7 @@ class GraphIR:
                 for i, child in enumerate(node.children):
                     is_last = i == len(node.children) - 1
                     child_prefix = prefix + ("└─ " if is_last else "├─ ")
-                    next_prefix = prefix + ("   " if is_last else "│  ")
+                    prefix + ("   " if is_last else "│  ")
                     _tree(child, depth + 1, child_prefix)
                     if i < len(node.children) - 1:
                         lines[-1] = lines[-1]  # Keep formatting
@@ -484,7 +484,7 @@ class GraphIR:
                     for i, child in enumerate(node.children):
                         is_last = i == len(node.children) - 1
                         child_prefix = prefix + ("   └─ " if is_last else "   ├─ ")
-                        next_prefix = prefix + ("      " if is_last else "   │  ")
+                        prefix + ("      " if is_last else "   │  ")
                         _tree(child, depth + 1, child_prefix)
 
             elif isinstance(node, OpNode):

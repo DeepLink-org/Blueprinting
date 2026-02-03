@@ -24,7 +24,7 @@ from src.blueprinting.ir.dsl import (
 )
 from src.blueprinting.ir.passes import (
     PrintGraphPass, PrintSchedulePass, PrintTimelinePass,
-    ExpandPass, TimelinePassV2,
+    ExpandPass, TimelinePass,
     Pipeline,
 )
 
@@ -134,7 +134,7 @@ def test_timeline_pass():
     schedule = ExpandPass().run(graph)
     
     # 生成 Timeline
-    timeline = TimelinePassV2().run(schedule)
+    timeline = TimelinePass().run(schedule)
     
     # 验证
     assert len(timeline.events) > 0
@@ -190,7 +190,7 @@ def test_full_pipeline():
         PrintGraphPass("Input: Graph IR (Block-level)"),
         ExpandPass(),
         PrintSchedulePass("After Expand: Schedule IR (Op-level)"),
-        TimelinePassV2(),
+        TimelinePass(),
         PrintTimelinePass("After Timeline: Timeline IR (Event-level)"),
     ])
     

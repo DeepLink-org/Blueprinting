@@ -47,7 +47,7 @@ from blueprinting.ir.passes import (
     PipelineSchedulePass,
     PipelineConfig,
     PPScheduleMode,
-    TimelinePassV2,
+    TimelinePass,
     OverlapAnalysisPass,
     SimulatePass,
     PrintSchedulePass,
@@ -603,8 +603,8 @@ def create_compiler(
             ),
         ))
     
-    # 6. TimelinePassV2: Op → Event
-    passes.append(TimelinePassV2(track_memory=True))
+    # 6. TimelinePass: Op → Event
+    passes.append(TimelinePass(track_memory=True))
     
     # 7. OverlapAnalysisPass: 重叠分析
     passes.append(OverlapAnalysisPass())

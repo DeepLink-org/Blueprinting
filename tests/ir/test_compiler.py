@@ -12,7 +12,7 @@ from blueprinting.ir.passes import (
     ExpandPass,
     ParallelPass,
     SchedulePass,
-    TimelinePassV2,
+    TimelinePass,
     SimulatePass,
     OptimizerPass,
     OptimizerConfig,
@@ -43,7 +43,7 @@ class TestCompiler:
             .add_pass(ParallelPass())
             .add_pass(ExpandPass())
             .add_pass(SchedulePass())
-            .add_pass(TimelinePassV2())
+            .add_pass(TimelinePass())
             .add_pass(SimulatePass()))
         
         assert len(compiler.passes) == 5
@@ -77,7 +77,7 @@ class TestCompiler:
         )
         
         # With pp=4 and training=True, we expect:
-        # ParallelPass, ExpandPass, SchedulePass, OptimizerPass, PipelineSchedulePass, TimelinePassV2, SimulatePass
+        # ParallelPass, ExpandPass, SchedulePass, OptimizerPass, PipelineSchedulePass, TimelinePass, SimulatePass
         assert len(compiler.passes) >= 6
         assert isinstance(compiler.passes[0], ParallelPass)
         assert isinstance(compiler.passes[1], ExpandPass)

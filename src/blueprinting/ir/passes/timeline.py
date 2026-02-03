@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
-
 from sympy import Expr
 
 from ..types import (
@@ -28,7 +26,7 @@ from ..types import (
 from .base import Pass
 
 
-class TimelinePassV2(Pass):
+class TimelinePass(Pass):
     """将 ScheduleIR 转换为 TimelineIR.
 
     除了生成 COMPUTE/COMM 事件，还生成:
@@ -37,7 +35,7 @@ class TimelinePassV2(Pass):
     """
 
     def __init__(self, track_memory: bool = True):
-        """初始化 TimelinePassV2.
+        """初始化 TimelinePass.
 
         Args:
             track_memory: 是否生成内存事件 (ALLOC/FREE)
@@ -141,7 +139,7 @@ class TimelinePassV2(Pass):
             )
         )
 
-    def _add_memory_events(self, ops: List[ScheduledOp], timeline: TimelineIR) -> None:
+    def _add_memory_events(self, ops: list[ScheduledOp], timeline: TimelineIR) -> None:
         """生成内存分配/释放事件.
 
         真实训练语义的内存模型:
@@ -224,7 +222,7 @@ class TimelinePassV2(Pass):
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
 
         # 提取 layer_idx 的辅助函数
-        def extract_layer_idx(source: Optional[str]) -> Optional[int]:
+        def extract_layer_idx(source: str | None) -> int | None:
             if not source:
                 return None
             patterns = [
@@ -266,7 +264,7 @@ class TimelinePassV2(Pass):
             return 0
 
         # 按 layer_idx 分组 forward ops（只取第一个 micro-batch 计算单层激活）
-        layer_ops: Dict[int, List[ScheduledOp]] = {}
+        layer_ops: dict[int, list[ScheduledOp]] = {}
         for op in forward_ops:
             source = op.op.source_block if op.op else ""
             layer_idx = extract_layer_idx(source)
@@ -345,7 +343,7 @@ class SimulatePass(Pass):
 
     def __init__(
         self,
-        subs: Optional[Dict[str, float]] = None,
+        subs: dict[str, float] | None = None,
         peak_tflops: float = 312.0,  # A100 FP16 峰值
         training: bool = True,
     ):
@@ -372,7 +370,7 @@ class SimulatePass(Pass):
         from ..types import BlockMetrics, SimulationResult, TimeBreakdown
 
         # ========== 从 metadata 读取配置（不计算） ==========
-        pp = ir.metadata.get("pp", 1)
+        ir.metadata.get("pp", 1)
         num_microbatches = ir.metadata.get("num_microbatches", 1)
         layers_per_stage = ir.metadata.get("layers_per_stage", 1)
         total_flops = ir.metadata.get("total_flops", 0)
@@ -465,7 +463,7 @@ class SimulatePass(Pass):
 
         return 0.0
 
-    def _observe_memory(self, ir: TimelineIR) -> Tuple[float, MemoryBreakdown]:
+    def _observe_memory(self, ir: TimelineIR) -> tuple[float, MemoryBreakdown]:
         """观测内存使用（遍历事件统计）.
 
         这是观测者模式：只统计，不计算。
@@ -616,7 +614,7 @@ class SimulatePass(Pass):
 
     def _observe_time(
         self, ir: TimelineIR
-    ) -> Tuple[TimeBreakdown, float, float, float]:
+    ) -> tuple[TimeBreakdown, float, float, float]:
         """观测时间，返回总时间、通信分解和迭代时间（遍历事件统计）.
 
         这是观测者模式：只统计，不计算。
@@ -644,9 +642,9 @@ class SimulatePass(Pass):
         iteration_end = 0.0
 
         # 配对 START/END 事件
-        starts: Dict[str, float] = {}
-        start_phases: Dict[str, Phase] = {}
-        start_op_types: Dict[str, str] = {}
+        starts: dict[str, float] = {}
+        start_phases: dict[str, Phase] = {}
+        start_op_types: dict[str, str] = {}
 
         for event in ir.events:
             resource = event.resource_id
@@ -730,8 +728,8 @@ class SimulatePass(Pass):
     def _compute_recompute_time(self, ir: TimelineIR, pp: int) -> float:
         """单独统计 recompute 时间（通过 _RE 后缀识别）."""
         recompute_cumulative = 0.0
-        starts: Dict[str, float] = {}
-        start_op_types: Dict[str, str] = {}
+        starts: dict[str, float] = {}
+        start_op_types: dict[str, str] = {}
 
         for event in ir.events:
             resource = event.resource_id
