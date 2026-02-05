@@ -16,16 +16,21 @@ from blueprinting.ir import (
     ScheduleIR,
     TimelineIR,
     SimulationResult,
-    IRBuilder,
-    Compiler,
-    WorkloadPass,
+)
+from blueprinting.ir.dsl import Transformer
+from blueprinting.ir.passes import (
+    Pipeline,
     ParallelPass,
+    ExpandPass,
     SchedulePass,
-    TimelinePass,
-    OverlapAnalysisPass,
-    EvaluatePass,
     OptimizerPass,
     OptimizerConfig,
+    PipelineSchedulePass,
+    PipelineConfig,
+    PPScheduleMode,
+    TimelinePass,
+    OverlapAnalysisPass,
+    SimulatePass,
 )
 from blueprinting import Model, Execution
 from calculon import System
@@ -135,23 +140,24 @@ def _tree_to_html(tree_text: str) -> str:
 
 def _schedule_tree_html(schedule: ScheduleIR, max_ops: int = 5) -> str:
     """Render ScheduleIR hierarchy as HTML using the structure, not text."""
+    num_stages = len(schedule.stages)
     lines = [
         "<div style='font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;'>",
         "<ul style='margin:0; padding-left:16px;'>",
-        f"<li>ScheduleIR (stages={schedule.num_stages}, devices={schedule.num_devices})",
+        f"<li>ScheduleIR (stages={num_stages}, devices={schedule.num_devices})",
         "<ul style='margin:0; padding-left:16px;'>",
     ]
 
-    for stage in schedule.iter_stages():
-        stage_ops = list(stage.iter_ops())
+    for stage_id, stage in sorted(schedule.stages.items()):
+        stage_ops = sum(len(d.ops) for d in stage.devices.values())
         lines.append(
-            f"<li>Stage {stage.stage_id} "
-            f"<span style='color:#6b7280'>(ops={len(stage_ops)})</span>"
+            f"<li>Stage {stage_id} "
+            f"<span style='color:#6b7280'>(ops={stage_ops})</span>"
             "<ul style='margin:0; padding-left:16px;'>"
         )
-        for device in stage.iter_devices():
+        for device_id, device in sorted(stage.devices.items()):
             dev_label = (
-                f"Device {device.device_id} "
+                f"Device {device_id} "
                 f"<span style='color:#6b7280'>(ops={len(device.ops)})</span>"
             )
 
@@ -207,11 +213,11 @@ def _schedule_tree_html(schedule: ScheduleIR, max_ops: int = 5) -> str:
 
 
 def _schedule_summary(schedule: ScheduleIR) -> str:
-    stage_count = schedule.num_stages
+    stage_count = len(schedule.stages)
     devices_per_stage = []
     distinct_devices = set()
-    for stage in schedule.iter_stages():
-        devices = list(stage.iter_devices())
+    for stage in schedule.stages.values():
+        devices = list(stage.devices.values())
         devices_per_stage.append(len(devices))
         for device in devices:
             distinct_devices.add(device.device_id)
@@ -225,7 +231,13 @@ def _schedule_summary(schedule: ScheduleIR) -> str:
 
 
 def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1) -> Dict[str, Any]:
-    """Normalize IR metrics to comparison schema."""
+    """Normalize IR metrics to comparison schema.
+    
+    与 gpt175b_compile.py 对齐：
+    - weights: FP16 权重 (ir_mb.weights 已经是 FP16)
+    - activations: 真实生命周期追踪
+    - optimizer_states: Adam 完整状态 (m+v+master_weights)
+    """
     if not ir_result:
         return {}
     config = getattr(ir_result, "config", {}) or {}
@@ -235,64 +247,77 @@ def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1) -> Dict[st
 
     ir_mb = getattr(ir_result, "memory_breakdown", None)
     ir_tb = getattr(ir_result, "time_breakdown", None)
+    ir_total_tb = getattr(ir_result, "total_time_breakdown", None)
+    ir_block = getattr(ir_result, "block_metrics", None)
 
-    weights_fp32 = ir_mb.weights if ir_mb else 0
+    # per-GPU 内存指标（真实训练语义）
+    # 注意: ir_mb.weights 已经是 FP16 权重
+    weights = ir_mb.weights if ir_mb else 0
     activations = ir_mb.activations if ir_mb else 0
     gradients = ir_mb.gradients if ir_mb else 0
     optimizer_states = ir_mb.optimizer_states if ir_mb else 0
     total_memory = ir_mb.total if ir_mb else 0
 
-    layers_per_stage = num_layers // pp if pp > 0 else num_layers
-    block_weights = weights_fp32 / layers_per_stage if layers_per_stage > 0 else 0
-    block_activations = activations
-    block_optimizer = optimizer_states / layers_per_stage if layers_per_stage > 0 else 0
+    # 总时间指标（真实仿真结果）
+    total_fw = ir_total_tb.forward if ir_total_tb else (ir_tb.forward if ir_tb else 0)
+    total_bw = ir_total_tb.backward if ir_total_tb else (ir_tb.backward if ir_tb else 0)
+    total_comm = ir_total_tb.communication if ir_total_tb else (ir_tb.communication if ir_tb else 0)
+    total_bubble = ir_total_tb.bubble if ir_total_tb else (ir_tb.bubble if ir_tb else 0)
+    total_recompute = ir_total_tb.recompute if ir_total_tb else (getattr(ir_tb, "recompute", 0) if ir_tb else 0)
 
-    block_fw = ir_tb.forward / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
-    block_bw = ir_tb.backward / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
-    block_comm = ir_tb.communication / layers_per_stage if ir_tb and layers_per_stage > 0 else 0
+    # 单层指标（由 SimulatePass 计算）
+    block_weights = ir_block.weights if ir_block else 0
+    block_activations = ir_block.activations if ir_block else 0
+    block_optimizer = ir_block.optimizer_states if ir_block else 0
+    block_fw = ir_block.forward_time if ir_block else 0
+    block_bw = ir_block.backward_time if ir_block else 0
+    block_comm = ir_block.communication_time if ir_block else 0
+    block_compute = ir_block.compute_time if ir_block else 0
+    block_total = ir_block.total_time if ir_block else 0
+    block_comm_fw = getattr(ir_block, "comm_fw", 0) if ir_block else 0
+    block_comm_bw = getattr(ir_block, "comm_bw", 0) if ir_block else 0
 
     return {
-        "schema": "comparison_v1",
+        "schema": "ir_native_v1",  # 标记为 IR 原生语义
         "units": {"memory": "bytes", "time": "seconds"},
         "basis": {
-            "weights": "fp32_master",
-            "activations": "unknown",
+            "weights": "fp16",
+            "activations": "lifecycle_tracked",  # 真实生命周期追踪
             "gradients": "fp16",
-            "optimizer_states": "fp32",
+            "optimizer_states": "adam_full",  # Adam: m+v+master_weights
         },
         "per_gpu": {
             "memory": {
-                "weights_fp16_bytes": weights_fp32 / 2 if weights_fp32 else 0,
-                "weights_fp32_bytes": weights_fp32,
+                "weights_fp16_bytes": weights,
                 "activations_bytes": activations,
-                "activations_block_bytes": 0,
                 "activations_peak_bytes": getattr(ir_result, "peak_memory", 0),
                 "gradients_bytes": gradients,
                 "optimizer_bytes": optimizer_states,
                 "total_bytes": total_memory,
             },
             "time": {
+                "recompute_time": total_recompute,
                 "iteration_time": getattr(ir_result, "e2e_time", 0) or 0,
-                "forward_time": ir_tb.forward if ir_tb else 0,
-                "backward_time": ir_tb.backward if ir_tb else 0,
-                "optimizer_time": ir_tb.optimizer if ir_tb else 0,
-                "communication_time": ir_tb.communication if ir_tb else 0,
-                "bubble_time": ir_tb.bubble if ir_tb else 0,
+                "forward_time": total_fw,
+                "backward_time": total_bw,
+                "communication_time": total_comm,
+                "bubble_time": total_bubble,
             },
         },
         "block": {
             "memory": {
-                "weights_bytes": block_weights / 2,
+                "weights_bytes": block_weights,
                 "activations_bytes": block_activations,
                 "optimizer_bytes": block_optimizer,
             },
             "time": {
                 "forward_time": block_fw,
-                "agrad_time": block_bw / 2,
-                "wgrad_time": block_bw / 2,
-                "compute_time": block_fw + block_bw,
+                "backward_time": block_bw,  # 真实 backward 时间，不做 agrad/wgrad 拆分
+                "compute_time": block_compute,
+                "comm_fw": block_comm_fw,
+                "comm_bw": block_comm_bw,
                 "comm_time": block_comm,
-                "total_time": block_fw + block_bw + block_comm,
+                "total_time": block_total,
             },
         },
     }
@@ -368,7 +393,16 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
-    """构建 Transformer 模型的 GraphIR (层级结构)"""
+    """使用新 DSL 构建 Transformer 模型的 GraphIR.
+    
+    Args:
+        model: 模型配置字典
+        execution: 执行配置字典
+        model_name: 模型名称
+    
+    Returns:
+        GraphIR
+    """
     hidden = model["hidden"]
     feedforward = model["feedforward"]
     num_heads = model["attn_heads"]
@@ -377,63 +411,69 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     seq_len = model.get("seq_size", 2048)
     micro_batch_size = execution["microbatch_size"]
     tp = execution["tensor_par"]
+    pp = execution.get("pipeline_par", 1)
+    dp = execution.get("data_par", 1)
     batch_seq = micro_batch_size * seq_len
+    gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
+    optimizer_sharding = execution.get("optimizer_sharding", False)
 
-    builder = IRBuilder(model_name, "Transformer")
+    with Transformer(model_name) as m:
+        # 元数据
+        m.metadata(
+            model_name=model_name,
+            num_layers=num_layers,
+            hidden=hidden,
+            feedforward=feedforward,
+            num_heads=num_heads,
+            head_dim=head_dim,
+            batch_size=micro_batch_size,
+            seq_len=seq_len,
+            tp=tp,
+            pp=pp,
+            dp=dp,
+            batch_seq=batch_seq,
+            gradient_checkpointing=gradient_checkpointing,
+            optimizer_sharding=optimizer_sharding,
+        )
+        
+        # Transformer layers
+        for i in range(num_layers):
+            with m.TransformerLayer(f"layer{i}") as layer:
+                # Attention block
+                with layer.Attention("attn") as attn:
+                    # Pre-norm
+                    attn.RMSNorm("norm", normalized_shape=hidden)
+                    
+                    # QKV projections (column parallel)
+                    attn.Linear("q_proj", in_features=hidden, out_features=hidden, shard="tp_col")
+                    attn.Linear("k_proj", in_features=hidden, out_features=hidden, shard="tp_col")
+                    attn.Linear("v_proj", in_features=hidden, out_features=hidden, shard="tp_col")
+                    
+                    # Output projection (row parallel)
+                    attn.Linear("out_proj", in_features=hidden, out_features=hidden, shard="tp_row")
+                
+                # FFN block (GPT-3 使用 GELU 激活)
+                with layer.FFN("ffn") as ffn:
+                    # Pre-norm
+                    ffn.RMSNorm("norm", normalized_shape=hidden)
+                    
+                    # Up projection (column parallel): hidden → feedforward
+                    ffn.Linear("up_proj", in_features=hidden, out_features=feedforward, shard="tp_col")
+                    
+                    # GELU 激活函数
+                    ffn.GELU("gelu")
+                    
+                    # Down projection (row parallel): feedforward → hidden
+                    ffn.Linear("down_proj", in_features=feedforward, out_features=hidden, shard="tp_row")
+    
+    return m.build()
 
-    builder.set_metadata("model_name", model_name)
-    builder.set_metadata("num_layers", num_layers)
-    builder.set_metadata("hidden", hidden)
-    builder.set_metadata("feedforward", feedforward)
-    builder.set_metadata("num_heads", num_heads)
-    builder.set_metadata("head_dim", head_dim)
-    builder.set_metadata("batch_size", micro_batch_size)
-    builder.set_metadata("seq_len", seq_len)
-    builder.set_metadata("tp", tp)
-    builder.set_metadata("optimizer_sharding", execution.get("optimizer_sharding", False))
-    builder.set_metadata("zero", execution.get("zero", 0))
-    builder.set_metadata("activation_recompute", execution.get("activation_recompute", "none"))
-    builder.set_metadata("pp", execution.get("pipeline_par", 1))
-    builder.set_metadata("dp", execution.get("data_par", 1))
 
-    x = builder.add_input("input_ids", shape=[micro_batch_size, seq_len, hidden])
-    prev = x
-
-    for i in range(num_layers):
-        with builder.block(f"layer{i}", "TransformerLayer", layer_idx=i):
-            with builder.block("attn", "Attention"):
-                norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
-                q = builder.linear("q_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                k = builder.linear("k_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                v = builder.linear("v_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                attn = builder.attention(
-                    "mha",
-                    [q.name + "_out", k.name + "_out", v.name + "_out"],
-                    num_heads, head_dim, seq_len=seq_len, batch_size=micro_batch_size, shard="tp_col"
-                )
-                out_proj = builder.linear("out_proj", attn.name + "_out", hidden, hidden, shard="tp_row", batch_seq=batch_seq)
-                res1 = builder.add("residual", [prev, out_proj.name + "_out"], num_elements=batch_seq * hidden)
-
-            attn_out = res1.name + "_out"
-
-            with builder.block("ffn", "FFN"):
-                norm2 = builder.rmsnorm("norm", attn_out, hidden, batch_seq=batch_seq)
-                fc1 = builder.linear("fc1", norm2.name + "_out", hidden, feedforward, shard="tp_col", batch_seq=batch_seq)
-                act = builder.activation("act", fc1.name + "_out", "SiLU", num_elements=batch_seq * feedforward, shard="tp_col")
-                fc2 = builder.linear("fc2", act.name + "_out", feedforward, hidden, shard="tp_row", batch_seq=batch_seq)
-                res2 = builder.add("residual", [attn_out, fc2.name + "_out"], num_elements=batch_seq * hidden)
-
-            prev = res2.name + "_out"
-
-    with builder.block("final", "Output"):
-        final_norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
-
-    builder.add_output(final_norm.name + "_out")
-    return builder.build()
-
-
-def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int) -> Compiler:
-    """创建 IR 编译流水线"""
+def create_compiler(execution: Dict[str, Any], system_cfg: Dict[str, Any], seq_len: int) -> Pipeline:
+    """创建 IR 编译流水线（使用新架构）.
+    
+    配置与 gpt175b_compile.py 对齐，确保结果一致性。
+    """
     tp = execution["tensor_par"]
     pp = execution["pipeline_par"]
     dp = execution["data_par"]
@@ -442,29 +482,80 @@ def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int) 
     gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
     num_microbatches = batch_size // (micro_batch_size * dp)
 
-    compiler = Compiler()
-    compiler.add_pass(WorkloadPass(dtype_bytes=2))
-    compiler.add_pass(ParallelPass(
+    # 从系统配置中提取硬件参数
+    peak_tflops = system_cfg.get("peak_processing", {}).get("float16_TFLOP", 1000)
+    memory_bandwidth = system_cfg.get("mem1_bw_GBps", 3072) * 1e9  # Convert to bytes/s
+    # 网络带宽: 使用 Calculon 对齐的效率 0.65
+    network_bandwidth = system_cfg.get("net1_bw_Gbps", 450) * 1e9 * 0.65  # 450 GB/s × 0.65 效率
+
+    # 构建新的编译流水线
+    passes = []
+
+    # 1. ParallelPass: 标记并行策略
+    passes.append(ParallelPass(
         tp=tp, pp=pp, dp=dp,
         tp_comm_type=execution.get("tensor_par_comm_type", "ar"),
         sequence_parallel=execution.get("sequence_par", False),
     ))
-    compiler.add_pass(SchedulePass(system_config=system_path, training=True))
-    compiler.add_pass(OptimizerPass(
-        OptimizerConfig(
+
+    # 2. ExpandPass: Block → Op
+    passes.append(ExpandPass())
+
+    # 3. SchedulePass: 计算 workload + timing
+    # 参数与 Calculon H100 配置对齐
+    passes.append(SchedulePass(
+        peak_tflops=peak_tflops,
+        memory_bandwidth=memory_bandwidth,
+        network_bandwidth=network_bandwidth,
+        network_efficiency=0.65,  # NVLink 效率 (与 Calculon H100 配置对齐)
+        network_latency=10e-6,  # 10µs 延迟
+        compute_efficiency=0.95,  # 95% 计算效率
+        processing_mode="no_overlap",  # 处理模式 (与 Calculon 对齐)
+        all_reduce_offset=1.0,  # AllReduce 通信偏移量 (Calculon 模型)
+    ))
+
+    # 4. OptimizerPass: 追加反向 Op（训练时）
+    # 配置与 gpt175b_compile.py 对齐: ZeRO Stage 1
+    recompute_mode = "full" if gradient_checkpointing else "none"
+    passes.append(OptimizerPass(
+        optimizer_config=OptimizerConfig(
             optimizer_type="adam",
             master_weights=True,
             gradient_checkpointing=gradient_checkpointing,
-            recompute_mode="full" if gradient_checkpointing else "none",
-            checkpoint_ratio=1.0 if gradient_checkpointing else 0.0,
-            num_microbatches=num_microbatches,
+            recompute_mode=recompute_mode,
+            zero_stage=1,  # 启用 ZeRO Stage 1: optimizer states 分片到 DP ranks
+            dp=dp,  # DP 度数，用于 ZeRO 分片计算
         ),
-        system_config={"memory_bandwidth_gbps": 3072, "peak_tflops": 1000},
+        training=True,
+        memory_bandwidth=memory_bandwidth,
+        peak_flops=peak_tflops * 1e12,
     ))
-    compiler.add_pass(TimelinePass())
-    compiler.add_pass(OverlapAnalysisPass())
-    compiler.add_pass(EvaluatePass(subs={"batch_seq": micro_batch_size * seq_len}, training=True))
-    return compiler
+
+    # 5. PipelineSchedulePass: PP 调度（PP>1 时）
+    if pp > 1:
+        passes.append(PipelineSchedulePass(
+            PipelineConfig(
+                num_stages=pp,
+                num_microbatches=num_microbatches,
+                mode=PPScheduleMode.ONE_F_ONE_B,
+            )
+        ))
+
+    # 6. TimelinePass: Op → Event
+    passes.append(TimelinePass(track_memory=True))
+
+    # 7. OverlapAnalysisPass: 重叠分析
+    passes.append(OverlapAnalysisPass())
+
+    # 8. SimulatePass: 评估
+    subs = {"batch_seq": micro_batch_size * seq_len}
+    passes.append(SimulatePass(
+        subs=subs,
+        peak_tflops=peak_tflops,
+        training=True,
+    ))
+
+    return Pipeline(passes)
 
 
 def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], system_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -501,7 +592,7 @@ def _graph_ops_table(graph: GraphIR, max_rows: int) -> pd.DataFrame:
 
 def _schedule_ops_table(schedule: ScheduleIR, max_rows: int) -> pd.DataFrame:
     rows = []
-    for op in schedule.iter_ops_sorted():
+    for op in schedule.iter_ops():  # iter_ops() already sorts by event_seq
         rows.append({
             "seq": op.event_seq,
             "device": op.device,
@@ -581,7 +672,7 @@ def snapshot_ir(
         snap["table_title"] = "Op 列表 (GraphIR)"
     elif isinstance(ir, ScheduleIR):
         snap["summary"] = _schedule_summary(ir)
-        snap["tree"] = ir.tree(max_ops=4)
+        snap["tree"] = None  # ScheduleIR doesn't have tree() method
         snap["tree_html"] = _schedule_tree_html(ir, max_ops=4)
         snap["table"] = _limit_df(_schedule_ops_table(ir, max_rows=max_rows), max_rows)
         snap["table_title"] = "调度 Op 列表 (ScheduleIR)"
@@ -609,7 +700,7 @@ def snapshot_ir(
 
 def run_ir_pipeline_with_snapshots(
     graph: GraphIR,
-    compiler: Compiler,
+    pipeline: Pipeline,
     max_rows: int = 120,
     timeline_device: int = 0,
     timeline_single_device: bool = True,
@@ -619,7 +710,7 @@ def run_ir_pipeline_with_snapshots(
     snapshots.append(snapshot_ir("InputGraph", graph, max_rows=max_rows))
 
     current: Any = graph
-    for p in compiler.passes:
+    for p in pipeline.passes:
         current = p.run(current)
         snapshots.append(
             snapshot_ir(
@@ -684,10 +775,10 @@ if run_btn:
         graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
 
     with st.spinner("运行 IR 编译流程..."):
-        compiler = create_compiler(execution_cfg, cfg["system_path"], model_cfg.get("seq_size", 2048))
+        pipeline = create_compiler(execution_cfg, system_cfg, model_cfg.get("seq_size", 2048))
         pipeline_result = run_ir_pipeline_with_snapshots(
             graph,
-            compiler,
+            pipeline,
             max_rows=max_rows,
             timeline_device=int(timeline_device),
             timeline_single_device=timeline_single_device,
