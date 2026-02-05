@@ -1,307 +1,179 @@
 """ParallelPass - Apply parallel strategies to GraphIR.
 
-This pass applies tensor parallelism (TP), pipeline parallelism (PP),
-and data parallelism (DP) strategies to the graph.
+这个 Pass 在 Graph IR 层应用并行策略:
+1. 标记 Block 的 TP shard 策略 (tp_col, tp_row)
+2. 分配 PP stage 和 device
+3. 更新 metadata (tp, pp, dp)
+
+不修改 workload 计算（由 SchedulePass 负责）。
 """
 
-from typing import Dict, List, Optional
+import re
+from typing import Optional
 
-from sympy import Expr, Symbol
-
-from ..graph import GraphIR, OpNode
+from ..types import BlockNode, GraphIR
 from .base import Pass
 
 
 class ParallelPass(Pass):
-    """Pass to apply parallel strategies to the graph.
-    
-    This pass:
-    1. Marks each node with its sharding strategy
-    2. Inserts communication nodes (AllReduce, AllGather, ReduceScatter)
-    3. Adjusts FLOPs/memory by parallel factors
-    4. Assigns devices for pipeline stages
+    """在 Graph IR 层应用并行策略.
+
+    职责:
+    - 标记 Block 的 shard 策略 (tp_col, tp_row, seq_par)
+    - 分配 PP stage
+    - 更新 metadata
+
+    不负责:
+    - workload 调整（由 SchedulePass 根据 shard 策略处理）
+    - 插入通信 Op（由 ExpandPass 根据 shard 策略处理）
     """
-    
+
     def __init__(
         self,
         tp: int = 1,
         pp: int = 1,
         dp: int = 1,
-        tp_comm_type: str = "ar",  # "ar" (all-reduce) or "rs_ag" (reduce-scatter + all-gather)
+        tp_comm_type: str = "ar",  # "ar" 或 "rs_ag"
         sequence_parallel: bool = False,
     ):
-        """Initialize ParallelPass.
-        
+        """初始化 ParallelPass.
+
         Args:
-            tp: Tensor parallelism degree
-            pp: Pipeline parallelism degree
-            dp: Data parallelism degree
-            tp_comm_type: TP communication type ("ar" or "rs_ag")
-            sequence_parallel: Whether to use sequence parallelism
+            tp: Tensor Parallelism 度数
+            pp: Pipeline Parallelism 度数
+            dp: Data Parallelism 度数
+            tp_comm_type: TP 通信类型 ("ar" = AllReduce, "rs_ag" = ReduceScatter + AllGather)
+            sequence_parallel: 是否使用序列并行
         """
         self.tp = tp
         self.pp = pp
         self.dp = dp
         self.tp_comm_type = tp_comm_type
         self.sequence_parallel = sequence_parallel
-    
+
     def run(self, ir: GraphIR) -> GraphIR:
-        """Execute the parallel pass."""
-        # Create a copy to avoid modifying the original
-        result = ir.copy()
-        
-        # Add parallel symbols
-        result.symbols["TP"] = Symbol("TP")
-        result.symbols["PP"] = Symbol("PP")
-        result.symbols["DP"] = Symbol("DP")
-        
-        # Apply tensor parallelism
-        if self.tp > 1:
-            self._apply_tensor_parallel(result)
-        
-        # Apply pipeline parallelism
-        if self.pp > 1:
-            self._apply_pipeline_parallel(result)
-        
-        # Store parallel config in metadata
-        result.metadata["tp"] = self.tp
-        result.metadata["pp"] = self.pp
-        result.metadata["dp"] = self.dp
-        result.metadata["tp_comm_type"] = self.tp_comm_type
-        result.metadata["sequence_parallel"] = self.sequence_parallel
-        
-        return result
-    
-    def _apply_tensor_parallel(self, ir: GraphIR) -> None:
-        """Apply tensor parallelism to the graph.
-        
-        For TP:
-        - Column parallel Linear (e.g., QKV, gate/up): split output dim
-        - Row parallel Linear (e.g., out proj, down): split input dim
-        - Communication inserted between row and column parallel
-        """
-        nodes_to_add = []
-        edges_to_add = []
-        
-        for node_id, node in list(ir.nodes.items()):
-            shard = node.attrs.get("shard")
-            
-            if node.op_type == "Linear" and shard:
-                if shard == "tp_col":
-                    # Column parallel: output is split
-                    self._adjust_column_parallel(node)
-                elif shard == "tp_row":
-                    # Row parallel: input is split, need AllReduce after
-                    self._adjust_row_parallel(node)
-                    
-                    # Insert AllReduce communication
-                    if self.tp_comm_type == "ar":
-                        comm_node = self._create_allreduce_node(node, ir)
-                        if comm_node:
-                            nodes_to_add.append(comm_node)
-                            edges_to_add.append((node_id, comm_node.id))
-                            
-                            # Update successors to use comm output
-                            for src, dst in list(ir.edges):
-                                if src == node_id:
-                                    ir.edges.remove((src, dst))
-                                    edges_to_add.append((comm_node.id, dst))
-            
-            elif node.op_type in ("RMSNorm", "Add") and self.sequence_parallel:
-                # Sequence parallel: these ops operate on split sequence
-                self._adjust_sequence_parallel(node)
-        
-        # Add new nodes and edges
-        for node in nodes_to_add:
-            ir.nodes[node.id] = node
-        ir.edges.extend(edges_to_add)
-    
-    def _adjust_column_parallel(self, node: OpNode) -> None:
-        """Adjust node for column parallelism (split output dim).
-        
-        For column parallel Linear [in, out] -> [in, out/tp]:
-        - FLOPs: divided by tp (proportional to out dim)
-        - Weight: in * out/tp (divided by tp)
-        - Memory: input (B*S*in) + output (B*S*out/tp) + weight (in*out/tp)
-                  Not simply divided by tp because input is not split
-        """
-        node.shard = "tp_col"
-        
-        # FLOPs are proportional to output dim, so divide by tp
-        if node.flops_fw is not None:
-            node.flops_fw = node.flops_fw / self.tp
-        if node.flops_bw is not None:
-            node.flops_bw = node.flops_bw / self.tp
-        if node.flops_agrad is not None:
-            node.flops_agrad = node.flops_agrad / self.tp
-        if node.flops_wgrad is not None:
-            node.flops_wgrad = node.flops_wgrad / self.tp
-        if node.flops is not None:
-            node.flops = node.flops / self.tp
-        
-        # Weight is split by tp
-        if node.weight_bytes is not None:
-            node.weight_bytes = node.weight_bytes / self.tp
-        
-        # Memory: don't simply divide by tp
-        # Original: (batch_seq * in + batch_seq * out + in * out) * dtype
-        # After col split: (batch_seq * in + batch_seq * out/tp + in * out/tp) * dtype
-        # Approximation: (in + out/tp + in*out/tp) / (in + out + in*out) * original
-        # Since output and weight are split, but input is not, the ratio is ~1/tp for 
-        # output-dominated terms but ~1 for input term.
-        # For Linear with in≈out, memory ratio ≈ (1 + 1/tp + 1/tp) / 3 ≈ (tp + 2) / (3*tp)
-        # Use a more accurate formula based on attrs
-        in_f = node.attrs.get("in_features")
-        out_f = node.attrs.get("out_features")
-        batch_seq = node.attrs.get("batch_seq")
-        
-        if in_f is not None and out_f is not None and batch_seq is not None:
-            dtype_bytes = 2  # Assume FP16
-            # Calculate actual memory after TP split
-            mem_fw = (batch_seq * in_f + batch_seq * out_f / self.tp + in_f * out_f / self.tp) * dtype_bytes
-            mem_bw = (batch_seq * in_f + batch_seq * out_f / self.tp + in_f * out_f / self.tp * 2) * dtype_bytes
-            node.memory_fw = mem_fw
-            node.memory_bw = mem_bw
-            if node.memory_agrad is not None:
-                node.memory_agrad = (batch_seq * out_f / self.tp + in_f * out_f / self.tp + batch_seq * in_f) * dtype_bytes
-            if node.memory_wgrad is not None:
-                node.memory_wgrad = (batch_seq * in_f + batch_seq * out_f / self.tp + in_f * out_f / self.tp) * dtype_bytes
-        else:
-            # Fallback: use approximation (tp + 2) / (3 * tp) ≈ 0.4 for tp=8
-            approx_ratio = (self.tp + 2) / (3 * self.tp)
-            if node.memory_fw is not None:
-                node.memory_fw = node.memory_fw * approx_ratio
-            if node.memory_bw is not None:
-                node.memory_bw = node.memory_bw * approx_ratio
-            if node.memory_agrad is not None:
-                node.memory_agrad = node.memory_agrad * approx_ratio
-            if node.memory_wgrad is not None:
-                node.memory_wgrad = node.memory_wgrad * approx_ratio
-    
-    def _adjust_row_parallel(self, node: OpNode) -> None:
-        """Adjust node for row parallelism (split input dim).
-        
-        For row parallel Linear [in, out] -> [in/tp, out]:
-        - FLOPs: divided by tp (proportional to in dim)
-        - Weight: in/tp * out (divided by tp)
-        - Memory: input (B*S*in/tp) + output (B*S*out) + weight (in/tp*out)
-                  Not simply divided by tp because output is not split
-        """
-        node.shard = "tp_row"
-        
-        # FLOPs are proportional to input dim, so divide by tp
-        if node.flops_fw is not None:
-            node.flops_fw = node.flops_fw / self.tp
-        if node.flops_bw is not None:
-            node.flops_bw = node.flops_bw / self.tp
-        if node.flops_agrad is not None:
-            node.flops_agrad = node.flops_agrad / self.tp
-        if node.flops_wgrad is not None:
-            node.flops_wgrad = node.flops_wgrad / self.tp
-        if node.flops is not None:
-            node.flops = node.flops / self.tp
-        
-        # Weight is split by tp
-        if node.weight_bytes is not None:
-            node.weight_bytes = node.weight_bytes / self.tp
-        
-        # Memory: don't simply divide by tp
-        # Original: (batch_seq * in + batch_seq * out + in * out) * dtype
-        # After row split: (batch_seq * in/tp + batch_seq * out + in/tp * out) * dtype
-        in_f = node.attrs.get("in_features")
-        out_f = node.attrs.get("out_features")
-        batch_seq = node.attrs.get("batch_seq")
-        
-        if in_f is not None and out_f is not None and batch_seq is not None:
-            dtype_bytes = 2  # Assume FP16
-            # Calculate actual memory after TP split
-            mem_fw = (batch_seq * in_f / self.tp + batch_seq * out_f + in_f / self.tp * out_f) * dtype_bytes
-            mem_bw = (batch_seq * in_f / self.tp + batch_seq * out_f + in_f / self.tp * out_f * 2) * dtype_bytes
-            node.memory_fw = mem_fw
-            node.memory_bw = mem_bw
-            if node.memory_agrad is not None:
-                node.memory_agrad = (batch_seq * out_f + in_f / self.tp * out_f + batch_seq * in_f / self.tp) * dtype_bytes
-            if node.memory_wgrad is not None:
-                node.memory_wgrad = (batch_seq * in_f / self.tp + batch_seq * out_f + in_f / self.tp * out_f) * dtype_bytes
-        else:
-            # Fallback: use approximation
-            approx_ratio = (self.tp + 2) / (3 * self.tp)
-            if node.memory_fw is not None:
-                node.memory_fw = node.memory_fw * approx_ratio
-            if node.memory_bw is not None:
-                node.memory_bw = node.memory_bw * approx_ratio
-            if node.memory_agrad is not None:
-                node.memory_agrad = node.memory_agrad * approx_ratio
-            if node.memory_wgrad is not None:
-                node.memory_wgrad = node.memory_wgrad * approx_ratio
-    
-    def _adjust_sequence_parallel(self, node: OpNode) -> None:
-        """Adjust node for sequence parallelism."""
-        node.shard = "seq_par"
-        
-        # Divide by TP for sequence dimension
-        if node.flops_fw is not None:
-            node.flops_fw = node.flops_fw / self.tp
-        if node.flops_bw is not None:
-            node.flops_bw = node.flops_bw / self.tp
-    
-    def _create_allreduce_node(self, source_node: OpNode, ir: GraphIR) -> Optional[OpNode]:
-        """Create an AllReduce communication node."""
-        comm_id = f"{source_node.id}_allreduce"
-        
-        # Get data size from source node's output
-        data_size = source_node.attrs.get("out_features", Symbol("out_features"))
-        batch_seq = source_node.attrs.get("batch_seq", Symbol("batch_seq"))
-        
-        comm_node = OpNode(
-            id=comm_id,
-            op_type="AllReduce",
-            inputs=[source_node.id],
-            outputs=[f"{comm_id}_out"],
-            attrs={
-                "num_peers": self.tp,
-                "data_size": batch_seq * data_size,
-            },
-        )
-        
-        # Set communication bytes
-        dtype_bytes = 2  # Assume float16
-        comm_node.comm_bytes_fw = 2 * (self.tp - 1) / self.tp * batch_seq * data_size * dtype_bytes
-        comm_node.comm_bytes_bw = comm_node.comm_bytes_fw
-        comm_node.comm_bytes = comm_node.comm_bytes_fw + comm_node.comm_bytes_bw
-        comm_node.flops_fw = 0
-        comm_node.flops_bw = 0
-        comm_node.flops = 0
-        
-        return comm_node
-    
+        """执行并行策略标记."""
+        # 更新 metadata
+        ir.metadata["tp"] = self.tp
+        ir.metadata["pp"] = self.pp
+        ir.metadata["dp"] = self.dp
+        ir.metadata["tp_comm_type"] = self.tp_comm_type
+        ir.metadata["sequence_parallel"] = self.sequence_parallel
+
+        if ir.root:
+            # 应用 TP 策略
+            if self.tp > 1:
+                self._apply_tensor_parallel(ir.root)
+
+            # 应用 PP 策略
+            if self.pp > 1:
+                self._apply_pipeline_parallel(ir)
+
+        return ir
+
+    def _apply_tensor_parallel(self, block: BlockNode) -> None:
+        """递归应用 TP 策略到 Block 树."""
+        # 根据 Block 类型标记 shard 策略
+        self._mark_tp_shard(block)
+
+        # 递归处理子 Block
+        for child in block.children:
+            self._apply_tensor_parallel(child)
+
+    def _mark_tp_shard(self, block: BlockNode) -> None:
+        """标记单个 Block 的 shard 策略."""
+        block_type = block.block_type
+
+        # 已有 shard 标记则跳过
+        if block.attrs.get("shard"):
+            return
+
+        # Attention 内的 Linear
+        if block_type == "Linear":
+            name = block.name.lower()
+
+            # QKV projection: column parallel
+            if any(
+                x in name
+                for x in ["qkv", "q_proj", "k_proj", "v_proj", "query", "key", "value"]
+            ):
+                block.attrs["shard"] = "tp_col"
+
+            # Output projection: row parallel
+            elif any(x in name for x in ["out", "o_proj", "output", "dense"]):
+                block.attrs["shard"] = "tp_row"
+
+            # FFN: up projection column, down projection row
+            elif any(x in name for x in ["up", "gate", "fc1", "w1", "w3"]):
+                block.attrs["shard"] = "tp_col"
+            elif any(x in name for x in ["down", "fc2", "w2"]):
+                block.attrs["shard"] = "tp_row"
+
+        # Norm 层可以使用 sequence parallel
+        elif block_type in ("RMSNorm", "LayerNorm") and self.sequence_parallel:
+            block.attrs["shard"] = "seq_par"
+
     def _apply_pipeline_parallel(self, ir: GraphIR) -> None:
-        """Apply pipeline parallelism to the graph.
-        
-        Assigns each node to a pipeline stage based on layer index.
-        """
-        num_layers = ir.metadata.get("num_layers", 1)
+        """应用 PP 策略，分配 stage."""
+        if not ir.root:
+            return
+
+        # 统计层数
+        num_layers = ir.metadata.get("num_layers")
+        if num_layers is None:
+            # 从 root 的直接子节点推断
+            num_layers = self._count_layers(ir.root)
+
+        if num_layers == 0:
+            return
+
+        # 检查层数是否能被 PP 整除
+        if num_layers % self.pp != 0:
+            raise ValueError(
+                f"Pipeline parallelism requires num_layers to be divisible by pp. "
+                f"Got num_layers={num_layers}, pp={self.pp}."
+            )
+
         layers_per_stage = num_layers // self.pp
-        
-        for node_id, node in ir.nodes.items():
-            # Extract layer index from node ID (e.g., "layer5_q_proj" -> 5)
-            layer_idx = self._extract_layer_index(node_id)
-            if layer_idx is not None:
-                stage = min(layer_idx // layers_per_stage, self.pp - 1)
-                node.device = stage
-            else:
-                # Default to stage 0
-                node.device = 0
-    
-    def _extract_layer_index(self, node_id: str) -> Optional[int]:
-        """Extract layer index from node ID."""
-        import re
-        match = re.search(r"layer(\d+)", node_id)
+
+        # 分配 stage
+        self._assign_stages(ir.root, layers_per_stage)
+
+    def _count_layers(self, root: BlockNode) -> int:
+        """统计 TransformerLayer 的数量."""
+        count = 0
+        for child in root.children:
+            if child.block_type in ("TransformerLayer", "Layer"):
+                count += 1
+            elif child.block_type in ("Transformer", "GPT", "LLaMA"):
+                # 递归统计
+                count += self._count_layers(child)
+        return count
+
+    def _assign_stages(self, block: BlockNode, layers_per_stage: int) -> None:
+        """递归分配 stage."""
+        for child in block.children:
+            if child.block_type in ("TransformerLayer", "Layer"):
+                # 从名称提取层索引
+                layer_idx = self._extract_layer_index(child.name)
+                if layer_idx is not None:
+                    stage = min(layer_idx // layers_per_stage, self.pp - 1)
+                    child.attrs["stage"] = stage
+                    child.attrs["device"] = stage  # 简单映射：stage = device
+
+            # 递归
+            self._assign_stages(child, layers_per_stage)
+
+    def _extract_layer_index(self, name: str) -> Optional[int]:
+        """从名称提取层索引."""
+        # 尝试 layer0, layer1, ...
+        match = re.search(r"layer(\d+)", name, re.IGNORECASE)
         if match:
             return int(match.group(1))
-        
-        match = re.search(r"block(\d+)", node_id)
+
+        # 尝试 block0, block1, ...
+        match = re.search(r"block(\d+)", name, re.IGNORECASE)
         if match:
             return int(match.group(1))
-        
+
         return None

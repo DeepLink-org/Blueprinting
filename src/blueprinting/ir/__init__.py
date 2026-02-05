@@ -1,32 +1,68 @@
-"""IR module for blueprinting compiler."""
+"""IR module for blueprinting compiler.
 
-from .graph import OpNode, GraphIR, TensorRef
-from .schedule import ScheduledOp, ScheduleIR
-from .timeline import TimelineIR, TimelineEvent, EventType, StreamType
-from .symmax import SymMax, sym_max, eval_lazy, clear_expr_cache, get_cache_stats
-from .result import SimulationResult
-from .builder import IRBuilder
+Hierarchical IR Structure:
+
+GraphIR (model-side view):
+    Module → Block → Op
+    - ModuleNode: Top-level container (the model)
+    - BlockNode: Named blocks (TransformerLayer, Attention, FFN)
+    - OpNode: Leaf operations (Linear, RMSNorm, etc.)
+    - Data flow expressed through tensor name binding
+
+ScheduleIR (execution-side view):
+    Stage → Device → ScheduledOp
+    - StageSchedule: Pipeline stage grouping
+    - DeviceSchedule: Per-device operation assignment
+    - ScheduledOp: Operation with timing and event sequence
+    - Sorted by event_seq → TimelineIR
+
+TimelineIR (simulation view):
+    Flat event stream sorted by time
+    - Fine-grained events for precise simulation
+"""
+
+from .builder import IRBuilder, build_transformer_layer, build_transformer_model
 from .compiler import Compiler
-from .system import SystemConfig, load_system_config
+from .graph import BlockNode, GraphIR, ModuleNode, NodeType, OpNode, TensorRef
 from .passes import (
-    Pass,
-    WorkloadPass,
-    ParallelPass,
-    SchedulePass,
-    TimelinePass,
-    OverlapAnalysisPass,
-    EvaluatePass,
-    OptimizerPass,
-    OptimizerConfig,
+                      ExpandPass,
+                      OptimizerConfig,
+                      OptimizerPass,
+                      OverlapAnalysisPass,
+                      ParallelPass,
+                      Pass,
+                      Pipeline,
+                      PipelineConfig,
+                      PipelineSchedulePass,
+                      PPScheduleMode,
+                      PrintGraphPass,
+                      PrintResultPass,
+                      PrintSchedulePass,
+                      PrintTimelinePass,
+                      SchedulePass,
+                      SimulatePass,
+                      TimelinePass,
+                      TimelinePass,
 )
+from .result import SimulationResult
+from .schedule import DeviceSchedule, ScheduledOp, ScheduleIR, StageSchedule, TensorLifetime
+from .symmax import SymMax, clear_expr_cache, eval_lazy, get_cache_stats, sym_max
+from .system import SystemConfig, load_system_config
+from .timeline import EventType, StreamType, TimelineEvent, TimelineIR
 
 __all__ = [
-    # Graph IR
-    "OpNode",
-    "GraphIR",
+    # Graph IR - hierarchical
+    "NodeType",
     "TensorRef",
-    # Schedule IR
+    "OpNode",
+    "BlockNode",
+    "ModuleNode",
+    "GraphIR",
+    # Schedule IR - hierarchical
+    "TensorLifetime",
     "ScheduledOp",
+    "DeviceSchedule",
+    "StageSchedule",
     "ScheduleIR",
     # Timeline IR
     "TimelineIR",
@@ -43,6 +79,8 @@ __all__ = [
     "SimulationResult",
     # Builder
     "IRBuilder",
+    "build_transformer_layer",
+    "build_transformer_model",
     # Compiler
     "Compiler",
     # System Config
@@ -50,12 +88,21 @@ __all__ = [
     "load_system_config",
     # Passes
     "Pass",
-    "WorkloadPass",
+    "Pipeline",
+    "ExpandPass",
     "ParallelPass",
     "SchedulePass",
     "TimelinePass",
+    "TimelinePass",
+    "SimulatePass",
     "OverlapAnalysisPass",
-    "EvaluatePass",
     "OptimizerPass",
     "OptimizerConfig",
+    "PipelineSchedulePass",
+    "PipelineConfig",
+    "PPScheduleMode",
+    "PrintGraphPass",
+    "PrintSchedulePass",
+    "PrintTimelinePass",
+    "PrintResultPass",
 ]

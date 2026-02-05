@@ -1,408 +1,293 @@
-"""SchedulePass - Generate execution schedule from GraphIR.
+"""SchedulePass - Compute workload and timing for ScheduleIR.
 
-This pass transforms GraphIR into ScheduleIR by:
-1. Topologically sorting operations
-2. Computing execution times based on system capabilities
-3. Handling overlap between compute and communication
-4. Tracking tensor lifetimes for memory analysis
+这个 Pass 负责:
+1. 为每个 Op 计算 workload (flops, memory_bytes, comm_bytes)
+2. 使用 roofline 模型计算 duration
+3. 设置 start 时间（顺序调度）
+4. 处理设备分配
+
+职责分离:
+- ExpandPass: 纯展开，生成 Op 结构
+- SchedulePass: 计算 workload、duration、设备分配
 """
 
-from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, Union
 
-from sympy import Expr, Symbol
+from sympy import Expr
 
-from ..graph import GraphIR, OpNode
-from ..schedule import ScheduleIR, ScheduledOp, TensorLifetime
-from ..system import SystemConfig
+from ..symmax import SymMax
+from ..types import OpNode, ScheduleIR
 from .base import Pass
 
 
-from ..symmax import sym_max, _to_float, eval_lazy
-
-
-def _to_python_float(x):
-    """Convert to Python float, handling SymPy Float and int."""
-    return _to_float(x)
-
-
-def lazy_max(a, b):
-    """Max that works with both numeric and symbolic values.
-    
-    For numeric values, returns Python float (fast).
-    For symbolic, returns SymMax that evaluates correctly when substituted.
-    """
-    return sym_max(a, b)
+def _symbolic_max(*args):
+    """符号安全的 max 函数."""
+    has_symbolic = any(isinstance(a, Expr) for a in args)
+    if has_symbolic:
+        return SymMax(*args)
+    return max(args)
 
 
 class SchedulePass(Pass):
-    """Pass to generate execution schedule from graph.
-    
-    This pass computes timing information and creates a ScheduleIR
-    that can be used to analyze memory usage and execution time.
-    
-    The timing model supports two modes (compatible with Calculon):
-    - "roofline": time = max(compute_time, memory_time)
-    - "no_overlap": time = compute_time + memory_time
-    
-    Efficiency factors are loaded from system config (dynamic, size-dependent)
-    or can be overridden with fixed values via calibration dict.
+    """计算 ScheduleIR 中每个 Op 的 workload 和 timing.
+
+    这个 Pass 遍历 ScheduleIR 中的所有 Op，计算:
+    - workload: flops, memory_bytes, comm_bytes
+    - duration: 基于 roofline 模型
+    - start: 顺序调度的开始时间
+
+    输入: ScheduleIR (无 workload 和 timing)
+    输出: ScheduleIR (有 workload 和 timing)
     """
-    
+
     def __init__(
         self,
-        system_config: Optional[Union[Dict, str, Path, SystemConfig]] = None,
-        strategy: str = "sequential",  # "sequential", "1f1b", "interleaved"
-        overlap_compute_comm: bool = True,
-        processing_mode: Optional[str] = None,  # Override config's processing_mode
-        calibration: Optional[Dict[str, float]] = None,  # Override dynamic efficiency
-        training: bool = True,  # Whether to include backward pass
+        # 硬件参数
+        peak_tflops: float = 312.0,  # A100 FP16 峰值
+        memory_bandwidth: float = 2.0e12,  # 2 TB/s
+        network_bandwidth: float = 400e9,  # 400 Gbps
+        network_efficiency: float = 0.65,  # 网络效率 (与 Calculon 对齐)
+        network_latency: float = 10e-6,  # 10µs 网络延迟
+        compute_efficiency: float = 0.95,  # 计算效率 (与 Calculon 对齐)
+        # 数据类型
+        dtype_bytes: int = 2,  # float16
+        # 通信模型参数 (与 Calculon 对齐)
+        # all_reduce_offset: Calculon 使用 offset=1 表示双向通信
+        # 公式: comm_size_effective = comm_size * (1 + offset/num_peers)
+        all_reduce_offset: float = 1.0,
+        # 处理模式: "roofline" (max(compute, memory)) 或 "no_overlap" (compute + memory)
+        processing_mode: str = "roofline",
     ):
-        """Initialize SchedulePass.
-        
+        """初始化 SchedulePass.
+
         Args:
-            system_config: Hardware system configuration, can be:
-                - Path to Calculon JSON config file (str or Path)
-                - Calculon config dict (with 'matrix', 'mem1', etc.)
-                - Simple config dict (peak_tflops, memory_bandwidth_gbps, etc.)
-                - SystemConfig instance
-            strategy: Scheduling strategy for pipeline parallelism
-            overlap_compute_comm: Whether compute and communication can overlap
-            processing_mode: Override config's processing_mode ("roofline" or "no_overlap")
-            calibration: Override dynamic efficiency with fixed factors:
-                - compute_efficiency: Fixed compute efficiency (0-1)
-                - memory_efficiency: Fixed memory efficiency (0-1)
-                - network_efficiency: Fixed network efficiency (0-1)
-            training: Whether to include backward pass FLOPs/memory
+            peak_tflops: 计算峰值 (TFLOPS)
+            memory_bandwidth: 内存带宽 (bytes/s)
+            network_bandwidth: 网络带宽 (bytes/s)
+            network_efficiency: 网络效率 (0-1，默认 0.65 与 Calculon H100 配置对齐)
+            network_latency: 网络延迟 (seconds)
+            compute_efficiency: 计算效率 (0-1，默认 0.95)
+            dtype_bytes: 数据类型字节数
+            all_reduce_offset: AllReduce 通信偏移量 (Calculon 模型，默认 1.0)
         """
-        self.strategy = strategy
-        self.overlap_compute_comm = overlap_compute_comm
-        self.training = training
-        self.calibration = calibration  # None means use dynamic efficiency from config
-        
-        # Load system config
-        if system_config is None:
-            self.sys = SystemConfig({})  # Default config
-        elif isinstance(system_config, SystemConfig):
-            self.sys = system_config
-        elif isinstance(system_config, (str, Path)):
-            self.sys = SystemConfig(system_config)
-        else:
-            self.sys = SystemConfig(system_config)
-        
-        # Override processing mode if specified
-        if processing_mode is not None:
-            self.processing_mode = processing_mode
-        else:
-            self.processing_mode = self.sys.processing_mode
-        
-        # Store for metadata
-        self.peak_tflops = self.sys.peak_tflops
-        self.memory_bandwidth = self.sys.memory_bandwidth
-        self.network_bandwidth = self.sys.network_bandwidth
-        self.memory_capacity = self.sys.memory_capacity
-    
-    def run(self, ir: GraphIR) -> ScheduleIR:
-        """Execute the schedule pass."""
-        schedule = ScheduleIR(
-            num_devices=ir.metadata.get("pp", 1),
-            num_stages=ir.metadata.get("pp", 1),
-        )
-        
-        # Get topological order
-        topo_order = ir.topological_sort()
-        
-        # Track current time per device
-        device_time: Dict[int, Union[float, Expr]] = {}
-        
-        # Track scheduled ops by ID for quick lookup (O(1) instead of O(n))
-        scheduled_ops_index: Dict[str, ScheduledOp] = {}
-        
-        # Track tensor lifetimes
-        tensor_last_use: Dict[str, str] = {}  # tensor_id -> last_using_op_id
-        
-        # First pass: determine tensor lifetimes
-        for node_id in topo_order:
-            node = ir.get_node(node_id)
-            if node:
-                for inp in node.inputs:
-                    tensor_last_use[inp] = node_id
-        
-        # Second pass: schedule operations
-        for node_id in topo_order:
-            node = ir.get_node(node_id)
-            if node is None:
-                continue
-            
-            device = node.device or 0
-            
-            # Compute operation duration
-            duration = self._compute_duration(node)
-            
-            # Determine start time based on dependencies
-            start_time = self._compute_start_time(node, ir, device_time, scheduled_ops_index)
-            
-            # Determine stream
-            stream = "comm" if node.op_type in ("AllReduce", "AllGather", "ReduceScatter") else "compute"
-            
-            # Create scheduled op with workload attributes
-            attrs = node.attrs.copy()
-            # Copy workload attributes from OpNode to attrs for EvaluatePass
-            if node.flops_fw is not None:
-                attrs["flops_fw"] = node.flops_fw
-            if node.flops_bw is not None:
-                attrs["flops_bw"] = node.flops_bw
-            if node.weight_bytes is not None:
-                attrs["weight_bytes"] = node.weight_bytes
-            if node.activation_bytes is not None:
-                attrs["activation_bytes"] = node.activation_bytes
-            if node.memory_fw is not None:
-                attrs["memory_fw"] = node.memory_fw
-            if node.memory_bw is not None:
-                attrs["memory_bw"] = node.memory_bw
-            
-            scheduled_op = ScheduledOp(
-                op_id=node_id,
-                op_type=node.op_type,
-                device=device,
-                stream=stream,
-                start=start_time,
-                duration=duration,
-                attrs=attrs,
-            )
-            
-            # Track tensor allocations
-            for output_id in node.outputs:
-                tensor = ir.get_tensor(output_id)
-                if tensor:
-                    lifetime = TensorLifetime(
-                        tensor_id=output_id,
-                        alloc_time=start_time,
-                        free_time=None,  # Will be set when last use is scheduled
-                        size=tensor.nbytes,
-                    )
-                    scheduled_op.tensors_alloc.append(lifetime)
-                    schedule.tensors[output_id] = lifetime
-            
-            # Mark tensor frees for inputs that won't be used again
-            for inp in node.inputs:
-                if tensor_last_use.get(inp) == node_id:
-                    scheduled_op.tensors_free.append(inp)
-                    # Update the tensor's free time
-                    if inp in schedule.tensors:
-                        end_time = start_time + duration
-                        schedule.tensors[inp].free_time = end_time
-            
-            schedule.add_op(scheduled_op)
-            scheduled_ops_index[node_id] = scheduled_op  # Index for quick lookup
-            
-            # Update device time (use lazy_max to avoid SymPy's expensive simplification)
-            end_time = start_time + duration
-            if device not in device_time:
-                device_time[device] = end_time
-            else:
-                device_time[device] = lazy_max(device_time[device], end_time)
-        
-        # Store metadata
-        schedule.metadata["strategy"] = self.strategy
-        schedule.metadata["processing_mode"] = self.processing_mode
-        schedule.metadata["peak_tflops"] = self.peak_tflops
-        schedule.metadata["memory_bandwidth"] = self.memory_bandwidth
-        schedule.metadata["network_bandwidth"] = self.network_bandwidth
-        schedule.metadata["memory_capacity"] = self.memory_capacity
-        
-        return schedule
-    
-    def _compute_duration(self, node: OpNode) -> Union[float, Expr]:
-        """Compute the duration of an operation using Calculon-compatible timing model.
-        
-        Uses dynamic efficiency factors from system config (size-dependent),
-        or fixed calibration factors if provided.
-        
-        Processing mode:
-        - "roofline": time = max(compute_time, memory_time)
-        - "no_overlap": time = compute_time + memory_time
-        
-        IMPORTANT: For training mode, FW and BW are computed separately with their
-        own efficiency lookups, then summed. This matches Calculon's behavior where
-        small ops (e.g., 13 GFLOPs) get lower efficiency (60%) than large ops.
-        """
-        # Get FLOPs and memory access
-        flops_fw = node.flops_fw or 0
-        memory_fw = node.memory_fw or 0
-        
-        # Get agrad/wgrad separately if available, otherwise fallback to bw
-        flops_agrad = node.flops_agrad or 0 if self.training else 0
-        flops_wgrad = node.flops_wgrad or 0 if self.training else 0
-        memory_agrad = node.memory_agrad or 0 if self.training else 0
-        memory_wgrad = node.memory_wgrad or 0 if self.training else 0
-        
-        # Fallback: if agrad/wgrad not set, use bw / 2
-        flops_bw = node.flops_bw or 0 if self.training else 0
-        memory_bw = node.memory_bw or 0 if self.training else 0
-        
-        if flops_agrad == 0 and flops_bw > 0:
-            flops_agrad = flops_bw / 2
-            flops_wgrad = flops_bw / 2
-        if memory_agrad == 0 and memory_bw > 0:
-            memory_agrad = memory_bw / 2
-            memory_wgrad = memory_bw / 2
-        
-        # Communication bytes: forward and backward are separate events in timeline
-        comm_bytes = node.comm_bytes_fw or 0
-        
-        # Handle communication ops
-        if node.op_type in ("AllReduce", "AllGather", "ReduceScatter"):
-            comm_num = _to_python_float(comm_bytes)
-            if comm_num is not None:
-                num_peers = node.attrs.get("tp", 8)
-                return self.sys.compute_comm_time(
-                    comm_num,
-                    op_type=node.op_type.lower(),
-                    num_peers=num_peers,
-                    tier=0
-                )
-            else:
-                eff_net_bw = self.sys.get_network_throughput()
-                return comm_bytes / eff_net_bw if eff_net_bw > 0 else 0
-        
-        # Check if we can do pure numeric computation
-        flops_fw_num = _to_python_float(flops_fw)
-        flops_bw_num = _to_python_float(flops_bw)
-        memory_fw_num = _to_python_float(memory_fw)
-        memory_bw_num = _to_python_float(memory_bw)
-        
-        all_numeric = all(x is not None for x in [flops_fw_num, memory_fw_num])
-        if self.training:
-            all_numeric = all_numeric and all(x is not None for x in [flops_bw_num, memory_bw_num])
-        
-        if all_numeric:
-            # Pure numeric path - compute FW and BW separately with their own efficiency
-            op_type = node.op_type
-            
-            if self.calibration:
-                # Use fixed calibration factors
-                compute_eff = self.calibration.get("compute_efficiency", 1.0)
-                memory_eff = self.calibration.get("memory_efficiency", 1.0)
-                eff_peak_flops = self.sys.peak_tflops * 1e12 * compute_eff
-                eff_mem_bw = self.sys.memory_bandwidth * memory_eff
-                
-                flops_time_fw = flops_fw_num / eff_peak_flops if eff_peak_flops > 0 else 0.0
-                memory_time_fw = memory_fw_num / eff_mem_bw if eff_mem_bw > 0 else 0.0
-                
-                if self.training:
-                    flops_time_bw = flops_bw_num / eff_peak_flops if eff_peak_flops > 0 else 0.0
-                    memory_time_bw = memory_bw_num / eff_mem_bw if eff_mem_bw > 0 else 0.0
-                else:
-                    flops_time_bw = 0.0
-                    memory_time_bw = 0.0
-            else:
-                # Use dynamic efficiency - lookup separately for FW, AGrad, and WGrad
-                # This is critical: Calculon looks up efficiency per-stage
-                # A 13 GFLOPs FW op gets 60%, not 90% from combined 40 GFLOPs
-                engine = "matrix" if op_type in ("Linear", "Attention") else "vector"
-                
-                # Get agrad/wgrad flops separately for efficiency lookup
-                flops_agrad_num = _to_python_float(flops_agrad) or (flops_bw_num / 2 if flops_bw_num else 0)
-                flops_wgrad_num = _to_python_float(flops_wgrad) or (flops_bw_num / 2 if flops_bw_num else 0)
-                
-                # FW throughput based on FW FLOPs
-                compute_throughput_fw = self.sys.get_compute_throughput(flops_fw_num, engine) if flops_fw_num > 0 else self.sys.peak_tflops * 1e12
-                memory_throughput_fw = self.sys.get_memory_throughput(memory_fw_num) if memory_fw_num > 0 else self.sys.memory_bandwidth
-                
-                flops_time_fw = flops_fw_num / compute_throughput_fw if compute_throughput_fw > 0 else 0.0
-                memory_time_fw = memory_fw_num / memory_throughput_fw if memory_throughput_fw > 0 else 0.0
-                
-                if self.training and (flops_agrad_num > 0 or flops_wgrad_num > 0):
-                    # AGrad: dX = dY @ W^T - lookup efficiency using agrad FLOPs
-                    compute_throughput_agrad = self.sys.get_compute_throughput(flops_agrad_num, engine) if flops_agrad_num > 0 else self.sys.peak_tflops * 1e12
-                    flops_time_agrad = flops_agrad_num / compute_throughput_agrad if compute_throughput_agrad > 0 else 0.0
-                    
-                    # WGrad: dW = X^T @ dY - lookup efficiency using wgrad FLOPs
-                    compute_throughput_wgrad = self.sys.get_compute_throughput(flops_wgrad_num, engine) if flops_wgrad_num > 0 else self.sys.peak_tflops * 1e12
-                    flops_time_wgrad = flops_wgrad_num / compute_throughput_wgrad if compute_throughput_wgrad > 0 else 0.0
-                    
-                    # Total BW FLOPs time = AGrad + WGrad
-                    flops_time_bw = flops_time_agrad + flops_time_wgrad
-                    
-                    # BW Memory: use total memory_bw (agrad and wgrad share some data access like dY)
-                    # This matches Calculon's approach where BW memory is computed as a whole
-                    memory_throughput_bw = self.sys.get_memory_throughput(memory_bw_num) if memory_bw_num > 0 else self.sys.memory_bandwidth
-                    memory_time_bw = memory_bw_num / memory_throughput_bw if memory_throughput_bw > 0 else 0.0
-                    
-                    # Store breakdown for analysis
-                    node.attrs["flops_time_agrad"] = flops_time_agrad
-                    node.attrs["flops_time_wgrad"] = flops_time_wgrad
-                else:
-                    flops_time_bw = 0.0
-                    memory_time_bw = 0.0
-            
-            # Combine FW and BW times
-            flops_time = flops_time_fw + flops_time_bw
-            memory_time = memory_time_fw + memory_time_bw
-            memory_num = (memory_fw_num or 0) + (memory_bw_num or 0)
-            flops_num = (flops_fw_num or 0) + (flops_bw_num or 0)
-            
-            # Apply processing mode
-            if self.processing_mode == "roofline":
-                duration = max(flops_time, memory_time)
-                # Store which bound dominated for analysis
-                node.attrs["bound"] = "compute" if flops_time >= memory_time else "memory"
-            else:  # no_overlap
-                duration = flops_time + memory_time
-                node.attrs["bound"] = "no_overlap"
-            
-            node.attrs["arithmetic_intensity"] = flops_num / memory_num if memory_num > 0 else float('inf')
-            node.attrs["flops_time"] = flops_time
-            node.attrs["memory_time"] = memory_time
-            return duration
-        else:
-            # Symbolic case: use peak values (no dynamic efficiency for symbolic)
-            # Combine FW and BW for symbolic
-            flops = flops_fw + flops_bw
-            memory = memory_fw + memory_bw
-            
-            if self.calibration:
-                compute_eff = self.calibration.get("compute_efficiency", 1.0)
-                memory_eff = self.calibration.get("memory_efficiency", 1.0)
-            else:
-                # Use typical efficiency for small ops (matches Calculon's ~60%)
-                compute_eff = self.sys.get_compute_efficiency(15e9)  # ~15 GFLOPs typical
-                memory_eff = self.sys.get_memory_efficiency(30e6)    # ~30 MB typical
-            
-            eff_peak_flops = self.sys.peak_tflops * 1e12 * compute_eff
-            eff_mem_bw = self.sys.memory_bandwidth * memory_eff
-            
-            flops_time = flops / eff_peak_flops
-            memory_time = memory / eff_mem_bw
-            
-            if self.processing_mode == "roofline":
-                return lazy_max(flops_time, memory_time)
-            else:
-                return flops_time + memory_time
-    
-    def _compute_start_time(
+        self.peak_tflops = peak_tflops
+        self.peak_flops = peak_tflops * 1e12 * compute_efficiency  # 应用效率
+        self.memory_bandwidth = memory_bandwidth
+        self.network_bandwidth = network_bandwidth
+        self.network_efficiency = network_efficiency
+        self.network_latency = network_latency
+        self.compute_efficiency = compute_efficiency
+        self.dtype_bytes = dtype_bytes
+        self.all_reduce_offset = all_reduce_offset
+        self.processing_mode = processing_mode
+
+    def run(self, ir: ScheduleIR) -> ScheduleIR:
+        """执行调度计算."""
+        metadata = ir.metadata
+
+        # 提取常用参数
+        batch = metadata.get("batch_size", metadata.get("batch", 1))
+        seq = metadata.get("seq_len", metadata.get("seq", 2048))
+        hidden = metadata.get("hidden", 4096)
+        feedforward = metadata.get("feedforward", hidden * 4)
+
+        batch_seq = batch * seq
+
+        # 当前时间 (用于顺序调度)
+        current_time: Union[float, Expr] = 0
+
+        # 遍历所有 Op
+        for op in ir.iter_ops():
+            # 计算 workload
+            self._compute_workload(op.op, batch_seq, hidden, feedforward, metadata)
+
+            # 计算 duration
+            duration = self._compute_duration(op.op)
+            op.duration = duration
+
+            # 设置 start 时间 (顺序调度)
+            op.start = current_time
+            current_time = current_time + duration
+
+        return ir
+
+    def _compute_workload(
         self,
-        node: OpNode,
-        ir: GraphIR,
-        device_time: Dict[int, Union[float, Expr]],
-        scheduled_ops_index: Dict[str, ScheduledOp],
-    ) -> Union[float, Expr]:
-        """Compute the start time of an operation based on dependencies."""
-        device = node.device or 0
-        
-        # Start time is the max of:
-        # 1. Current device time
-        # 2. End time of all predecessors
-        
-        start = device_time.get(device, 0)
-        
-        # Check predecessor end times using index for O(1) lookup
-        predecessors = ir.get_predecessors(node.id)
-        for pred_id in predecessors:
-            sched_op = scheduled_ops_index.get(pred_id)
-            if sched_op:
-                pred_end = sched_op.end
-                start = lazy_max(start, pred_end)
-        
-        return start
+        op: OpNode,
+        batch_seq,
+        hidden,
+        feedforward,
+        metadata: Dict,
+    ) -> None:
+        """计算单个 Op 的 workload."""
+        op_type = op.op_type
+        attrs = op.attrs
+
+        if op_type == "Matmul":
+            self._compute_matmul(op, attrs)
+        elif op_type in ("RMSNorm", "LayerNorm"):
+            self._compute_norm(op, attrs, batch_seq)
+        elif op_type == "Softmax":
+            self._compute_softmax(op, attrs)
+        elif op_type in ("SiLU", "GELU", "ReLU"):
+            self._compute_activation(op, attrs, batch_seq, feedforward)
+        elif op_type in ("Add", "Mul"):
+            self._compute_elementwise(op, attrs, batch_seq, hidden)
+        elif op_type in ("AllReduce", "AllGather", "ReduceScatter"):
+            self._compute_collective(op, attrs)
+        elif op_type in ("Send", "Recv"):
+            self._compute_p2p(op, attrs)
+        else:
+            # 未知类型，设为 0
+            op.flops = 0
+            op.memory_bytes = 0
+            op.comm_bytes = 0
+
+    def _compute_matmul(self, op: OpNode, attrs: Dict) -> None:
+        """计算 Matmul workload."""
+        M = attrs.get("M", 1)
+        K = attrs.get("K", 1)
+        N = attrs.get("N", 1)
+
+        # FLOPs: 2 * M * K * N
+        op.flops = 2 * M * K * N
+
+        # Memory: (M*K + K*N + M*N) * dtype_bytes
+        op.memory_bytes = (M * K + K * N + M * N) * self.dtype_bytes
+
+        op.comm_bytes = 0
+
+    def _compute_norm(self, op: OpNode, attrs: Dict, batch_seq) -> None:
+        """计算 RMSNorm/LayerNorm workload."""
+        normalized_shape = attrs.get("normalized_shape", 4096)
+        num_elements = batch_seq * normalized_shape
+
+        # FLOPs: ~5 ops per element (square, sum, rsqrt, mul, add)
+        op.flops = 5 * num_elements
+
+        # Memory: 2 * num_elements (read + write)
+        op.memory_bytes = 2 * num_elements * self.dtype_bytes
+
+        op.comm_bytes = 0
+
+    def _compute_softmax(self, op: OpNode, attrs: Dict) -> None:
+        """计算 Softmax workload."""
+        num_elements = attrs.get("num_elements", 1)
+
+        # FLOPs: ~5 ops per element (max, sub, exp, sum, div)
+        op.flops = 5 * num_elements
+
+        # Memory: 2 * num_elements
+        op.memory_bytes = 2 * num_elements * self.dtype_bytes
+
+        op.comm_bytes = 0
+
+    def _compute_activation(
+        self, op: OpNode, attrs: Dict, batch_seq, feedforward
+    ) -> None:
+        """计算激活函数 workload (SiLU, GELU, ReLU)."""
+        num_elements = attrs.get("num_elements", batch_seq * feedforward)
+
+        # SiLU: x * sigmoid(x) ≈ 4 ops
+        # GELU: 0.5 * x * (1 + tanh(...)) ≈ 8 ops
+        # ReLU: max(0, x) ≈ 1 op
+        if op.op_type == "SiLU":
+            op.flops = 4 * num_elements
+        elif op.op_type == "GELU":
+            op.flops = 8 * num_elements
+        else:  # ReLU
+            op.flops = num_elements
+
+        op.memory_bytes = 2 * num_elements * self.dtype_bytes
+        op.comm_bytes = 0
+
+    def _compute_elementwise(self, op: OpNode, attrs: Dict, batch_seq, hidden) -> None:
+        """计算 Add/Mul workload."""
+        num_elements = attrs.get("num_elements", batch_seq * hidden)
+
+        op.flops = num_elements
+        op.memory_bytes = 3 * num_elements * self.dtype_bytes  # 2 read + 1 write
+        op.comm_bytes = 0
+
+    def _compute_collective(self, op: OpNode, attrs: Dict) -> None:
+        """计算集合通信 workload (AllReduce, AllGather, ReduceScatter).
+
+        使用与 Calculon 相同的通信模型:
+        - AllReduce: op_size = data_size * (1 + offset/num_peers)
+          其中 offset=1 表示双向通信（reduce + broadcast）
+        - AllGather/ReduceScatter: op_size = data_size * (n-1)/n
+
+        这个模型的物理意义:
+        - AllReduce 的 offset=1 近似于两阶段通信（reduce-scatter + all-gather）
+        - 最终通信量 = 原始数据 + 每个节点的 chunk
+        """
+        data_size = attrs.get("data_size", 1)
+        num_peers = max(1, attrs.get("num_peers", 8))  # 避免 num_peers=0 导致除零
+
+        op.flops = 0
+        op.memory_bytes = 0
+
+        # 基础通信量 (bytes)
+        base_comm_bytes = data_size * self.dtype_bytes
+
+        if op.op_type == "AllReduce":
+            # Calculon 模型: comm_size * (1 + offset/num_peers)
+            # 这比 Ring 公式 2*(n-1)/n 更准确地反映了实际通信开销
+            op.comm_bytes = base_comm_bytes * (1 + self.all_reduce_offset / num_peers)
+        elif op.op_type == "AllGather":
+            # AllGather: 收集所有节点的数据，通信量 = (n-1)/n * data_size
+            op.comm_bytes = base_comm_bytes * (num_peers - 1) / num_peers
+        elif op.op_type == "ReduceScatter":
+            # ReduceScatter: 分散归约，通信量 = (n-1)/n * data_size
+            op.comm_bytes = base_comm_bytes * (num_peers - 1) / num_peers
+        else:
+            op.comm_bytes = base_comm_bytes
+
+    def _compute_p2p(self, op: OpNode, attrs: Dict) -> None:
+        """计算点对点通信 workload (Send, Recv)."""
+        data_size = attrs.get("data_size", 1)
+
+        op.flops = 0
+        op.memory_bytes = 0
+        op.comm_bytes = data_size * self.dtype_bytes
+
+    def _compute_duration(self, op: OpNode) -> Union[float, Expr]:
+        """基于 roofline 模型计算 duration."""
+        flops = op.flops or 0
+        memory = op.memory_bytes or 0
+        comm = op.comm_bytes or 0
+
+        # 计算时间
+        if flops > 0:
+            compute_time = flops / self.peak_flops
+        else:
+            compute_time = 0
+
+        # 内存时间
+        if memory > 0:
+            memory_time = memory / self.memory_bandwidth
+        else:
+            memory_time = 0
+
+        # 通信时间 (Calculon 模型: latency + comm_bytes / (bandwidth * efficiency))
+        # 这是一个物理上有意义的模型:
+        # - network_efficiency 反映了实际带宽利用率 (NVLink 通常 0.65)
+        # - network_latency 是固定的启动延迟
+        if comm > 0:
+            effective_bandwidth = self.network_bandwidth * self.network_efficiency
+            comm_time = self.network_latency + comm / effective_bandwidth
+        else:
+            comm_time = 0
+
+        # 处理模式: roofline (max) 或 no_overlap (sum)
+        # 对于通信 Op，取通信时间
+        if op.op_type in ("AllReduce", "AllGather", "ReduceScatter", "Send", "Recv"):
+            duration = comm_time
+        elif self.processing_mode == "no_overlap":
+            # no_overlap 模式: 计算和内存不重叠
+            duration = compute_time + memory_time
+        else:
+            # roofline 模式: max(compute, memory)
+            duration = _symbolic_max(compute_time, memory_time)
+
+        return duration
