@@ -13,15 +13,13 @@ from blueprinting.ui import setup_page, page_title, section_header, info_card
 from blueprinting.validations.cases.seqsel_fig1 import seqsel_fig1
 from blueprinting.validations.cases.seqsel_fig7 import seqsel_fig7
 from blueprinting.validations.cases.seqsel_tab5 import seqsel_tab5
-from blueprinting.ir import (
-    GraphIR, IRBuilder, Compiler,
-    WorkloadPass, ParallelPass, SchedulePass,
-    TimelinePass, OverlapAnalysisPass, EvaluatePass,
-    OptimizerPass, OptimizerConfig,
-)
+from blueprinting.ir import GraphIR
 from blueprinting import Model, Execution
 from calculon import System
 from calculon.llm import Llm
+
+# 从 ir_pipeline 导入构建函数
+from pages.LLM_Calc.ir_pipeline import build_transformer_graph, create_compiler
 
 
 # ============================================================================
@@ -163,7 +161,7 @@ def normalize_ir_metrics(ir_result, num_layers: int = 1, pp: int = 1) -> Dict[st
                 "iteration_time": getattr(ir_result, "e2e_time", 0) or 0,
                 "forward_time": ir_tb.forward if ir_tb else 0,
                 "backward_time": ir_tb.backward if ir_tb else 0,
-                "optimizer_time": ir_tb.optimizer if ir_tb else 0,
+                "optimizer_time": getattr(ir_tb, "optimizer", 0) if ir_tb else 0,
                 "communication_time": ir_tb.communication if ir_tb else 0,
                 "bubble_time": ir_tb.bubble if ir_tb else 0,
             },
@@ -255,104 +253,6 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
-    """构建 Transformer 模型的 GraphIR (层级结构)"""
-    hidden = model["hidden"]
-    feedforward = model["feedforward"]
-    num_heads = model["attn_heads"]
-    head_dim = model["attn_size"]
-    num_layers = model["num_blocks"]
-    seq_len = model.get("seq_size", 2048)
-    micro_batch_size = execution["microbatch_size"]
-    tp = execution["tensor_par"]
-    batch_seq = micro_batch_size * seq_len
-
-    builder = IRBuilder(model_name, "Transformer")
-
-    builder.set_metadata("model_name", model_name)
-    builder.set_metadata("num_layers", num_layers)
-    builder.set_metadata("hidden", hidden)
-    builder.set_metadata("feedforward", feedforward)
-    builder.set_metadata("num_heads", num_heads)
-    builder.set_metadata("head_dim", head_dim)
-    builder.set_metadata("batch_size", micro_batch_size)
-    builder.set_metadata("seq_len", seq_len)
-    builder.set_metadata("tp", tp)
-    builder.set_metadata("optimizer_sharding", execution.get("optimizer_sharding", False))
-    builder.set_metadata("zero", execution.get("zero", 0))
-    builder.set_metadata("activation_recompute", execution.get("activation_recompute", "none"))
-
-    x = builder.add_input("input_ids", shape=[micro_batch_size, seq_len, hidden])
-    prev = x
-
-    for i in range(num_layers):
-        with builder.block(f"layer{i}", "TransformerLayer", layer_idx=i):
-            with builder.block("attn", "Attention"):
-                norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
-                q = builder.linear("q_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                k = builder.linear("k_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                v = builder.linear("v_proj", norm.name + "_out", hidden, hidden, shard="tp_col", batch_seq=batch_seq)
-                attn = builder.attention(
-                    "mha",
-                    [q.name + "_out", k.name + "_out", v.name + "_out"],
-                    num_heads, head_dim, seq_len=seq_len, batch_size=micro_batch_size, shard="tp_col"
-                )
-                out_proj = builder.linear("out_proj", attn.name + "_out", hidden, hidden, shard="tp_row", batch_seq=batch_seq)
-                res1 = builder.add("residual", [prev, out_proj.name + "_out"], num_elements=batch_seq * hidden)
-
-            attn_out = res1.name + "_out"
-
-            with builder.block("ffn", "FFN"):
-                norm2 = builder.rmsnorm("norm", attn_out, hidden, batch_seq=batch_seq)
-                fc1 = builder.linear("fc1", norm2.name + "_out", hidden, feedforward, shard="tp_col", batch_seq=batch_seq)
-                act = builder.activation("act", fc1.name + "_out", "SiLU", num_elements=batch_seq * feedforward, shard="tp_col")
-                fc2 = builder.linear("fc2", act.name + "_out", feedforward, hidden, shard="tp_row", batch_seq=batch_seq)
-                res2 = builder.add("residual", [attn_out, fc2.name + "_out"], num_elements=batch_seq * hidden)
-
-            prev = res2.name + "_out"
-
-    with builder.block("final", "Output"):
-        final_norm = builder.rmsnorm("norm", prev, hidden, batch_seq=batch_seq)
-
-    builder.add_output(final_norm.name + "_out")
-    return builder.build()
-
-
-def create_compiler(execution: Dict[str, Any], system_path: Path, seq_len: int) -> Compiler:
-    """创建 IR 编译流水线"""
-    tp = execution["tensor_par"]
-    pp = execution["pipeline_par"]
-    dp = execution["data_par"]
-    batch_size = execution["batch_size"]
-    micro_batch_size = execution["microbatch_size"]
-    gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
-    num_microbatches = batch_size // (micro_batch_size * dp)
-
-    compiler = Compiler()
-    compiler.add_pass(WorkloadPass(dtype_bytes=2))
-    compiler.add_pass(ParallelPass(
-        tp=tp, pp=pp, dp=dp,
-        tp_comm_type=execution.get("tensor_par_comm_type", "ar"),
-        sequence_parallel=execution.get("sequence_par", False),
-    ))
-    compiler.add_pass(SchedulePass(system_config=system_path, training=True))
-    compiler.add_pass(OptimizerPass(
-        OptimizerConfig(
-            optimizer_type="adam",
-            master_weights=True,
-            gradient_checkpointing=gradient_checkpointing,
-            recompute_mode="full" if gradient_checkpointing else "none",
-            checkpoint_ratio=1.0 if gradient_checkpointing else 0.0,
-            num_microbatches=num_microbatches,
-        ),
-        system_config={"memory_bandwidth_gbps": 3072, "peak_tflops": 1000},
-    ))
-    compiler.add_pass(TimelinePass())
-    compiler.add_pass(OverlapAnalysisPass())
-    compiler.add_pass(EvaluatePass(subs={"batch_seq": micro_batch_size * seq_len}, training=True))
-    return compiler
-
-
 def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], system_cfg: Dict[str, Any]) -> Dict[str, Any]:
     """运行 Calculon 仿真"""
     with hp.scope(app=model_cfg, exe=execution_cfg) as ps:
@@ -379,11 +279,11 @@ with st.expander("🧪 IR vs Calculon 路径对比", expanded=True):
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        model_name = st.selectbox("模型配置", model_options, index=model_options.index("gpt3-175B") if "gpt3-175B" in model_options else 0)
+        model_name = st.selectbox("模型配置", model_options, index=model_options.index("gpt3-175B") if "gpt3-175B" in model_options else 0, key="val_model_select")
     with col2:
-        system_name = st.selectbox("系统配置", system_options, index=system_options.index("h100_80g_nvl8") if "h100_80g_nvl8" in system_options else 0)
+        system_name = st.selectbox("系统配置", system_options, index=system_options.index("h100_80g_nvl8") if "h100_80g_nvl8" in system_options else 0, key="val_system_select")
     with col3:
-        exec_name = st.selectbox("执行配置", exec_options, index=exec_options.index("3072_t4_p64_d12_mbs4_full") if "3072_t4_p64_d12_mbs4_full" in exec_options else 0)
+        exec_name = st.selectbox("执行配置", exec_options, index=exec_options.index("3072_t4_p64_d12_mbs4_full") if "3072_t4_p64_d12_mbs4_full" in exec_options else 0, key="val_exec_select")
 
     if st.button("🚀 运行对比", type="primary"):
         with st.spinner("加载配置..."):
@@ -394,8 +294,8 @@ with st.expander("🧪 IR vs Calculon 路径对比", expanded=True):
 
         with st.spinner("运行 IR 编译器..."):
             graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
-            compiler = create_compiler(execution_cfg, cfg["system_path"], model_cfg.get("seq_size", 2048))
-            ir_result = compiler.compile(graph)
+            pipeline = create_compiler(execution_cfg, system_cfg, model_cfg.get("seq_size", 2048))
+            ir_result = pipeline.run(graph)
 
         with st.spinner("运行 Calculon..."):
             calc_stats = run_calculon(model_cfg, execution_cfg, system_cfg)
@@ -528,35 +428,3 @@ with st.expander("📋 SeqSel Table 5 - 详细配置参数对比", expanded=True
     st.markdown("**验证目标**: 详细配置参数的预测准确性")
     df_tab5 = seqsel_tab5(show=True)
     st.dataframe(df_tab5, hide_index=True, use_container_width=True)
-
-
-# ============================================================================
-# 验证说明
-# ============================================================================
-st.markdown("---")
-
-section_header("验证方法说明")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("""
-    #### 📖 数据来源
-    - 验证数据来自公开论文和测试结果
-    - 包含多种模型规模和并行配置
-    - 覆盖不同硬件环境
-    """)
-
-with col2:
-    st.markdown("""
-    #### 📏 准确性指标
-    - 模拟结果与实测数据误差通常在 **5-10%** 以内
-    - 主要用于趋势分析和配置优化
-    - 适合相对比较，而非绝对预测
-    """)
-
-info_card(
-    "使用建议",
-    "模拟器主要用于快速评估不同配置的相对性能，帮助缩小搜索空间。实际部署前仍建议进行小规模实测验证。",
-    icon="💡"
-)
