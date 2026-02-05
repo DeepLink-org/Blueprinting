@@ -174,8 +174,12 @@ class GraphRenderMixin:
         
         return console.file.getvalue()
     
-    def to_tree_html(self, max_children: int = 10) -> str:
-        """渲染为 HTML 树结构."""
+    def to_tree_html(self, max_children: int | None = 10) -> str:
+        """渲染为 HTML 树结构.
+        
+        Args:
+            max_children: 每层显示的最大子节点数，None 表示不限制
+        """
         graph = self  # type: ignore
         if not graph.root:
             return "<div>GraphIR (empty)</div>"
@@ -209,11 +213,14 @@ class GraphRenderMixin:
             if not children:
                 return f'<li>{label}</li>'
             
+            # 如果 max_children 为 None，显示所有子节点
+            limit = max_children if max_children is not None else len(children)
+            
             children_html = []
-            for child in children[:max_children]:
+            for child in children[:limit]:
                 children_html.append(_render_block(child, depth + 1))
             
-            if len(children) > max_children:
+            if max_children is not None and len(children) > max_children:
                 children_html.append(
                     f'<li><details><summary style="color:#9ca3af;cursor:pointer;">... ({len(children) - max_children} more)</summary>'
                     f'<ul style="margin:0;padding-left:16px;">'

@@ -545,7 +545,8 @@ def snapshot_ir(
         snap["summary"] = repr(ir)
         snap["tree"] = None
         # 使用 Mixin 的 to_tree_html() 生成可折叠的 HTML 树
-        snap["tree_html"] = ir.to_tree_html(max_children=10)
+        # max_children=None 表示不截断，由 HTML <details> 处理折叠
+        snap["tree_html"] = ir.to_tree_html(max_children=None)
     elif isinstance(ir, ScheduleIR):
         snap["summary"] = _schedule_summary(ir)
         snap["tree"] = None  # ScheduleIR doesn't have tree() method
