@@ -15,7 +15,7 @@ from typing import Dict, Union
 
 from sympy import Expr
 
-from ..symmax import SymMax
+from blueprinting.core import SymMax
 from ..types import OpNode, ScheduleIR
 from .base import Pass
 

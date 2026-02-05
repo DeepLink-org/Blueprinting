@@ -106,7 +106,7 @@ class Compiler:
             SimulationResult after all passes
         """
         # Clear expression cache at the start of each compilation
-        from .symmax import clear_expr_cache
+        from blueprinting.core import clear_expr_cache
 
         clear_expr_cache()
 

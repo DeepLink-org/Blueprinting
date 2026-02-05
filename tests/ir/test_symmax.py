@@ -3,7 +3,7 @@
 import pytest
 from sympy import Symbol
 
-from blueprinting.ir.symmax import (
+from blueprinting.core.symbolic import (
     SymMax,
     sym_max,
     eval_lazy,

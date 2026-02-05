@@ -18,7 +18,7 @@ from src.blueprinting.ir.types import (
 )
 from src.blueprinting.ir.ops import Linear, RMSNorm, Matmul
 from src.blueprinting.ir.dsl import Model, Transformer
-from src.blueprinting.ir.symmax import SymMax, clear_expr_cache
+from blueprinting.core import SymMax, clear_expr_cache
 
 
 # ==============================================================================
