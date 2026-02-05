@@ -31,7 +31,7 @@ IR Pipeline:
 
 from typing import Any, Dict, List, Optional
 
-from .graph import GraphIR
+from .types import GraphIR
 from .passes.base import Pass
 from .passes.expand import ExpandPass
 from .passes.optimizer import OptimizerConfig, OptimizerPass
@@ -40,8 +40,8 @@ from .passes.pipeline import PipelineSchedulePass
 from .passes.schedule import SchedulePass
 from .passes.timeline import SimulatePass, TimelinePass
 from .result import SimulationResult
-from .schedule import ScheduleIR
-from .timeline import TimelineIR
+from .types import ScheduleIR
+from .types import TimelineIR
 
 
 class Compiler:

@@ -72,6 +72,48 @@ class Phase(Enum):
     OPTIMIZER = "optimizer"
 
 
+class NodeType(Enum):
+    """节点类型枚举 (用于兼容旧 API)."""
+
+    MODULE = "module"
+    BLOCK = "block"
+    OP = "op"
+
+
+@dataclass
+class TensorRef:
+    """张量引用.
+
+    Attributes:
+        name: 张量名称
+        shape: 形状 (可包含符号表达式)
+        dtype: 数据类型
+        producer: 生产者 Op 路径
+    """
+
+    name: str
+    shape: list[int | Expr] | None = None
+    dtype: str = "float16"
+    producer: str | None = None
+
+    @property
+    def nbytes(self) -> int | Expr:
+        """计算字节数."""
+        from functools import reduce
+        from operator import mul
+
+        dtype_sizes = {
+            "float8": 1,
+            "float16": 2,
+            "bfloat16": 2,
+            "float32": 4,
+            "float64": 8,
+        }
+        if self.shape is None:
+            return 0
+        return reduce(mul, self.shape, 1) * dtype_sizes.get(self.dtype, 2)
+
+
 # ==============================================================================
 # Layer 1: Graph IR (Block-level)
 # ==============================================================================
@@ -198,6 +240,58 @@ class GraphIR:
             return "GraphIR(empty)"
         return f"GraphIR({self.name!r}, blocks={self.count_blocks()})"
 
+    def summary(self) -> str:
+        """返回多行概要信息."""
+        if not self.root:
+            return "GraphIR(empty)"
+
+        lines = [
+            f"GraphIR: {self.root.block_type}({self.name})",
+            f"├─ blocks: {self.count_blocks()}",
+            f"├─ params blocks: {self.count_params_blocks()}",
+        ]
+
+        # 顶层结构
+        lines.append("├─ structure:")
+        for i, child in enumerate(self.root.children[:8]):
+            child_blocks = sum(1 for _ in child.iter_blocks())
+            lines.append(f"│   {child.block_type}({child.name}): {child_blocks} blocks")
+        if len(self.root.children) > 8:
+            lines.append(f"│   ... ({len(self.root.children) - 8} more)")
+
+        # Metadata
+        meta = ", ".join(list(self.metadata.keys())[:6])
+        lines.append(f"└─ metadata: {meta or '(none)'}")
+
+        return "\n".join(lines)
+
+    def tree(self, max_depth: int = 3) -> str:
+        """返回树形结构展示."""
+        if not self.root:
+            return "(empty)"
+
+        lines = []
+
+        def _tree(block: BlockNode, depth: int, prefix: str = "", connector: str = ""):
+            if depth > max_depth:
+                return
+
+            attrs_str = ""
+            if block.attrs.get("shard"):
+                attrs_str = f" [{block.attrs['shard']}]"
+
+            lines.append(f"{connector}■ {block.block_type}({block.name}){attrs_str}")
+
+            if depth < max_depth:
+                for i, child in enumerate(block.children):
+                    is_last = i == len(block.children) - 1
+                    child_connector = prefix + ("└─ " if is_last else "├─ ")
+                    next_prefix = prefix + ("   " if is_last else "│  ")
+                    _tree(child, depth + 1, next_prefix, child_connector)
+
+        _tree(self.root, 0, "", "")
+        return "\n".join(lines)
+
 
 # ==============================================================================
 # Layer 2: Schedule IR (Op-level)
@@ -291,6 +385,23 @@ class OpNode:
         if self.source_block:
             parts.append(f"from={self.source_block}")
         return f"Op({', '.join(parts)})"
+
+
+@dataclass
+class TensorLifetime:
+    """张量生命周期追踪.
+
+    Attributes:
+        tensor_id: 张量 ID
+        alloc_time: 分配时间
+        free_time: 释放时间
+        size: 字节大小
+    """
+
+    tensor_id: str
+    alloc_time: float | Expr = 0
+    free_time: float | Expr | None = None
+    size: int | Expr = 0
 
 
 @dataclass
@@ -475,9 +586,12 @@ class EventType(Enum):
 class StreamType(Enum):
     """执行流类型."""
 
-    COMPUTE = "compute"
-    COMM = "comm"
-    MEMORY = "memory"
+    COMPUTE = "compute"  # 主计算流 (CUDA default stream)
+    COMM = "comm"  # 通信流
+    NCCL = "nccl"  # NCCL 通信流
+    MEMORY = "memory"  # 内存操作 (async memcpy)
+    H2D = "h2d"  # Host to device 传输
+    D2H = "d2h"  # Device to host 传输
 
 
 @dataclass
@@ -515,6 +629,18 @@ class TimelineEvent:
     def __repr__(self) -> str:
         return f"Event({self.event_type.value}, {self.resource_id}, t={self.time})"
 
+    def is_memory_event(self) -> bool:
+        """是否为内存事件."""
+        return self.event_type in (EventType.ALLOC, EventType.FREE)
+
+    def is_compute_event(self) -> bool:
+        """是否为计算事件."""
+        return self.event_type in (EventType.COMPUTE_START, EventType.COMPUTE_END)
+
+    def is_comm_event(self) -> bool:
+        """是否为通信事件."""
+        return self.event_type in (EventType.COMM_START, EventType.COMM_END)
+
 
 @dataclass
 class MemorySnapshot:
@@ -536,6 +662,23 @@ class MemorySnapshot:
 
 
 @dataclass
+class StreamState:
+    """执行流状态 - 某时刻流的状态.
+
+    Attributes:
+        device: 设备 ID
+        stream: 流类型
+        current_time: 当前时间
+        pending_ops: 等待执行的操作列表
+    """
+
+    device: int
+    stream: StreamType
+    current_time: float | Expr = 0
+    pending_ops: list[str] = field(default_factory=list)
+
+
+@dataclass
 class TimelineIR:
     """Timeline IR - Event 级别的执行时间线.
 
@@ -548,19 +691,65 @@ class TimelineIR:
         events: 事件列表 (按时间排序)
         memory_snapshots: 内存快照列表
         metadata: 元数据
+        num_devices: 设备数量
+    
+    Example:
+        timeline = TimelineIR(num_devices=2)
+        timeline.add_event(TimelineEvent(...))
+        peak_mem = timeline.peak_memory(device=0)
+        makespan = timeline.makespan()
     """
 
     events: list[TimelineEvent] = field(default_factory=list)
     memory_snapshots: list[MemorySnapshot] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    num_devices: int = 1
+    _sorted: bool = field(default=True, repr=False)
 
     def add_event(self, event: TimelineEvent) -> None:
         """添加事件."""
         self.events.append(event)
+        self._sorted = False
+
+    def add_events(self, events: list[TimelineEvent]) -> None:
+        """批量添加事件."""
+        self.events.extend(events)
+        self._sorted = False
+
+    def _ensure_sorted(self) -> None:
+        """确保事件按时间排序."""
+        if not self._sorted:
+            all_numeric = all(isinstance(e.time, (int, float)) for e in self.events)
+            if all_numeric:
+                self.events.sort(key=lambda e: e.time)
+            else:
+                def sort_key(e):
+                    if isinstance(e.time, (int, float)):
+                        return (e.time, "")
+                    return (float("inf"), str(e.time))
+                self.events.sort(key=sort_key)
+            self._sorted = True
 
     def sort_events(self) -> None:
         """按时间排序事件."""
-        self.events.sort()
+        self._ensure_sorted()
+
+    def get_events(
+        self,
+        device: int | None = None,
+        stream: StreamType | None = None,
+        event_type: EventType | None = None,
+    ) -> list[TimelineEvent]:
+        """按条件过滤事件."""
+        self._ensure_sorted()
+        result = self.events
+        if device is not None:
+            result = [e for e in result if e.device == device]
+        if stream is not None:
+            result = [e for e in result if e.stream == stream]
+        if event_type is not None:
+            result = [e for e in result if e.event_type == event_type]
+        return result
 
     @property
     def end_time(self) -> float | Expr:
@@ -568,6 +757,171 @@ class TimelineIR:
         if not self.events:
             return 0
         return max(e.time for e in self.events)
+
+    def peak_memory(self, device: int = 0) -> int | Expr:
+        """计算设备的峰值内存使用量."""
+        self._ensure_sorted()
+        memory_events = [
+            e for e in self.events if e.device == device and e.is_memory_event()
+        ]
+        if not memory_events:
+            return 0
+
+        all_numeric = all(isinstance(e.size, (int, float)) for e in memory_events)
+        if all_numeric:
+            current = 0
+            peak = 0
+            for event in memory_events:
+                if event.event_type == EventType.ALLOC:
+                    current += event.size
+                    peak = max(peak, current)
+                elif event.event_type == EventType.FREE:
+                    current -= event.size
+            return peak
+        else:
+            total = 0
+            for event in memory_events:
+                if event.event_type == EventType.ALLOC:
+                    total = total + event.size
+            return total
+
+    def memory_trace(self, device: int = 0) -> list[MemorySnapshot]:
+        """生成内存使用轨迹."""
+        self._ensure_sorted()
+        memory_events = [
+            e for e in self.events if e.device == device and e.is_memory_event()
+        ]
+        snapshots = []
+        current = 0
+        live_tensors: list[str] = []
+
+        for event in memory_events:
+            if event.event_type == EventType.ALLOC:
+                current += event.size if isinstance(event.size, (int, float)) else 0
+                live_tensors.append(event.resource_id)
+            elif event.event_type == EventType.FREE:
+                current -= event.size if isinstance(event.size, (int, float)) else 0
+                if event.resource_id in live_tensors:
+                    live_tensors.remove(event.resource_id)
+
+            snapshots.append(MemorySnapshot(
+                time=event.time,
+                device=device,
+                allocated=current,
+                tensors=list(live_tensors),
+            ))
+        return snapshots
+
+    def makespan(self, device: int | None = None) -> float | Expr:
+        """计算总执行时间 (makespan)."""
+        self._ensure_sorted()
+        events = (
+            self.events if device is None
+            else [e for e in self.events if e.device == device]
+        )
+        if not events:
+            return 0
+
+        end_events = [
+            e for e in events
+            if e.event_type in (EventType.COMPUTE_END, EventType.COMM_END)
+        ]
+        if not end_events:
+            return events[-1].time if events else 0
+
+        all_numeric = all(isinstance(e.time, (int, float)) for e in end_events)
+        if all_numeric:
+            return max(e.time for e in end_events)
+        else:
+            return end_events[-1].time
+
+    def compute_time(self, device: int = 0) -> float | Expr:
+        """计算设备的总计算时间."""
+        compute_events = self.get_events(device=device, stream=StreamType.COMPUTE)
+        total: float | Expr = 0
+        starts: dict[str, Any] = {}
+
+        for event in compute_events:
+            if event.event_type == EventType.COMPUTE_START:
+                starts[event.resource_id] = event.time
+            elif event.event_type == EventType.COMPUTE_END and event.resource_id in starts:
+                duration = event.time - starts[event.resource_id]
+                total = total + duration
+                del starts[event.resource_id]
+        return total
+
+    def comm_time(self, device: int = 0) -> float | Expr:
+        """计算设备的总通信时间."""
+        comm_events = self.get_events(device=device)
+        total: float | Expr = 0
+        starts: dict[str, Any] = {}
+
+        for event in comm_events:
+            if event.event_type == EventType.COMM_START:
+                starts[event.resource_id] = event.time
+            elif event.event_type == EventType.COMM_END and event.resource_id in starts:
+                duration = event.time - starts[event.resource_id]
+                total = total + duration
+                del starts[event.resource_id]
+        return total
+
+    def bubble_time(self, device: int = 0) -> float | Expr:
+        """计算气泡时间 (空闲时间)."""
+        total_time = self.makespan(device=device)
+        compute = self.compute_time(device=device)
+        comm = self.comm_time(device=device)
+        return total_time - compute - comm
+
+    def overlap_ratio(self, device: int = 0) -> float:
+        """计算计算-通信重叠率."""
+        compute = self.compute_time(device=device)
+        comm = self.comm_time(device=device)
+        makespan = self.makespan(device=device)
+
+        if not isinstance(compute, (int, float)):
+            return 0.0
+        if not isinstance(comm, (int, float)):
+            return 0.0
+        if not isinstance(makespan, (int, float)):
+            return 0.0
+
+        if comm == 0:
+            return 1.0
+        overlap = max(0, compute + comm - makespan)
+        return overlap / comm if comm > 0 else 0.0
+
+    def summary(self) -> str:
+        """生成人类可读的摘要."""
+        lines = ["TimelineIR Summary:"]
+        lines.append(f"  Events: {len(self.events)}")
+        lines.append(f"  Devices: {self.num_devices}")
+
+        for dev in range(self.num_devices):
+            lines.append(f"\n  Device {dev}:")
+            peak_mem = self.peak_memory(dev)
+            if isinstance(peak_mem, (int, float)):
+                lines.append(f"    Peak Memory: {peak_mem/1e9:.2f} GB")
+            else:
+                lines.append(f"    Peak Memory: {peak_mem}")
+
+            makespan_val = self.makespan(dev)
+            if isinstance(makespan_val, (int, float)):
+                lines.append(f"    Makespan: {makespan_val*1e3:.2f} ms")
+            else:
+                lines.append(f"    Makespan: {makespan_val}")
+
+            compute = self.compute_time(dev)
+            if isinstance(compute, (int, float)):
+                lines.append(f"    Compute: {compute*1e3:.2f} ms")
+
+            comm = self.comm_time(dev)
+            if isinstance(comm, (int, float)):
+                lines.append(f"    Comm: {comm*1e3:.2f} ms")
+
+        return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        return f"TimelineIR(events={len(self.events)}, devices={self.num_devices})"
 
     def to_chrome_trace(
         self, time_unit: str = "ms", include_blocks: bool = True
@@ -998,17 +1352,60 @@ class SimulationResult:
 
 
 # ==============================================================================
+# Render Mixin - 动态绑定渲染方法
+# ==============================================================================
+
+
+def _bind_render_methods():
+    """动态绑定渲染方法到 IR 类型.
+    
+    这种方式避免了循环导入问题，同时让 IR 类型具有渲染能力。
+    """
+    from .render import (
+        GraphRenderMixin,
+        ScheduleRenderMixin,
+        TimelineRenderMixin,
+    )
+    
+    # 绑定 GraphIR 的渲染方法
+    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
+        if hasattr(GraphRenderMixin, name):
+            setattr(GraphIR, name, getattr(GraphRenderMixin, name))
+    
+    # 绑定 ScheduleIR 的渲染方法
+    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
+        if hasattr(ScheduleRenderMixin, name):
+            setattr(ScheduleIR, name, getattr(ScheduleRenderMixin, name))
+    
+    # 绑定 TimelineIR 的渲染方法
+    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
+        if hasattr(TimelineRenderMixin, name):
+            setattr(TimelineIR, name, getattr(TimelineRenderMixin, name))
+
+
+# 模块加载时绑定渲染方法
+try:
+    _bind_render_methods()
+except ImportError:
+    # 如果 render 模块不可用，忽略
+    pass
+
+
+# ==============================================================================
 # Exports
 # ==============================================================================
 
 __all__ = [
     # Common
     "Phase",
+    "NodeType",
+    "TensorRef",
     # Graph IR
     "BlockNode",
     "GraphIR",
     # Schedule IR
     "OpNode",
+    "TensorLifetime",
     "ScheduledOp",
     "DeviceSchedule",
     "StageSchedule",
@@ -1018,6 +1415,7 @@ __all__ = [
     "StreamType",
     "TimelineEvent",
     "MemorySnapshot",
+    "StreamState",
     "TimelineIR",
     # Result
     "MemoryBreakdown",

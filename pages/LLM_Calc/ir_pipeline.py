@@ -1,6 +1,5 @@
 """LLM 训练计算器 - IR 变换过程可视化页面"""
 
-import html
 import json
 import logging
 from pathlib import Path
@@ -133,83 +132,7 @@ def _limit_df(df: pd.DataFrame, max_rows: int) -> pd.DataFrame:
     return df.head(max_rows).copy()
 
 
-def _tree_to_html(tree_text: str) -> str:
-    escaped = html.escape(tree_text or "")
-    return f"<pre style='font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.35;'>{escaped}</pre>"
-
-
-def _schedule_tree_html(schedule: ScheduleIR, max_ops: int = 5) -> str:
-    """Render ScheduleIR hierarchy as HTML using the structure, not text."""
-    num_stages = len(schedule.stages)
-    lines = [
-        "<div style='font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;'>",
-        "<ul style='margin:0; padding-left:16px;'>",
-        f"<li>ScheduleIR (stages={num_stages}, devices={schedule.num_devices})",
-        "<ul style='margin:0; padding-left:16px;'>",
-    ]
-
-    for stage_id, stage in sorted(schedule.stages.items()):
-        stage_ops = sum(len(d.ops) for d in stage.devices.values())
-        lines.append(
-            f"<li>Stage {stage_id} "
-            f"<span style='color:#6b7280'>(ops={stage_ops})</span>"
-            "<ul style='margin:0; padding-left:16px;'>"
-        )
-        for device_id, device in sorted(stage.devices.items()):
-            dev_label = (
-                f"Device {device_id} "
-                f"<span style='color:#6b7280'>(ops={len(device.ops)})</span>"
-            )
-
-            preview_parts = []
-            for op in device.ops[:max_ops]:
-                name = html.escape(op.name or "")
-                op_type = html.escape(op.op_type or "")
-                preview_parts.append(
-                    f"{op_type}({name}) "
-                    f"<span style='color:#6b7280'>(seq={op.event_seq})</span>"
-                )
-            preview = " · ".join(preview_parts)
-
-            lines.append("<li>")
-            lines.append("<details>")
-            lines.append(
-                "<summary>"
-                f"{dev_label}"
-                f"{' <span style=\"color:#9ca3af\">—</span> ' + preview if preview else ''}"
-                "</summary>"
-            )
-            lines.append("<ul style='margin:0; padding-left:16px;'>")
-
-            for op in device.ops[:max_ops]:
-                name = html.escape(op.name or "")
-                op_type = html.escape(op.op_type or "")
-                lines.append(
-                    f"<li>{op_type}({name}) "
-                    f"<span style='color:#6b7280'>(seq={op.event_seq})</span></li>"
-                )
-
-            if len(device.ops) > max_ops:
-                lines.append("<li>")
-                lines.append("<details>")
-                lines.append(
-                    f"<summary><span style='color:#6b7280'>... ({len(device.ops) - max_ops} more)</span></summary>"
-                )
-                lines.append("<ul style='margin:0; padding-left:16px;'>")
-                for op in device.ops[max_ops:]:
-                    name = html.escape(op.name or "")
-                    op_type = html.escape(op.op_type or "")
-                    lines.append(
-                        f"<li>{op_type}({name}) "
-                        f"<span style='color:#6b7280'>(seq={op.event_seq})</span></li>"
-                    )
-                lines.append("</ul></details></li>")
-
-            lines.append("</ul></details></li>")
-        lines.append("</ul></li>")
-
-    lines.extend(["</ul></li>", "</ul></div>"])
-    return "".join(lines)
+# 已移除 _tree_to_html 和 _schedule_tree_html，使用 Mixin 的 to_tree_html() 方法
 
 
 def _schedule_summary(schedule: ScheduleIR) -> str:
@@ -573,50 +496,15 @@ def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], syste
         return model.get_stats_json(False)
 
 
-def _graph_ops_table(graph: GraphIR, max_rows: int) -> pd.DataFrame:
-    rows = []
-    for path, op in graph.iter_ops_with_path():
-        rows.append({
-            "path": path,
-            "op": op.op_type,
-            "shard": op.shard or "-",
-            "flops_fw": _safe_value(op.flops_fw),
-            "flops_bw": _safe_value(op.flops_bw),
-            "weight_bytes": _safe_value(op.weight_bytes),
-            "activation_bytes": _safe_value(op.activation_bytes),
-        })
-        if len(rows) >= max_rows:
-            break
-    return pd.DataFrame(rows)
-
-
-def _schedule_ops_table(schedule: ScheduleIR, max_rows: int) -> pd.DataFrame:
-    rows = []
-    for op in schedule.iter_ops():  # iter_ops() already sorts by event_seq
-        rows.append({
-            "seq": op.event_seq,
-            "device": op.device,
-            "stage": op.stage,
-            "stream": op.stream,
-            "op": op.op_type,
-            "name": op.name,
-            "duration": _safe_value(op.duration),
-        })
-        if len(rows) >= max_rows:
-            break
-    return pd.DataFrame(rows)
+# 已移除 _graph_ops_table 和 _schedule_ops_table，使用 Mixin 的 to_table() 方法
 
 
 def _timeline_device_summary(timeline: TimelineIR, device: int = 0) -> str:
+    """生成 TimelineIR 设备摘要."""
     peak = timeline.peak_memory(device=device)
     makespan = timeline.makespan(device=device)
     compute = timeline.compute_time(device=device)
     comm = timeline.comm_time(device=device)
-
-    def _fmt(val, unit_scale=1.0, unit=""):
-        if isinstance(val, (int, float)):
-            return f"{val * unit_scale:.2f}{unit}"
-        return str(val)
 
     peak_str = f"{peak/1e9:.2f} GB" if isinstance(peak, (int, float)) else str(peak)
     makespan_str = f"{makespan*1e3:.2f} ms" if isinstance(makespan, (int, float)) else str(makespan)
@@ -636,23 +524,7 @@ def _timeline_device_summary(timeline: TimelineIR, device: int = 0) -> str:
     return "\n".join(lines)
 
 
-def _timeline_events_table(timeline: TimelineIR, max_rows: int, device: Optional[int] = None) -> pd.DataFrame:
-    rows = []
-    events = timeline.get_events(device=device)
-    for seq, event in enumerate(events):
-        rows.append({
-            "event_seq": seq,
-            "time": _safe_value(event.time),
-            "type": event.event_type.value,
-            "device_id": event.device,
-            "stream": event.stream.value,
-            "resource": event.resource_id,
-            "size": _safe_value(event.size),
-            "op_type": event.op_type or "-",
-        })
-        if len(rows) >= max_rows:
-            break
-    return pd.DataFrame(rows)
+# 已移除 _timeline_events_table，使用 TimelineIR.to_table() Mixin 方法
 
 
 def snapshot_ir(
@@ -662,32 +534,40 @@ def snapshot_ir(
     timeline_device: int = 0,
     timeline_single_device: bool = True,
 ) -> Dict[str, Any]:
-    """Create a render-friendly snapshot for an IR object."""
+    """Create a render-friendly snapshot for an IR object.
+    
+    使用 Mixin 的 to_table() 和 to_tree_html() 方法进行渲染。
+    """
     snap: Dict[str, Any] = {"name": name, "ir_type": type(ir).__name__}
 
     if isinstance(ir, GraphIR):
-        snap["summary"] = ir.summary()
-        snap["tree"] = ir.tree(max_depth=3)
-        snap["table"] = _limit_df(_graph_ops_table(ir, max_rows=max_rows), max_rows)
-        snap["table_title"] = "Op 列表 (GraphIR)"
+        # 简短概要
+        snap["summary"] = repr(ir)
+        snap["tree"] = None
+        # 使用 Mixin 的 to_tree_html() 生成可折叠的 HTML 树
+        snap["tree_html"] = ir.to_tree_html(max_children=10)
     elif isinstance(ir, ScheduleIR):
         snap["summary"] = _schedule_summary(ir)
         snap["tree"] = None  # ScheduleIR doesn't have tree() method
-        snap["tree_html"] = _schedule_tree_html(ir, max_ops=4)
-        snap["table"] = _limit_df(_schedule_ops_table(ir, max_rows=max_rows), max_rows)
-        snap["table_title"] = "调度 Op 列表 (ScheduleIR)"
+        # 使用 Mixin 的 to_tree_html() 方法
+        snap["tree_html"] = ir.to_tree_html(max_ops=4)
     elif isinstance(ir, TimelineIR):
         if timeline_single_device:
             snap["summary"] = _timeline_device_summary(ir, device=timeline_device)
         else:
             snap["summary"] = ir.summary()
         snap["tree"] = None
+        # 使用 Mixin 的 to_table() 方法
         table_device = timeline_device if timeline_single_device else None
-        snap["table"] = _limit_df(_timeline_events_table(ir, max_rows=max_rows, device=table_device), max_rows)
+        snap["table"] = _limit_df(ir.to_table(max_rows=max_rows, device=table_device), max_rows)
         snap["table_title"] = "事件列表 (TimelineIR)"
         snap["metadata"] = ir.metadata
     elif isinstance(ir, SimulationResult):
-        snap["summary"] = repr(ir)
+        # 使用 Mixin 的 to_terminal() 方法（如果可用）
+        if hasattr(ir, 'to_terminal'):
+            snap["summary"] = ir.to_terminal()
+        else:
+            snap["summary"] = repr(ir)
         snap["tree"] = None
         snap["table"] = pd.DataFrame([ir.to_dict()])
         snap["table_title"] = "结果汇总 (SimulationResult)"

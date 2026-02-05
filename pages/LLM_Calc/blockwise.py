@@ -2,7 +2,6 @@
 
 import streamlit as st
 import hyperparameter as hp
-from sympy import Symbol
 
 from blueprinting.ui import (
     setup_page,
@@ -14,8 +13,9 @@ from blueprinting.ui import (
     metrics_row,
 )
 from blueprinting.st import attention_block, block, ffn_block
-from blueprinting.ir import Compiler, WorkloadPass, ParallelPass, SchedulePass, EvaluatePass
-from blueprinting.ir.builder import build_transformer_model
+from blueprinting.ir import ParallelPass, ExpandPass, SchedulePass, SimulatePass
+from blueprinting.ir.passes import Pipeline
+from blueprinting.ir.dsl import build_transformer_model
 
 
 # ============================================================================
@@ -122,81 +122,47 @@ with hp.scope(app=app_json, model=app_json, sys=sys_json, exe=exe_json) as ps:
     if st.button("🚀 运行 IR 编译器", key="run_ir_compiler", type="primary"):
         with st.spinner("构建计算图 IR..."):
             graph = build_transformer_model(
+                model_name="transformer",
                 num_layers=num_layers,
-                hidden=Symbol("H"),
-                feedforward=Symbol("FF"),
-                num_heads=Symbol("heads"),
-                head_dim=Symbol("head_dim"),
-                seq_len=Symbol("S"),
-                batch_size=Symbol("B"),
+                hidden=hidden,
+                feedforward=feedforward,
+                num_heads=num_heads,
+                head_dim=head_dim,
+                seq_len=seq_len,
+                batch_size=batch_size,
                 tp=tp,
                 pp=pp,
+                dp=dp,
             )
-            st.success(f"✅ 构建完成: {len(graph.nodes)} 个节点, {len(graph.edges)} 条边")
+            st.success(f"✅ 构建完成: {graph}")
         
         with st.spinner("运行编译 Pass..."):
-            subs = {
-                "B": batch_size,
-                "S": seq_len,
-                "H": hidden,
-                "FF": feedforward,
-                "heads": num_heads,
-                "head_dim": head_dim,
-                "batch_seq": batch_size * seq_len,
-                "num_layers": num_layers,
-            }
-            
-            system_config = {
-                "peak_tflops": peak_tflops,
-                "memory_bandwidth_gbps": mem_bandwidth,
-                "network_bandwidth_gbps": 400,
-                "memory_capacity_gb": mem_capacity,
-            }
-            
-            compiler = (
-                Compiler()
-                .add_pass(WorkloadPass())
-                .add_pass(ParallelPass(tp=tp, pp=pp, dp=dp))
-                .add_pass(SchedulePass(system_config=system_config))
-                .add_pass(EvaluatePass(subs=subs, training=True))
-            )
+            # 构建编译流水线
+            pipeline = Pipeline()
+            pipeline.add_pass(ParallelPass(tp=tp, pp=pp, dp=dp))
+            pipeline.add_pass(ExpandPass(
+                batch_size=batch_size,
+                seq_len=seq_len,
+                training=True,
+            ))
+            pipeline.add_pass(SchedulePass())
+            pipeline.add_pass(SimulatePass(
+                peak_tflops=peak_tflops,
+                memory_bandwidth=mem_bandwidth * 1e9,  # GB/s → B/s
+                network_bandwidth=400 * 1e9,  # 400 GB/s
+            ))
             
             try:
-                result = compiler.compile(graph)
+                result = pipeline.run(graph)
                 st.success("✅ 编译完成!")
                 
                 # 显示结果
                 st.markdown("#### 📊 模拟结果")
                 
-                metrics_row(
-                    ("💾 峰值显存", f"{result.peak_memory / 1e9:.2f} GB"),
-                    ("⏱️ 端到端时间", f"{result.e2e_time * 1e3:.2f} ms"),
-                    ("📈 MFU", f"{result.mfu:.1%}"),
-                    ("✓ 可行性", "✅ 可行" if result.is_feasible() else "❌ 不可行"),
-                )
-                
-                # 详细分解
-                col1, col2 = st.columns(2)
-                with col1:
-                    if result.memory_breakdown:
-                        with st.expander("💾 显存分解", expanded=True):
-                            st.metric("权重", f"{result.memory_breakdown.weights/1e9:.2f} GB")
-                            st.metric("激活", f"{result.memory_breakdown.activations/1e9:.2f} GB")
-                
-                with col2:
-                    if result.time_breakdown:
-                        with st.expander("⏱️ 时间分解", expanded=True):
-                            st.metric("前向", f"{result.time_breakdown.forward*1e3:.2f} ms")
-                            st.metric("通信", f"{result.time_breakdown.communication*1e3:.2f} ms")
-                
-                # 警告信息
-                if result.warnings:
-                    for warning in result.warnings:
-                        st.warning(warning)
-                
-                # 原始结果
-                with st.expander("📋 原始结果 (JSON)", expanded=False):
-                    st.json(result.to_dict())
+                if hasattr(result, 'to_terminal'):
+                    st.code(result.to_terminal(), language="text")
+                else:
+                    st.write(result)
                     
             except Exception as e:
                 st.error(f"❌ 编译失败: {e}")

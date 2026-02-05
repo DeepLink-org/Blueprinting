@@ -245,6 +245,89 @@ def graph_to_tree(graph: GraphIR) -> str:
 
 
 # ==============================================================================
+# 便捷构建函数
+# ==============================================================================
+
+
+def build_transformer_model(
+    model_name: str,
+    num_layers: int,
+    hidden: int,
+    feedforward: int,
+    num_heads: int,
+    head_dim: int,
+    seq_len: int = 2048,
+    batch_size: int = 1,
+    tp: int = 1,
+    pp: int = 1,
+    dp: int = 1,
+    gradient_checkpointing: bool = False,
+    activation: str = "GELU",
+) -> GraphIR:
+    """构建 Transformer 模型的 GraphIR.
+
+    Args:
+        model_name: 模型名称
+        num_layers: 层数
+        hidden: 隐藏维度
+        feedforward: FFN 中间维度
+        num_heads: 注意力头数
+        head_dim: 每个头的维度
+        seq_len: 序列长度
+        batch_size: 微批次大小
+        tp: 张量并行度
+        pp: 流水线并行度
+        dp: 数据并行度
+        gradient_checkpointing: 是否使用梯度检查点
+        activation: 激活函数 ("GELU", "SiLU")
+
+    Returns:
+        GraphIR
+    """
+    batch_seq = batch_size * seq_len
+
+    with Transformer(model_name) as m:
+        m.metadata(
+            model_name=model_name,
+            num_layers=num_layers,
+            hidden=hidden,
+            feedforward=feedforward,
+            num_heads=num_heads,
+            head_dim=head_dim,
+            batch_size=batch_size,
+            seq_len=seq_len,
+            tp=tp,
+            pp=pp,
+            dp=dp,
+            batch_seq=batch_seq,
+            gradient_checkpointing=gradient_checkpointing,
+        )
+
+        for i in range(num_layers):
+            with m.TransformerLayer(f"layer{i}") as layer:
+                # Attention block
+                with layer.Attention("attn") as attn:
+                    attn.RMSNorm("norm", normalized_shape=hidden)
+                    attn.Linear("q_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
+                    attn.Linear("k_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
+                    attn.Linear("v_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
+                    attn.Linear("out_proj", in_features=hidden, out_features=hidden, shard="tp_row" if tp > 1 else None)
+
+                # FFN block
+                with layer.FFN("ffn") as ffn:
+                    ffn.RMSNorm("norm", normalized_shape=hidden)
+                    ffn.Linear("up_proj", in_features=hidden, out_features=feedforward, shard="tp_col" if tp > 1 else None)
+                    # 激活函数
+                    if activation == "SiLU":
+                        ffn.SiLU("act")
+                    else:
+                        ffn.GELU("act")
+                    ffn.Linear("down_proj", in_features=feedforward, out_features=hidden, shard="tp_row" if tp > 1 else None)
+
+    return m.build()
+
+
+# ==============================================================================
 # 导出
 # ==============================================================================
 
@@ -256,4 +339,5 @@ __all__ = [
     "BlockBuilder",
     "print_graph",
     "graph_to_tree",
+    "build_transformer_model",
 ]

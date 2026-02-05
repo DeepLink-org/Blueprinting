@@ -21,9 +21,10 @@ TimelineIR (simulation view):
     - Fine-grained events for precise simulation
 """
 
-from .builder import IRBuilder, build_transformer_layer, build_transformer_model
+from .dsl import build_transformer_model
 from .compiler import Compiler
-from .graph import BlockNode, GraphIR, ModuleNode, NodeType, OpNode, TensorRef
+# 所有 IR 类型从 types.py 导入
+from .types import BlockNode, GraphIR, NodeType, TensorRef
 from .passes import (
                       ExpandPass,
                       OptimizerConfig,
@@ -45,18 +46,70 @@ from .passes import (
                       TimelinePass,
 )
 from .result import SimulationResult
-from .schedule import DeviceSchedule, ScheduledOp, ScheduleIR, StageSchedule, TensorLifetime
+# DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime 已迁移到 types.py
+from .types import DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime
 from .symmax import SymMax, clear_expr_cache, eval_lazy, get_cache_stats, sym_max
 from .system import SystemConfig, load_system_config
-from .timeline import EventType, StreamType, TimelineEvent, TimelineIR
+# 统一从 types.py 导入所有 IR 类型
+from .types import (
+    EventType,
+    StreamType,
+    TimelineEvent,
+    MemorySnapshot,
+    StreamState,
+    ScheduleIR,
+    TimelineIR,
+)
+
+# Render module - Mixins
+from .render import (
+    GraphRenderMixin,
+    ScheduleRenderMixin,
+    TimelineRenderMixin,
+    SimulationResultRenderMixin,
+)
+
+
+# ==============================================================================
+# 动态绑定 Render Mixin 方法到 IR 类型
+# ==============================================================================
+def _bind_render_methods():
+    """将 Render Mixin 的方法动态绑定到 IR 类型."""
+    render_methods = ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_')
+    
+    # 绑定 GraphIR 的渲染方法
+    for name in render_methods:
+        if hasattr(GraphRenderMixin, name):
+            setattr(GraphIR, name, getattr(GraphRenderMixin, name))
+    
+    # 绑定 ScheduleIR 的渲染方法
+    for name in render_methods:
+        if hasattr(ScheduleRenderMixin, name):
+            setattr(ScheduleIR, name, getattr(ScheduleRenderMixin, name))
+    
+    # 绑定 TimelineIR 的渲染方法
+    for name in render_methods:
+        if hasattr(TimelineRenderMixin, name):
+            setattr(TimelineIR, name, getattr(TimelineRenderMixin, name))
+    
+    # 绑定 SimulationResult 的渲染方法
+    for name in ('to_terminal', '_repr_html_'):
+        if hasattr(SimulationResultRenderMixin, name):
+            setattr(SimulationResult, name, getattr(SimulationResultRenderMixin, name))
+
+
+# 模块加载时绑定渲染方法
+try:
+    _bind_render_methods()
+except ImportError:
+    # 如果 render 模块不可用，忽略
+    pass
 
 __all__ = [
-    # Graph IR - hierarchical
+    # Graph IR
     "NodeType",
     "TensorRef",
-    "OpNode",
     "BlockNode",
-    "ModuleNode",
     "GraphIR",
     # Schedule IR - hierarchical
     "TensorLifetime",
@@ -69,6 +122,8 @@ __all__ = [
     "TimelineEvent",
     "EventType",
     "StreamType",
+    "MemorySnapshot",
+    "StreamState",
     # Symbolic Max
     "SymMax",
     "sym_max",
@@ -77,9 +132,7 @@ __all__ = [
     "get_cache_stats",
     # Result
     "SimulationResult",
-    # Builder
-    "IRBuilder",
-    "build_transformer_layer",
+    # DSL
     "build_transformer_model",
     # Compiler
     "Compiler",
@@ -105,4 +158,10 @@ __all__ = [
     "PrintSchedulePass",
     "PrintTimelinePass",
     "PrintResultPass",
+    # Render functions
+    # Render Mixins
+    "GraphRenderMixin",
+    "ScheduleRenderMixin",
+    "TimelineRenderMixin",
+    "SimulationResultRenderMixin",
 ]

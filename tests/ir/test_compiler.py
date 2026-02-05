@@ -3,10 +3,9 @@
 import pytest
 from sympy import Symbol
 
-from blueprinting.ir.graph import GraphIR, OpNode
-from blueprinting.ir.schedule import ScheduleIR
+from blueprinting.ir import GraphIR, ScheduleIR
 from blueprinting.ir.result import SimulationResult, MemoryBreakdown, TimeBreakdown
-from blueprinting.ir.builder import IRBuilder, build_transformer_layer, build_transformer_model
+from blueprinting.ir.dsl import build_transformer_model
 from blueprinting.ir.compiler import Compiler, compile_model
 from blueprinting.ir.passes import (
     ExpandPass,
