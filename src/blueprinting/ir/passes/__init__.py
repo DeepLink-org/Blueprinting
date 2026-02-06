@@ -2,11 +2,16 @@
 
 GraphIR → ParallelPass → ExpandPass → SchedulePass → OptimizerPass
 → PipelineSchedulePass → TimelinePass → SimulatePass → SimulationResult
+
+推理 (Inference):
+GraphIR → InferenceParallelPass → InferenceExpandPass → InferenceSchedulePass
+→ TimelinePass → SimulatePass → SimulationResult
 """
 
 from .base import Pass, Pipeline
 from .debug import PrintGraphPass, PrintResultPass, PrintSchedulePass, PrintTimelinePass
 from .expand import ExpandPass
+from .inference import InferenceExpandPass, InferenceParallelPass, InferenceSchedulePass, QuantConfig
 from .optimizer import OptimizerConfig, OptimizerPass
 from .overlap import OverlapAnalysisPass
 from .parallel import ParallelPass

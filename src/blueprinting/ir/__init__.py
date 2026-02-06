@@ -10,8 +10,21 @@ from blueprinting.core import SymMax, SymMin, eval_lazy, sym_max, sym_min
 from .compiler import Compiler
 from .dsl import build_transformer_model
 from .estimate import SymbolicEstimate
+from .perf_database import (
+    CommQuantMode,
+    DatabaseMode,
+    FMHAQuantMode,
+    GEMMQuantMode,
+    KVCacheQuantMode,
+    PerfDatabase,
+    get_supported_databases,
+    get_systems_dir,
+)
 from .passes import (
     ExpandPass,
+    InferenceExpandPass,
+    InferenceParallelPass,
+    InferenceSchedulePass,
     OptimizerConfig,
     OptimizerPass,
     OverlapAnalysisPass,
@@ -25,6 +38,7 @@ from .passes import (
     PrintResultPass,
     PrintSchedulePass,
     PrintTimelinePass,
+    QuantConfig,
     SchedulePass,
     SimulatePass,
     SymbolicEstimatePass,

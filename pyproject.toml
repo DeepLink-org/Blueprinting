@@ -51,6 +51,8 @@ dependencies = [
     "sympy>=1.12.1",
     "streamlit>=1.40.1",
     "streamlit-extras>=0.6.0",
+    "pyyaml>=6.0",
+    "scipy>=1.10.0",
 ]
 
 [project.optional-dependencies]
@@ -195,6 +197,9 @@ addopts = [
 ]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",

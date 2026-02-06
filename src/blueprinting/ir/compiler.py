@@ -3,7 +3,7 @@
 The Compiler combines multiple passes into a compilation pipeline,
 transforming hierarchical GraphIR through various stages to produce a SimulationResult.
 
-IR Pipeline:
+IR Pipeline (训练):
     GraphIR (Block)
          │
          ↓ ParallelPass (标记并行策略)
@@ -27,12 +27,40 @@ IR Pipeline:
          ↓ SimulatePass (评估)
          │
     SimulationResult
+
+IR Pipeline (推理):
+    GraphIR (Block)
+         │
+         ↓ InferenceParallelPass (标记并行策略 + 推理模式)
+         │
+         ↓ InferenceExpandPass (Block → Op, 区分 context/generation)
+         │
+    ScheduleIR (Op, 无 workload)
+         │
+         ↓ InferenceSchedulePass (计算 workload + timing + KV-cache)
+         │
+    ScheduleIR (Op, 有 workload)
+         │
+         ↓ TimelinePass (Op → Event, 复用)
+         │
+    TimelineIR (Event)
+         │
+         ↓ SimulatePass (评估, training=False, 复用)
+         │
+    SimulationResult
 """
 
 from typing import Any, Dict, List, Optional
 
 from .passes.base import Pass
 from .passes.expand import ExpandPass
+from .passes.inference import (
+    InferenceExpandPass,
+    InferenceParallelPass,
+    InferenceSchedulePass,
+    QuantConfig,
+)
+from .perf_database import PerfDatabase
 from .passes.optimizer import OptimizerConfig, OptimizerPass
 from .passes.parallel import ParallelPass
 from .passes.pipeline import PipelineSchedulePass
@@ -213,6 +241,82 @@ class Compiler:
 
         return compiler
 
+    @staticmethod
+    def inference_pipeline(
+        tp: int = 1,
+        pp: int = 1,
+        phase: str = "context",
+        subs: Optional[Dict] = None,
+        system_config: Optional[Dict] = None,
+        quant_config: Optional["QuantConfig"] = None,
+        perf_db: Optional["PerfDatabase"] = None,
+        debug: bool = False,
+    ) -> "Compiler":
+        """Create a compiler with an inference pass pipeline.
+
+        推理管道:
+            InferenceParallelPass → InferenceExpandPass → InferenceSchedulePass
+            → TimelinePass → SimulatePass(training=False)
+
+        与训练管道的区别:
+        - 使用推理专用的 Parallel/Expand/Schedule Pass
+        - 无 OptimizerPass (推理不需要反向传播)
+        - 无 PipelineSchedulePass (推理不需要 micro-batch 交错调度)
+        - SimulatePass 使用 training=False
+        - 支持量化配置 (QuantConfig)
+        - 支持性能数据库 (PerfDatabase) 查表
+
+        Args:
+            tp: Tensor parallelism degree
+            pp: Pipeline parallelism degree
+            phase: Inference phase ("context" for prefill, "generation" for decode)
+            subs: Symbol substitutions
+            system_config: System configuration
+            quant_config: Quantization configuration (default: fp16)
+            perf_db: PerfDatabase instance for table-driven performance estimation.
+                     When provided, GEMM and communication ops use measured data,
+                     with roofline fallback for other ops or when table lookup fails.
+            debug: Print IR snapshot after each pass
+
+        Returns:
+            Configured Compiler
+        """
+        system_config = system_config or {
+            "peak_tflops": 312,
+            "memory_bandwidth_gbps": 2000,
+            "network_bandwidth_gbps": 400,
+            "memory_capacity_gb": 80,
+        }
+
+        peak_tflops = system_config.get("peak_tflops", 312)
+        memory_bandwidth = (
+            system_config.get("memory_bandwidth_gbps", 2000) * 1e9
+        )
+        network_bandwidth = (
+            system_config.get("network_bandwidth_gbps", 400) * 1e9
+        )
+
+        compiler = (
+            Compiler(system_config, debug=debug)
+            .add_pass(InferenceParallelPass(tp=tp, pp=pp, phase=phase))
+            .add_pass(InferenceExpandPass(phase=phase))
+            .add_pass(
+                InferenceSchedulePass(
+                    peak_tflops=peak_tflops,
+                    memory_bandwidth=memory_bandwidth,
+                    network_bandwidth=network_bandwidth,
+                    quant_config=quant_config,
+                    perf_db=perf_db,
+                )
+            )
+            .add_pass(TimelinePass(track_memory=True))
+            .add_pass(
+                SimulatePass(subs=subs, peak_tflops=peak_tflops, training=False)
+            )
+        )
+
+        return compiler
+
     def __repr__(self) -> str:
         pass_names = [getattr(p, "name", p.__class__.__name__) for p in self.passes]
         return f"Compiler([{', '.join(pass_names)}])"
@@ -273,6 +377,102 @@ def compile_model(
         subs=subs,
         system_config=system_config,
         training=training,
+        debug=debug,
+    )
+
+    return compiler.compile(graph)
+
+
+def compile_inference(
+    graph: GraphIR,
+    tp: int = 1,
+    pp: int = 1,
+    phase: str = "context",
+    batch_size: int = 1,
+    seq_len: int = 2048,
+    hidden: int = 4096,
+    feedforward: Optional[int] = None,
+    num_layers: int = 32,
+    num_heads: Optional[int] = None,
+    num_kv_heads: Optional[int] = None,
+    kv_len: Optional[int] = None,
+    system_config: Optional[Dict] = None,
+    quant_config: Optional["QuantConfig"] = None,
+    perf_db: Optional["PerfDatabase"] = None,
+    debug: bool = False,
+) -> SimulationResult:
+    """Convenience function to compile a model graph for inference.
+
+    推理编译的便捷函数，类似 compile_model 但面向推理场景。
+    自动设置推理阶段 (context/generation) 的相关参数。
+
+    Example:
+        # FP8 量化推理 (roofline 模型)
+        result = compile_inference(
+            graph, tp=8, phase="generation",
+            batch_size=32, seq_len=2048,
+            quant_config=QuantConfig.fp8(),
+        )
+
+        # 使用实测性能数据库
+        from blueprinting.ir.perf_database import PerfDatabase
+        db = PerfDatabase("h100_sxm", "trtllm", "1.0.0rc3")
+        result = compile_inference(
+            graph, tp=8, phase="generation",
+            batch_size=32, seq_len=2048,
+            quant_config=QuantConfig.fp8(),
+            perf_db=db,
+        )
+
+    Args:
+        graph: GraphIR to compile
+        tp: Tensor parallelism degree
+        pp: Pipeline parallelism degree
+        phase: Inference phase ("context" for prefill, "generation" for decode)
+        batch_size: Batch size (推理请求数)
+        seq_len: Sequence length (输入序列长度)
+        hidden: Hidden dimension
+        feedforward: Feedforward dimension (default: 4 * hidden)
+        num_layers: Number of transformer layers
+        num_heads: Number of attention heads (default: hidden // 128)
+        num_kv_heads: Number of KV heads for GQA/MQA (default: same as num_heads)
+        kv_len: KV cache length for generation (default: seq_len)
+        system_config: System configuration
+        quant_config: Quantization configuration (default: fp16)
+        perf_db: PerfDatabase for table-driven estimation (optional)
+        debug: Print IR snapshot after each pass
+
+    Returns:
+        SimulationResult
+    """
+    feedforward = feedforward or 4 * hidden
+    num_heads = num_heads or hidden // 128
+    num_kv_heads = num_kv_heads or num_heads
+    kv_len = kv_len or seq_len
+
+    subs = {
+        "B": batch_size,
+        "S": seq_len,
+        "H": hidden,
+        "FF": feedforward,
+        "batch_size": batch_size,
+        "seq_len": seq_len,
+        "hidden": hidden,
+        "feedforward": feedforward,
+        "num_layers": num_layers,
+        "num_heads": num_heads,
+        "num_kv_heads": num_kv_heads,
+        "kv_len": kv_len,
+    }
+
+    compiler = Compiler.inference_pipeline(
+        tp=tp,
+        pp=pp,
+        phase=phase,
+        subs=subs,
+        system_config=system_config,
+        quant_config=quant_config,
+        perf_db=perf_db,
         debug=debug,
     )
 

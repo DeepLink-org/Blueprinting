@@ -1,0 +1,19 @@
+framework,version,device,op_name,kernel_source,quant_type,num_token,hidden_size,intermediate_size,avg_ms
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,1,7168,2048,0.04152320027351379
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,2,7168,2048,0.03294720053672791
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,4,7168,2048,0.031964799761772154
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,8,7168,2048,0.03386240005493164
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,16,7168,2048,0.03182080090045929
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,32,7168,2048,0.02954559922218323
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,64,7168,2048,0.024607999622821806
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,128,7168,2048,0.029449599981307983
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,256,7168,2048,0.03838399946689606
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,512,7168,2048,0.053699201345443724
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,1024,7168,2048,0.08847360014915466
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,2048,7168,2048,0.1608736038208008
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,4096,7168,2048,0.28874878883361815
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,8192,7168,2048,0.5595263957977294
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,16384,7168,2048,1.0946175575256347
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,32768,7168,2048,2.1555103302001952
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,65536,7168,2048,4.3569793701171875
+SGLang,0.5.6.post2,NVIDIA H200,mlp,deepseek_v3,fp8_block,131072,7168,2048,8.973993682861328
