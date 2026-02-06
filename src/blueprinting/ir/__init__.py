@@ -48,7 +48,18 @@ from .passes import (
 from .result import SimulationResult
 # DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime 已迁移到 types.py
 from .types import DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime
-from blueprinting.core import SymMax, clear_expr_cache, eval_lazy, get_cache_stats, sym_max
+# 符号化计算基础设施（从 core 模块重新导出）
+from blueprinting.core import (
+    SymMax,
+    SymMin,
+    sym_max,
+    sym_min,
+    eval_lazy,
+    is_symbolic,
+    free_symbols,
+    clear_expr_cache,
+    get_cache_stats,
+)
 from .system import SystemConfig, load_system_config
 # 统一从 types.py 导入所有 IR 类型
 from .types import (
@@ -124,10 +135,14 @@ __all__ = [
     "StreamType",
     "MemorySnapshot",
     "StreamState",
-    # Symbolic Max
+    # Symbolic computation
     "SymMax",
+    "SymMin",
     "sym_max",
+    "sym_min",
     "eval_lazy",
+    "is_symbolic",
+    "free_symbols",
     "clear_expr_cache",
     "get_cache_stats",
     # Result
