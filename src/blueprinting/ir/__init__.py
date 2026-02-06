@@ -57,10 +57,6 @@ from blueprinting.core import (
     sym_max,
     sym_min,
     eval_lazy,
-    is_symbolic,
-    free_symbols,
-    clear_expr_cache,
-    get_cache_stats,
 )
 from .system import SystemConfig, load_system_config
 # 统一从 types.py 导入所有 IR 类型
@@ -143,10 +139,6 @@ __all__ = [
     "sym_max",
     "sym_min",
     "eval_lazy",
-    "is_symbolic",
-    "free_symbols",
-    "clear_expr_cache",
-    "get_cache_stats",
     # Result
     "SimulationResult",
     # DSL

@@ -27,6 +27,7 @@ from blueprinting.ir.passes import (
     PipelineSchedulePass,
     PipelineConfig,
     PPScheduleMode,
+    SymbolicEstimatePass,
     TimelinePass,
     OverlapAnalysisPass,
     SimulatePass,
@@ -464,13 +465,16 @@ def create_compiler(execution: Dict[str, Any], system_cfg: Dict[str, Any], seq_l
             )
         ))
 
-    # 6. TimelinePass: Op → Event
+    # 6. SymbolicEstimatePass: 符号化聚合估算（透明 Pass）
+    passes.append(SymbolicEstimatePass())
+
+    # 7. TimelinePass: Op → Event
     passes.append(TimelinePass(track_memory=True))
 
-    # 7. OverlapAnalysisPass: 重叠分析
+    # 8. OverlapAnalysisPass: 重叠分析
     passes.append(OverlapAnalysisPass())
 
-    # 8. SimulatePass: 评估
+    # 9. SimulatePass: 评估
     subs = {"batch_seq": micro_batch_size * seq_len}
     passes.append(SimulatePass(
         subs=subs,
@@ -813,3 +817,125 @@ if snapshots:
              "Diff": format_diff(block_time.get("total_time", 0), calc_time_block.get("total_time", 0))},
         ]
         st.dataframe(pd.DataFrame(block_time_rows), hide_index=True, use_container_width=True)
+
+    # ================================================================
+    # 符号化估算分析 (Estimate vs Timeline)
+    # ================================================================
+    if ir_result and hasattr(ir_result, "estimate") and ir_result.estimate:
+        est = ir_result.estimate
+        section_header("符号化估算分析", "Estimate (公式聚合) vs Timeline (精确仿真) 对比及瓶颈分析")
+
+        def _eval_to_float(value: Any) -> float:
+            """将表达式求值为 float."""
+            if isinstance(value, (int, float)):
+                return float(value)
+            if hasattr(value, 'eval'):
+                try:
+                    return float(value.eval({}))
+                except (TypeError, ValueError):
+                    return 0.0
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        ir_total_tb = getattr(ir_result, "total_time_breakdown", None)
+        ir_mb = getattr(ir_result, "memory_breakdown", None)
+
+        # --- 时间对比 ---
+        st.markdown("#### Estimate vs Timeline 时间")
+        time_cmp_rows = []
+        time_items = [
+            ("前向", est.forward_time, ir_total_tb.forward if ir_total_tb else 0),
+            ("反向", est.backward_time, ir_total_tb.backward if ir_total_tb else 0),
+            ("重计算", est.recompute_time, ir_total_tb.recompute if ir_total_tb else 0),
+            ("通信", est.comm_time, ir_total_tb.communication if ir_total_tb else 0),
+            ("Bubble", est.bubble_time, ir_total_tb.bubble if ir_total_tb else 0),
+        ]
+        for name, est_val, tl_val in time_items:
+            ef = _eval_to_float(est_val)
+            tf = _eval_to_float(tl_val)
+            time_cmp_rows.append({
+                "指标": name,
+                "Estimate": format_time(ef),
+                "Timeline": format_time(tf),
+                "Diff": format_diff(ef, tf) if tf else "-",
+            })
+        est_e2e = _eval_to_float(est.e2e_time)
+        time_cmp_rows.append({
+            "指标": "E2E 总计",
+            "Estimate": format_time(est_e2e),
+            "Timeline": format_time(ir_result.e2e_time),
+            "Diff": format_diff(est_e2e, ir_result.e2e_time) if ir_result.e2e_time else "-",
+        })
+        st.dataframe(pd.DataFrame(time_cmp_rows), hide_index=True, use_container_width=True)
+
+        # --- 内存对比 ---
+        st.markdown("#### Estimate vs Timeline 内存")
+        mem_cmp_rows = []
+        mem_items = [
+            ("权重", est.weight_memory, ir_mb.weights if ir_mb else 0),
+            ("激活", est.activation_memory, ir_mb.activations if ir_mb else 0),
+            ("梯度", est.gradient_memory, ir_mb.gradients if ir_mb else 0),
+            ("优化器", est.optimizer_memory, ir_mb.optimizer_states if ir_mb else 0),
+        ]
+        for name, est_val, tl_val in mem_items:
+            ef = _eval_to_float(est_val)
+            tf = _eval_to_float(tl_val)
+            mem_cmp_rows.append({
+                "指标": name,
+                "Estimate": format_bytes(ef),
+                "Timeline": format_bytes(tf),
+                "Diff": format_diff(ef, tf) if tf else "-",
+            })
+        est_peak = _eval_to_float(est.peak_memory)
+        mem_cmp_rows.append({
+            "指标": "峰值合计",
+            "Estimate": format_bytes(est_peak),
+            "Timeline": format_bytes(ir_result.peak_memory),
+            "Diff": format_diff(est_peak, ir_result.peak_memory) if ir_result.peak_memory else "-",
+        })
+        st.dataframe(pd.DataFrame(mem_cmp_rows), hide_index=True, use_container_width=True)
+
+        # --- 瓶颈分析 ---
+        bn = est.bottleneck()
+
+        col_t, col_m = st.columns(2)
+        with col_t:
+            st.markdown("#### 瓶颈分析 (时间)")
+            bn_time_rows = []
+            for name, val, frac in bn["time"]:
+                bar_len = int(frac * 20)
+                bar = "█" * bar_len + "░" * (20 - bar_len)
+                bn_time_rows.append({
+                    "项目": name,
+                    "时间": format_time(val),
+                    "占比": f"{frac:.1%}",
+                    "": bar,
+                })
+            st.dataframe(pd.DataFrame(bn_time_rows), hide_index=True, use_container_width=True)
+
+        with col_m:
+            st.markdown("#### 瓶颈分析 (内存)")
+            bn_mem_rows = []
+            for name, val, frac in bn["memory"]:
+                bar_len = int(frac * 20)
+                bar = "█" * bar_len + "░" * (20 - bar_len)
+                bn_mem_rows.append({
+                    "项目": name,
+                    "大小": format_bytes(val),
+                    "占比": f"{frac:.1%}",
+                    "": bar,
+                })
+            st.dataframe(pd.DataFrame(bn_mem_rows), hide_index=True, use_container_width=True)
+
+        # --- 校准 ---
+        calibrated = est.calibrate(ir_result)
+        if calibrated.overlap_ratio > 0:
+            cal_e2e = _eval_to_float(calibrated.e2e_time)
+            st.info(
+                f"校准结果：overlap_ratio = {calibrated.overlap_ratio:.3f}，"
+                f"校准后 E2E = {format_time(cal_e2e)} "
+                f"(Timeline: {format_time(ir_result.e2e_time)}, "
+                f"diff: {format_diff(cal_e2e, ir_result.e2e_time)})"
+            )

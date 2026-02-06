@@ -8,7 +8,7 @@
 
 聚合规则:
 - 遍历所有 Op，按 (phase, op_type) 聚合 duration
-- 保持符号形式（用 Python + 累加，自动产生 _SymSum）
+- 保持符号形式（用 SymPy Expr 的 + 运算累加）
 - PP 并行：各项除以 pp
 - Bubble: (pp-1) * stage_time / num_microbatches
 - 内存：从 Op attrs 推导权重/激活，从权重推导梯度/优化器态
