@@ -1323,6 +1323,7 @@ class SimulationResult:
     total_flops: int | float = 0
     config: dict[str, Any] = field(default_factory=dict)
     timeline: TimelineIR | None = None  # TimelineIR 引用，用于导出 Chrome Trace
+    estimate: Any = None  # SymbolicEstimate (符号化估算，可选)
 
     @property
     def mfu(self) -> float:

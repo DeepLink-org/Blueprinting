@@ -433,6 +433,9 @@ class SimulatePass(Pass):
         config["peak_tflops"] = self.peak_tflops
         config["tokens_per_second"] = self._compute_throughput(ir, e2e_time)
 
+        # 从 metadata 提取 SymbolicEstimate（如果存在）
+        estimate = ir.metadata.get("symbolic_estimate", None)
+
         return SimulationResult(
             peak_memory=peak_memory,
             e2e_time=e2e_time,
@@ -443,6 +446,7 @@ class SimulatePass(Pass):
             total_flops=total_flops,
             config=config,
             timeline=ir,  # 保存 TimelineIR 引用
+            estimate=estimate,
         )
 
     def _eval_expr(self, expr) -> float:

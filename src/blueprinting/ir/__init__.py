@@ -42,9 +42,11 @@ from .passes import (
                       PrintTimelinePass,
                       SchedulePass,
                       SimulatePass,
+                      SymbolicEstimatePass,
                       TimelinePass,
                       TimelinePass,
 )
+from .estimate import SymbolicEstimate
 from .result import SimulationResult
 # DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime 已迁移到 types.py
 from .types import DeviceSchedule, ScheduledOp, StageSchedule, TensorLifetime
@@ -173,7 +175,9 @@ __all__ = [
     "PrintSchedulePass",
     "PrintTimelinePass",
     "PrintResultPass",
-    # Render functions
+    "SymbolicEstimatePass",
+    # Estimate
+    "SymbolicEstimate",
     # Render Mixins
     "GraphRenderMixin",
     "ScheduleRenderMixin",
