@@ -3,17 +3,16 @@
 Imports only from blueprinting.core (no blueprinting.core.symbolic, no _to_float).
 """
 
-import pytest
-from sympy import Symbol, Add
+from sympy import Add, Symbol
 
 from blueprinting.core import (
-    SymMax,
-    SymMin,
-    sym_max,
-    sym_min,
-    eval_lazy,
     BATCH,
     TP,
+    SymMax,
+    SymMin,
+    eval_lazy,
+    sym_max,
+    sym_min,
 )
 
 

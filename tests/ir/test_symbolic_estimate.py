@@ -1,7 +1,5 @@
 """Tests for SymbolicEstimate and SymbolicEstimatePass."""
 
-import pytest
-from sympy import Symbol
 
 from blueprinting.ir import GraphIR
 from blueprinting.ir.dsl import build_transformer_model
