@@ -18,7 +18,7 @@ from src.blueprinting.ir.types import (
 )
 from src.blueprinting.ir.ops import Linear, RMSNorm, Matmul
 from src.blueprinting.ir.dsl import Model, Transformer
-from blueprinting.core import SymMax, clear_expr_cache
+from blueprinting.core import SymMax
 
 
 # ==============================================================================
@@ -235,23 +235,17 @@ class TestSymbolicGraphIR:
 class TestSymMaxIntegration:
     """测试 SymMax 与新 IR 系统的集成."""
     
-    def setup_method(self):
-        """每个测试前清理缓存."""
-        clear_expr_cache()
-    
     def test_symmax_in_scheduling(self):
         """测试 SymMax 用于调度时间计算."""
         T1, T2 = symbols('T1 T2', positive=True)
-        
-        # 模拟两个并行任务取 max
+
+        # 模拟两个并行任务取 max（SymMax 为 sympy.Function，用 subs 求值）
         end_time = SymMax(T1, T2)
+        result = end_time.subs({T1: 100, T2: 150})
+        assert float(result) == 150
         
-        # 代入具体值
-        result = end_time.eval({T1: 100, T2: 150})
-        assert result == 150
-        
-        result = end_time.eval({T1: 200, T2: 150})
-        assert result == 200
+        result = end_time.subs({T1: 200, T2: 150})
+        assert float(result) == 200
     
     def test_symmax_with_expr(self):
         """测试 SymMax 与 SymPy 表达式混合使用."""
@@ -263,9 +257,9 @@ class TestSymMaxIntegration:
         
         max_flops = SymMax(flops1, flops2)
         
-        result = max_flops.eval({H: 4096})
+        result = max_flops.subs({H: 4096})
         expected = max(2 * 4096 * 4 * 4096, 2 * 4 * 4096 * 4096)
-        assert result == expected
+        assert float(result) == expected
     
     def test_symmax_arithmetic(self):
         """测试 SymMax 的算术运算."""
@@ -273,13 +267,13 @@ class TestSymMaxIntegration:
         
         m = SymMax(A, B)
         
-        # SymMax + number
+        # SymMax + number（SymPy Expr 用 subs 求值）
         result = m + 10
-        assert result.eval({A: 5, B: 3}) == 15  # max(5,3) + 10
-        
+        assert float(result.subs({A: 5, B: 3})) == 15  # max(5,3) + 10
+
         # SymMax * number
         result = m * 2
-        assert result.eval({A: 5, B: 3}) == 10  # max(5,3) * 2
+        assert float(result.subs({A: 5, B: 3})) == 10  # max(5,3) * 2
 
 
 # ==============================================================================

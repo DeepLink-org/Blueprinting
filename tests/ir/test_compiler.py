@@ -130,11 +130,10 @@ class TestSimulationResult:
         breakdown = TimeBreakdown(
             forward=0.01,
             backward=0.02,
-            optimizer=0.001,
+            recompute=0.001,
             communication=0.005,
-            bubble=0.002
+            bubble=0.002,
         )
-        
         assert breakdown.total == 0.038
         assert "forward" in repr(breakdown).lower()
     
@@ -144,12 +143,9 @@ class TestSimulationResult:
             peak_memory=10e9,
             e2e_time=0.1,
             total_flops=1e15,
-            achieved_flops=1e15,
-            config={"peak_tflops": 312}
+            config={"peak_tflops": 312, "pp": 1},
         )
-        
-        # MFU = achieved_flops / (peak_tflops * time)
-        # = 1e15 / (312e12 * 0.1) = 1e15 / 3.12e13 ≈ 32
+        # MFU = total_flops/pp / (peak_tflops*1e12 * e2e_time)
         assert result.mfu > 0
     
     def test_simulation_result_to_dict(self):
