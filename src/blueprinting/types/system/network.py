@@ -47,7 +47,7 @@ class Network:
         self._ops = {}
         all_keys = cfg.keys()
         ops_keys = [k for k in all_keys if k.startswith("ops.")]
-        op_names = set(k.split(".")[1] for k in ops_keys if len(k.split(".")) > 1)
+        op_names = {k.split(".")[1] for k in ops_keys if len(k.split(".")) > 1}
 
         for op in op_names:
             op_cfg = getattr(cfg.ops, op)

@@ -216,11 +216,6 @@ class TensorRef:
         return f"Tensor({self.name})"
 
 
-# ==============================================================================
-# 默认 Block 展开逻辑
-# ==============================================================================
-
-
 def _expand_linear(
     block: BlockNode, x: TensorRef, ctx: ExpandContext, path: str
 ) -> TensorRef:
@@ -377,11 +372,6 @@ def expand_block(
             child_path = f"{path}/{block.block_type}({block.name})"
             x = expand_block(child, x, ctx, child_path)
         return x
-
-
-# ==============================================================================
-# ExpandPass
-# ==============================================================================
 
 
 class ExpandPass(Pass):

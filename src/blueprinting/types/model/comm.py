@@ -14,7 +14,9 @@ class ModelComm:
         self._model = model
 
     @hp.param("exe")
-    def embedding_fw(self, global_batch_size=0, microbatch_size=0, data_par=0, tensor_par=0) -> CommCounter:
+    def embedding_fw(
+        self, global_batch_size=0, microbatch_size=0, data_par=0, tensor_par=0
+    ) -> CommCounter:
         """Forward embedding communication."""
         m = self._model
         cnt = CommCounter()
@@ -30,7 +32,9 @@ class ModelComm:
         return cnt
 
     @hp.param("exe")
-    def embedding_bw(self, global_batch_size=0, microbatch_size=0, data_par=0, tensor_par=0) -> CommCounter:
+    def embedding_bw(
+        self, global_batch_size=0, microbatch_size=0, data_par=0, tensor_par=0
+    ) -> CommCounter:
         """Backward embedding communication."""
         return CommCounter()
 
@@ -46,10 +50,10 @@ class ModelComm:
         """Forward attention communication."""
         m = self._model
         cnt = CommCounter()
-        if tensor_par > 0 and sequence_par == False:
+        if tensor_par > 0 and not sequence_par:
             cnt.n_all_reduce += 1
             cnt.all_reduce += microbatch_size * m.seq_size * m.hidden
-        elif tensor_par > 0 and sequence_par == True:
+        elif tensor_par > 0 and sequence_par:
             cnt.n_all_gather += 1
             cnt.all_gather += microbatch_size * m.seq_size * m.hidden
 
@@ -69,10 +73,10 @@ class ModelComm:
         """Backward attention communication."""
         m = self._model
         cnt = CommCounter()
-        if tensor_par > 0 and sequence_par == False:
+        if tensor_par > 0 and not sequence_par:
             cnt.n_all_reduce += 1
             cnt.all_reduce += microbatch_size * m.seq_size * m.hidden
-        elif tensor_par > 0 and sequence_par == True:
+        elif tensor_par > 0 and sequence_par:
             cnt.n_all_gather += 1
             cnt.all_gather += microbatch_size * m.seq_size * m.hidden
 
@@ -92,11 +96,11 @@ class ModelComm:
         """Forward MLP communication."""
         m = self._model
         cnt = CommCounter()
-        if tensor_par > 0 and sequence_par == False:
+        if tensor_par > 0 and not sequence_par:
             # forward: attn -> all_reduce -> mlp
             cnt.n_all_reduce += 1
             cnt.all_reduce += microbatch_size * m.seq_size * m.hidden
-        elif tensor_par > 0 and sequence_par == True:
+        elif tensor_par > 0 and sequence_par:
             cnt.n_all_gather += 1
             cnt.all_gather += microbatch_size * m.seq_size * m.hidden
 
@@ -120,11 +124,11 @@ class ModelComm:
         """Backward MLP communication."""
         m = self._model
         cnt = CommCounter()
-        if tensor_par > 0 and sequence_par == False:
+        if tensor_par > 0 and not sequence_par:
             # backward: attn <- all_reduce <- mlp
             cnt.n_all_reduce += 1
             cnt.all_reduce += microbatch_size * m.seq_size * m.hidden
-        elif tensor_par > 0 and sequence_par == True:
+        elif tensor_par > 0 and sequence_par:
             cnt.n_all_gather += 1
             cnt.all_gather += microbatch_size * m.seq_size * m.hidden
 

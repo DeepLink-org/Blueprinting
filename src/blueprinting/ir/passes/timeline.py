@@ -12,17 +12,8 @@ from __future__ import annotations
 
 from sympy import Expr
 
-from ..types import (
-    EventType,
-    MemoryBreakdown,
-    Phase,
-    ScheduledOp,
-    ScheduleIR,
-    StreamType,
-    TimeBreakdown,
-    TimelineEvent,
-    TimelineIR,
-)
+from ..result import MemoryBreakdown, TimeBreakdown
+from ..types import EventType, Phase, ScheduledOp, ScheduleIR, StreamType, TimelineEvent, TimelineIR
 from .base import Pass
 
 
@@ -171,9 +162,7 @@ class TimelinePass(Pass):
             else:
                 forward_ops.append(op)
 
-        # ================================================================
         # 1. 权重分配 (在时间 0，训练期间不释放)
-        # ================================================================
         # 使用 source_block 去重，避免 micro-batch 复制导致权重重复分配
         seen_weight_sources = set()
         dtype_bytes = timeline.metadata.get("dtype_bytes", 2)  # fp16 default
@@ -205,17 +194,8 @@ class TimelinePass(Pass):
                         )
                     )
 
-        # ================================================================
         # 2. 激活内存 - 峰值估计模型
-        # ================================================================
-        # 使用峰值估计而非完整生命周期追踪，避免 1F1B 调度下的内存累积问题。
-        #
-        # 内存模型：
-        # - 无 checkpoint：峰值 = layers_per_stage × 单层激活
-        # - full checkpoint：峰值 = 单层工作激活（每层完成后可复用）
-        #
-        # 从 Op 结构推导单层激活大小，而非硬编码公式。
-        # ================================================================
+        # 使用峰值估计而非完整生命周期追踪，从 Op 结构推导单层激活大小。
         pp = timeline.metadata.get("pp", 1)
         gradient_checkpointing = timeline.metadata.get("gradient_checkpointing", False)
         num_layers = timeline.metadata.get("num_layers", 1)
@@ -367,26 +347,21 @@ class SimulatePass(Pass):
         - 从事件追踪峰值内存
         - 从 metadata 读取配置，计算派生指标
         """
-        from ..types import BlockMetrics, SimulationResult, TimeBreakdown
+        from ..result import BlockMetrics, SimulationResult, TimeBreakdown
 
-        # ========== 从 metadata 读取配置（不计算） ==========
         ir.metadata.get("pp", 1)
         num_microbatches = ir.metadata.get("num_microbatches", 1)
         layers_per_stage = ir.metadata.get("layers_per_stage", 1)
         total_flops = ir.metadata.get("total_flops", 0)
 
-        # ========== 观测内存（遍历事件统计） ==========
         peak_memory, memory_breakdown = self._observe_memory(ir)
 
-        # ========== 观测时间（遍历事件统计总时间） ==========
         total_time_breakdown, total_comm_fw, total_comm_bw, iteration_time = (
             self._observe_time(ir)
         )
 
-        # ========== E2E 时间 = 最后一个 op 结束 - 第一个 op 开始 ==========
         e2e_time = iteration_time
 
-        # ========== 派生指标（从观测结果计算） ==========
         # per-layer per-microbatch 时间
         time_divisor = (
             layers_per_stage * num_microbatches
@@ -428,7 +403,6 @@ class SimulatePass(Pass):
             comm_bw=comm_bw_per_layer,
         )
 
-        # ========== 输出配置 ==========
         config = ir.metadata.copy()
         config["peak_tflops"] = self.peak_tflops
         config["tokens_per_second"] = self._compute_throughput(ir, e2e_time)
@@ -473,8 +447,6 @@ class SimulatePass(Pass):
         这是观测者模式：只统计，不计算。
         返回 per-GPU 的峰值内存和内存分解。
         """
-        from ..types import MemoryBreakdown
-
         pp = ir.metadata.get("pp", 1)
 
         current_memory = 0.0
@@ -533,9 +505,7 @@ class SimulatePass(Pass):
         # weight_memory 是所有层的总和，需要除以 PP 得到 per-GPU 的值
         weight_per_gpu = weight_memory / pp if pp > 0 else weight_memory
 
-        # ================================================================
-        # 计算优化器状态内存（真实训练语义，非 Calculon 硬编码公式）
-        # ================================================================
+        # 计算优化器状态内存
         # 从 metadata 获取优化器配置
         optimizer_config_dict = ir.metadata.get("optimizer_config", {})
 
@@ -632,8 +602,6 @@ class SimulatePass(Pass):
             float: 前向阶段的通信时间 (comm_fw)
             float: 反向阶段的通信时间 (comm_bw)
         """
-        from ..types import TimeBreakdown
-
         # 通过 Phase 分类累加时间
         forward_cumulative = 0.0
         backward_cumulative = 0.0  # 包含 recompute + agrad + wgrad

@@ -5,6 +5,7 @@
 - SymMax / SymMin: 惰性 max / min
 - eval_lazy: 统一替换求值
 """
+
 from typing import Any, Dict
 
 from sympy import Expr, Function, S, Symbol, sympify
@@ -130,8 +131,7 @@ def eval_lazy(expr, subs: dict = None):
 
     subs = subs or {}
     normalized: Dict[Symbol, Any] = {
-        (get_symbol(k) if isinstance(k, str) else k): v
-        for k, v in subs.items()
+        (get_symbol(k) if isinstance(k, str) else k): v for k, v in subs.items()
     }
 
     if isinstance(expr, Expr):

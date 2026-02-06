@@ -88,4 +88,6 @@ class ModelParams:
     def total(self) -> int:
         """Total number of parameters in the model."""
         m = self._model
-        return m.num_blocks * (self.mlp() + self.attn() + self.norm()) + self.embedding()
+        return (
+            m.num_blocks * (self.mlp() + self.attn() + self.norm()) + self.embedding()
+        )

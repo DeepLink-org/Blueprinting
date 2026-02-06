@@ -32,15 +32,17 @@ class TensorLike:
 
     @property
     def T(self):
-        return TensorDef([x for x in reversed(self.shape)], self.dtype)
+        return TensorDef(list(reversed(self.shape)), self.dtype)
 
     def belike(self):
-        return TensorDef([x for x in self.shape], self.dtype)
+        return TensorDef(list(self.shape), self.dtype)
 
     def __repr__(self) -> str:
         return f"{self.dtype}{self.shape}"
 
-    def subs(self, subs={}) -> "TensorDef":
+    def subs(self, subs=None) -> "TensorDef":
+        if subs is None:
+            subs = {}
         return TensorDef(
             [int(x.subs(subs)) if isinstance(x, Expr) else x for x in self.shape],
             dtype=self.dtype,
@@ -57,7 +59,7 @@ class TensorDef(TensorLike):
     fp32[1, 2, 3]
     """
 
-    shape: Tuple[Union[int, Expr], ...] = tuple()
+    shape: Tuple[Union[int, Expr], ...] = ()
     dtype: DType = field(default_factory=lambda: fp32)
 
     def __repr__(self) -> str:

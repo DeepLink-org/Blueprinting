@@ -1,11 +1,11 @@
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.curdir)
 
-from .mocks import *
-
 from blueprinting.torch import TraceTensorMode
+
+from .mocks import *
 
 
 def execute_megatron_worker():
@@ -30,7 +30,6 @@ def execute_megatron_worker():
             )
         ]
         print(f"executing megatron script with: \n{' '.join(args)}")
-        __name__ = "__main__"
         import __main__
 
         eval(code, __main__.__dict__)

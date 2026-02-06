@@ -40,7 +40,9 @@ class TorchTensorDef:
 class TorchEvent(Event):
     """Torch-specific event."""
 
-    def __init__(self, name, module, inputs, params={}):
+    def __init__(self, name, module, inputs, params=None):
+        if params is None:
+            params = {}
         self.name = name
         self.module = _get_fullname(module)
         try:
@@ -59,26 +61,34 @@ class TorchEvent(Event):
 class ForwardStartEvent(TorchEvent):
     """Forward pass start event."""
 
-    def __init__(self, m, inputs, params={}) -> None:
+    def __init__(self, m, inputs, params=None) -> None:
+        if params is None:
+            params = {}
         super().__init__("ForwardStartEvent", m, inputs, params=params)
 
 
 class ForwardEndEvent(TorchEvent):
     """Forward pass end event."""
 
-    def __init__(self, m, outputs, params={}) -> None:
+    def __init__(self, m, outputs, params=None) -> None:
+        if params is None:
+            params = {}
         super().__init__("ForwardEndEvent", m, outputs, params=params)
 
 
 class BackwardStartEvent(TorchEvent):
     """Backward pass start event."""
 
-    def __init__(self, m, inputs, params={}) -> None:
+    def __init__(self, m, inputs, params=None) -> None:
+        if params is None:
+            params = {}
         super().__init__("BackwardStartEvent", m, inputs, params=params)
 
 
 class BackwardEndEvent(TorchEvent):
     """Backward pass end event."""
 
-    def __init__(self, m, outputs, params={}) -> None:
+    def __init__(self, m, outputs, params=None) -> None:
+        if params is None:
+            params = {}
         super().__init__("BackwardEndEvent", m, outputs, params=params)

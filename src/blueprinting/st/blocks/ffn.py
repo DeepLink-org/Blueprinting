@@ -1,5 +1,5 @@
-import streamlit as st
 import hyperparameter as hp
+import streamlit as st
 from streamlit_extras.row import row
 from sympy import Symbol
 
@@ -9,9 +9,9 @@ from blueprinting.nn import (
     MulDef,
     RMSNormDef,
     RowParallelLinear,
-    SiLUDef,
     SequenceParallelAdd,
     SequenceParallelRMSNorm,
+    SiLUDef,
     TensorDef,
 )
 from blueprinting.st.blocks.container import block
@@ -33,11 +33,11 @@ def ffn_block(hidden=1024, feedforward=1024):
     # 读取hyperparameter配置，并创建 数值<->符号 对
     dtype = DType(hp.scope.exe.datatype | "float16")
     seqlen = hp.scope.model.seq_size | 64
-    bsize, BSIZE = hp.scope.exe.microbatch_size | 0, Symbol("bsize")
+    _bsize, BSIZE = hp.scope.exe.microbatch_size | 0, Symbol("bsize")
     seqlen, SEQLEN = seqlen, Symbol("seqlen")
     hidden, HIDDEN = hidden, Symbol("hidden")
     feedforward, FEEDFORWARD = feedforward, Symbol("feedforward")
-    tpsize, TPSIZE = hp.scope.exe.tensor_par | 1, Symbol("tpsize")
+    _tpsize, TPSIZE = hp.scope.exe.tensor_par | 1, Symbol("tpsize")
 
     tensor_par_comm_type = (
         hp.scope.exe.tensor_par_comm_type | "ar"
@@ -46,7 +46,7 @@ def ffn_block(hidden=1024, feedforward=1024):
 
     # 创建层级容器
     with block("ffn_block", 4):
-        st.markdown(f"#### Feed Forward Block")
+        st.markdown("#### Feed Forward Block")
 
         with block("ffn_res_block", 2):
             st.markdown("#### Residual Connection")
@@ -65,10 +65,14 @@ def ffn_block(hidden=1024, feedforward=1024):
             st.markdown("##### Down Projection [Linear]")
 
             # 创建输出层的定义
-            output_layer = RowParallelLinear(dtype, FEEDFORWARD, HIDDEN, False, TPSIZE, tensor_par_comm_type)
+            output_layer = RowParallelLinear(
+                dtype, FEEDFORWARD, HIDDEN, False, TPSIZE, tensor_par_comm_type
+            )
 
             # 进行计算
-            output_proj = output_layer(TensorDef(shape=[BSIZE, SEQLEN, FEEDFORWARD], dtype=dtype))
+            output_proj = output_layer(
+                TensorDef(shape=[BSIZE, SEQLEN, FEEDFORWARD], dtype=dtype)
+            )
 
             # 渲染结果
             output_proj | DefaultFormatter.with_subs(auto_symbol())
@@ -90,25 +94,33 @@ def ffn_block(hidden=1024, feedforward=1024):
 
         r = row(2)
 
-        with r.container():
-            with block("ffn_input_block", 2):
-                st.markdown("##### Up Projection [Linear]")
-                input_layer = ColumnParallelLinear(dtype, HIDDEN, FEEDFORWARD, False, TPSIZE, tensor_par_comm_type)
-                input_proj = input_layer(TensorDef(shape=[BSIZE, SEQLEN, HIDDEN], dtype=dtype))
-                input_proj | DefaultFormatter.with_subs(auto_symbol())
+        with r.container(), block("ffn_input_block", 2):
+            st.markdown("##### Up Projection [Linear]")
+            input_layer = ColumnParallelLinear(
+                dtype, HIDDEN, FEEDFORWARD, False, TPSIZE, tensor_par_comm_type
+            )
+            input_proj = input_layer(
+                TensorDef(shape=[BSIZE, SEQLEN, HIDDEN], dtype=dtype)
+            )
+            input_proj | DefaultFormatter.with_subs(auto_symbol())
 
-        with r.container():
-            with block("ffn_gate_block", 2):
-                st.markdown("##### Gate Projection [Linear]")
-                gate_layer = ColumnParallelLinear(dtype, HIDDEN, FEEDFORWARD, False, TPSIZE, tensor_par_comm_type)
-                gate_proj = gate_layer(TensorDef(shape=[BSIZE, SEQLEN, HIDDEN], dtype=dtype))
-                gate_proj | DefaultFormatter.with_subs(auto_symbol())
+        with r.container(), block("ffn_gate_block", 2):
+            st.markdown("##### Gate Projection [Linear]")
+            gate_layer = ColumnParallelLinear(
+                dtype, HIDDEN, FEEDFORWARD, False, TPSIZE, tensor_par_comm_type
+            )
+            gate_proj = gate_layer(
+                TensorDef(shape=[BSIZE, SEQLEN, HIDDEN], dtype=dtype)
+            )
+            gate_proj | DefaultFormatter.with_subs(auto_symbol())
 
         with block("ffn_rms_block", 2):
             st.markdown("##### Pre-Norm [RMSNorm]")
             rms_layer = pick(
                 sequence_par,
-                SequenceParallelRMSNorm(dtype, HIDDEN, tensor_model_parallel_size=TPSIZE),
+                SequenceParallelRMSNorm(
+                    dtype, HIDDEN, tensor_model_parallel_size=TPSIZE
+                ),
                 RMSNormDef(dtype, HIDDEN),
             )
             rms_out = rms_layer(TensorDef([BSIZE, SEQLEN, HIDDEN], dtype=dtype))

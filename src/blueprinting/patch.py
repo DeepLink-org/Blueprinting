@@ -61,11 +61,17 @@ def _ParseKeywordArgs(args, fn_spec):
                 key = stripped_argument
 
             key = key.replace("-", "_")
-            is_bool_syntax = not contains_equals and (index + 1 == len(args) or _IsFlag(args[index + 1]))
+            is_bool_syntax = not contains_equals and (
+                index + 1 == len(args) or _IsFlag(args[index + 1])
+            )
 
             # Determine the keyword.
             keyword = ""  # Indicates no valid keyword has been found yet.
-            if key in fn_args or (is_bool_syntax and key.startswith("no") and key[2:] in fn_args) or fn_keywords:
+            if (
+                key in fn_args
+                or (is_bool_syntax and key.startswith("no") and key[2:] in fn_args)
+                or fn_keywords
+            ):
                 keyword = key
             elif len(key) == 1:
                 # This may be a shortcut flag.

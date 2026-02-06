@@ -35,7 +35,10 @@ def parse(line: str) -> Event:
     """
     expr = ast.parse(line, mode="eval")
     name = expr.body.func.id
-    args = [eval(compile(ast.Expression(body=arg), filename="", mode="eval")) for arg in expr.body.args]
+    args = [
+        eval(compile(ast.Expression(body=arg), filename="", mode="eval"))
+        for arg in expr.body.args
+    ]
     event = Event()
     event.name = name
     event.module = args[0]
@@ -84,14 +87,12 @@ def parse_tree(lines: List[str]) -> List[Event]:
             curr_span.children = curr_span.children
             curr_span = span_stack.pop()
 
-        if event.name == "ForwardStartEvent":
-            if curr_span is not None:
-                curr_span.children.append(event)
-                event_stack.append(event)
+        if event.name == "ForwardStartEvent" and curr_span is not None:
+            curr_span.children.append(event)
+            event_stack.append(event)
 
-        if event.name == "ForwardEndEvent":
-            if len(event_stack) > 0:
-                curr_event = event_stack.pop()
-                curr_event.outputs = event.inputs[0]
+        if event.name == "ForwardEndEvent" and len(event_stack) > 0:
+            curr_event = event_stack.pop()
+            curr_event.outputs = event.inputs[0]
 
     return tree

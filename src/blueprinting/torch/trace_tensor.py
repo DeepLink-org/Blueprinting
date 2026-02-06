@@ -1,9 +1,7 @@
 from contextlib import contextmanager
-import torch
 
+import torch
 from torch.utils._python_dispatch import TorchDispatchMode
-import torch.utils._pytree as pytree
-from torch.utils._mode_utils import no_dispatch
 
 optbl = {}
 opcnt = {}
@@ -70,8 +68,12 @@ class TraceTensor(torch.Tensor):
             dispatch_device=False,
             device_for_backend_keys=device,
         )
-        assert elem.device.type == "meta", f"create trace tensor from {elem.device.type}, `meta` is expected"
-        self.fake_device = device if isinstance(device, torch.device) else torch.device(device)
+        assert (
+            elem.device.type == "meta"
+        ), f"create trace tensor from {elem.device.type}, `meta` is expected"
+        self.fake_device = (
+            device if isinstance(device, torch.device) else torch.device(device)
+        )
         self.func = func
         self.args = args
         self.kwargs = kwargs
@@ -90,9 +92,13 @@ class TraceTensor(torch.Tensor):
                 stop = self.shape[0]
             if stop == -1:
                 stop = self.shape[0] - 1
-            return torch.empty([stop - start], dtype=self.dtype, requires_grad=self.requires_grad)
+            return torch.empty(
+                [stop - start], dtype=self.dtype, requires_grad=self.requires_grad
+            )
         if isinstance(index, (tuple, list)):
-            return torch.empty(index[0].shape[0], dtype=self.dtype, requires_grad=self.requires_grad)
+            return torch.empty(
+                index[0].shape[0], dtype=self.dtype, requires_grad=self.requires_grad
+            )
         return torch.empty([1], dtype=self.dtype, requires_grad=self.requires_grad)
 
     @property
@@ -110,7 +116,10 @@ class TraceTensor(torch.Tensor):
         ...         print(a.device)
         meta
         """
-        if TraceTensorMode.current is not None and TraceTensorMode.current.in_op == True:
+        if (
+            TraceTensorMode.current is not None
+            and TraceTensorMode.current.in_op
+        ):
             return torch.device("meta")
         return self.fake_device
 
@@ -146,7 +155,11 @@ class TraceTensor(torch.Tensor):
 
     def expr(self):
         args = ", ".join([str(arg) for arg in self.args])
-        kwargs = ", ".join([f"{k}={v}" for k, v in self.kwargs.items()]) if self.kwargs is not None else None
+        kwargs = (
+            ", ".join([f"{k}={v}" for k, v in self.kwargs.items()])
+            if self.kwargs is not None
+            else None
+        )
         if kwargs is None or kwargs == "":
             return f"{self} = {self.func}({args})"
         return f"{self} = {self.func}({args}, {kwargs})"
@@ -196,13 +209,12 @@ class TraceTensorMode(TorchDispatchMode):
     def in_op_manager(self):
         prev_in_op = self.in_op
         self.in_op = True
-        with torch._C._DisableTorchDispatch():
-            with torch._C._PreserveDispatchKeyGuard():
-                torch._C._set_meta_in_tls_dispatch_include(True)
-                try:
-                    yield
-                finally:
-                    self.in_op = prev_in_op
+        with torch._C._DisableTorchDispatch(), torch._C._PreserveDispatchKeyGuard():
+            torch._C._set_meta_in_tls_dispatch_include(True)
+            try:
+                yield
+            finally:
+                self.in_op = prev_in_op
 
     def dispatch(self, func, types, args=(), kwargs=None):
         if handler := _DISPATCH_META_HANDLERS.get(func):
@@ -213,7 +225,9 @@ class TraceTensorMode(TorchDispatchMode):
             try:
                 return optbl[name](*args, **kwargs)
             except:
-                raise ValueError(f"bad trace for {name}: {func}[{types}]({args}, {kwargs})")
+                raise ValueError(
+                    f"bad trace for {name}: {func}[{types}]({args}, {kwargs})"
+                )
 
         # print(f"== unknown op: {name}:", func, types, args, kwargs)
         # flat_args, args_spec = pytree.tree_flatten((args, kwargs))
@@ -310,7 +324,9 @@ def arange(end, **kwargs):
     """
     device = kwargs.get("device", "cuda")
     kwargs["device"] = "meta"
-    return TraceTensor(torch.empty([end], **kwargs), device, func=torch.ops.aten.arange, kwargs=kwargs)
+    return TraceTensor(
+        torch.empty([end], **kwargs), device, func=torch.ops.aten.arange, kwargs=kwargs
+    )
 
 
 @register("aten::arange.start")
@@ -381,7 +397,9 @@ def ones(shape, **kwargs):
     """
     device = kwargs.get("device", "cuda")
     kwargs["device"] = "meta"
-    return TraceTensor(torch.ones(shape, **kwargs), device, func=torch.ops.aten.ones, kwargs=kwargs)
+    return TraceTensor(
+        torch.ones(shape, **kwargs), device, func=torch.ops.aten.ones, kwargs=kwargs
+    )
 
 
 @register("aten::zeros")
@@ -399,7 +417,9 @@ def zeros(shape, **kwargs):
     """
     device = kwargs.get("device", "cuda")
     kwargs["device"] = "meta"
-    return TraceTensor(torch.zeros(shape, **kwargs), device, func=torch.ops.aten.zeros, kwargs=kwargs)
+    return TraceTensor(
+        torch.zeros(shape, **kwargs), device, func=torch.ops.aten.zeros, kwargs=kwargs
+    )
 
 
 @register("aten::zero_")
@@ -460,4 +480,6 @@ def embedding(weight, input):
             requires_grad=input.requires_grad,
         ),
     )
-    return TraceTensor(value, input.device, func=torch.ops.aten.embedding.default, args=(weight, input))
+    return TraceTensor(
+        value, input.device, func=torch.ops.aten.embedding.default, args=(weight, input)
+    )

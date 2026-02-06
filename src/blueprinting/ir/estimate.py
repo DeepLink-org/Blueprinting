@@ -1,69 +1,40 @@
 """SymbolicEstimate - 符号化聚合估算结果.
 
-从 ScheduleIR 的 Op 级数据按 (phase, op_type) 聚合为少量符号表达式，
-支持参数扫描、敏感性分析、瓶颈识别、校准验证等高级分析。
-
-设计理念:
-- 表达式规模可控（~20 个聚合字段，每个 ~10 项）
-- 保持符号形式不 eval，支持 sweep/sensitivity
-- 可追溯分解（按 op_type、phase、通信类型）
-- 通过 calibrate() 与 Timeline 精确结果对齐
-
-使用方式:
-    # 在管线中自动生成（通过 SymbolicEstimatePass）
-    result = compiler.compile(graph_ir)
-    est = result.estimate
-
-    # 参数扫描
-    for params, metrics in est.sweep(batch=[4,8,16], tp=[1,2,4]):
-        print(f"{params} -> {metrics['e2e_time']:.4f}s")
-
-    # 敏感性分析
-    sens = est.sensitivity('tp')
-    print(sens['e2e_time'])
-
-    # 瓶颈分析
-    bottlenecks = est.bottleneck(subs={'batch': 16, 'tp': 4})
-    for name, value, frac in bottlenecks['time']:
-        print(f"  {name}: {value:.4f}s ({frac:.1%})")
+从 ScheduleIR 聚合为符号表达式，支持参数扫描、敏感性分析、瓶颈识别和校准。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import product
-from typing import Any, Union
+from typing import Any
 
 from sympy import Expr, Symbol
 
-from blueprinting.core import (
-    eval_lazy,
-    get_symbol,
-    sym_min,
-)
+from blueprinting.core import eval_lazy, get_symbol, sym_min
 
 
 @dataclass
 class SymbolicEstimate:
     """符号化估算结果 - 从 ScheduleIR 聚合的符号表达式.
 
-    所有时间和内存字段均保持符号形式（Expr | LazyExpr | float），
+    所有时间和内存字段均保持符号形式（Expr | float），
     支持参数扫描、敏感性分析等操作。
     """
 
     # === 时间分解（符号表达式，保持未 eval）===
-    forward_time: Any = 0       # 总前向计算时间（per-stage）
-    backward_time: Any = 0      # 总反向计算时间（per-stage，不含 recompute）
-    recompute_time: Any = 0     # 重计算时间（per-stage）
-    comm_time: Any = 0          # 总通信时间（per-stage）
-    bubble_time: Any = 0        # PP bubble 时间
+    forward_time: Any = 0  # 总前向计算时间（per-stage）
+    backward_time: Any = 0  # 总反向计算时间（per-stage，不含 recompute）
+    recompute_time: Any = 0  # 重计算时间（per-stage）
+    comm_time: Any = 0  # 总通信时间（per-stage）
+    bubble_time: Any = 0  # PP bubble 时间
     overlap_ratio: float = 0.0  # 计算/通信重叠比例（可校准，0~1）
 
     # === 内存分解（符号表达式）===
-    weight_memory: Any = 0      # 权重内存（per-GPU）
+    weight_memory: Any = 0  # 权重内存（per-GPU）
     activation_memory: Any = 0  # 激活内存（per-GPU）
-    gradient_memory: Any = 0    # 梯度内存（per-GPU）
-    optimizer_memory: Any = 0   # 优化器状态内存（per-GPU）
+    gradient_memory: Any = 0  # 梯度内存（per-GPU）
+    optimizer_memory: Any = 0  # 优化器状态内存（per-GPU）
 
     # === 可追溯的分解字典（用于关键因素分析）===
     time_breakdown_by_op: dict[str, Any] = field(default_factory=dict)
@@ -72,10 +43,6 @@ class SymbolicEstimate:
 
     # === 配置 metadata ===
     metadata: dict[str, Any] = field(default_factory=dict)
-
-    # =========================================================================
-    # 派生属性
-    # =========================================================================
 
     @property
     def compute_time(self) -> Any:
@@ -95,12 +62,7 @@ class SymbolicEstimate:
 
         e2e = compute + comm + bubble - overlap
         """
-        return (
-            self.compute_time
-            + self.comm_time
-            + self.bubble_time
-            - self.overlap_time
-        )
+        return self.compute_time + self.comm_time + self.bubble_time - self.overlap_time
 
     @property
     def peak_memory(self) -> Any:
@@ -111,10 +73,6 @@ class SymbolicEstimate:
             + self.gradient_memory
             + self.optimizer_memory
         )
-
-    # =========================================================================
-    # 分析方法
-    # =========================================================================
 
     def _eval_field(self, value: Any, subs: dict) -> float:
         """对单个字段求值."""
@@ -177,7 +135,7 @@ class SymbolicEstimate:
             results.append((params, metrics))
         return results
 
-    def sensitivity(self, wrt: Union[str, Symbol]) -> dict[str, Any]:
+    def sensitivity(self, wrt: str | Symbol) -> dict[str, Any]:
         """敏感性分析 - 对指定符号求偏导.
 
         将每个聚合字段转换为 SymPy 表达式后求偏导，
@@ -200,7 +158,7 @@ class SymbolicEstimate:
         def _to_sympy_and_diff(value):
             if isinstance(value, (int, float)):
                 return 0
-            if hasattr(value, 'to_sympy'):
+            if hasattr(value, "to_sympy"):
                 return diff(value.to_sympy(), sym)
             if isinstance(value, Expr):
                 return diff(value, sym)
@@ -218,7 +176,9 @@ class SymbolicEstimate:
             "peak_memory": _to_sympy_and_diff(self.peak_memory),
         }
 
-    def bottleneck(self, subs: dict | None = None) -> dict[str, list[tuple[str, float, float]]]:
+    def bottleneck(
+        self, subs: dict | None = None
+    ) -> dict[str, list[tuple[str, float, float]]]:
         """关键因素分析 - 识别时间和内存的主导项.
 
         将各分解项 eval 后排序，返回 [(name, value, fraction)]，
@@ -260,8 +220,10 @@ class SymbolicEstimate:
 
         time_total = sum(time_values.values())
         time_sorted = sorted(
-            [(name, val, val / time_total if time_total > 0 else 0)
-             for name, val in time_values.items()],
+            [
+                (name, val, val / time_total if time_total > 0 else 0)
+                for name, val in time_values.items()
+            ],
             key=lambda x: -x[1],
         )
 
@@ -279,8 +241,10 @@ class SymbolicEstimate:
 
         mem_total = sum(mem_values.values())
         mem_sorted = sorted(
-            [(name, val, val / mem_total if mem_total > 0 else 0)
-             for name, val in mem_values.items()],
+            [
+                (name, val, val / mem_total if mem_total > 0 else 0)
+                for name, val in mem_values.items()
+            ],
             key=lambda x: -x[1],
         )
 
@@ -289,7 +253,7 @@ class SymbolicEstimate:
             "memory": mem_sorted,
         }
 
-    def calibrate(self, sim_result) -> "SymbolicEstimate":
+    def calibrate(self, sim_result) -> SymbolicEstimate:
         """用 SimulationResult 校准符号化估算.
 
         主要校准 overlap_ratio：通过对比 Timeline 精确结果，
@@ -337,7 +301,7 @@ class SymbolicEstimate:
         def _to_latex(value) -> str:
             if isinstance(value, (int, float)):
                 return str(value)
-            if hasattr(value, 'to_sympy'):
+            if hasattr(value, "to_sympy"):
                 return latex(value.to_sympy())
             if isinstance(value, Expr):
                 return latex(value)

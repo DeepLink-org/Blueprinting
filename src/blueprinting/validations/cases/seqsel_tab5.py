@@ -6,13 +6,14 @@ It validates blueprinting's results against calculon's reference implementation.
 
 import logging
 
-import pandas as pd
 import hyperparameter as hp
-
-# Calculon is used here for validation comparison only
-from calculon.llm import Llm, System as CalculonSystem
+import pandas as pd
 
 from blueprinting import Execution, Model, io
+
+# Calculon is used here for validation comparison only
+from calculon.llm import Llm
+from calculon.llm import System as CalculonSystem
 
 kProfile = {
     "megatron-22B": {"full": 1.42, "seqsel": 1.10},
@@ -84,8 +85,12 @@ def seqsel_tab5(show=False):
         .reset_index()
     )
 
-    result["iter time/rtol"] = (result["iter time(s)[act]"] - result["iter time(s)[pred]"]).abs() / result[
-        "iter time(s)[act]"
-    ]
+    result["iter time/rtol"] = (
+        result["iter time(s)[act]"] - result["iter time(s)[pred]"]
+    ).abs() / result["iter time(s)[act]"]
 
-    return result.style.format({"iter time/rtol": lambda x: "%.2f%%" % (100 * x)}) if show else result
+    return (
+        result.style.format({"iter time/rtol": lambda x: "%.2f%%" % (100 * x)})
+        if show
+        else result
+    )

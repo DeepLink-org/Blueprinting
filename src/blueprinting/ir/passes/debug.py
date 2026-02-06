@@ -1,6 +1,5 @@
 """Debug passes - Print IR for debugging and visualization."""
 
-
 from ..types import BlockNode, GraphIR, ScheduleIR, TimelineIR
 from .base import Pass
 

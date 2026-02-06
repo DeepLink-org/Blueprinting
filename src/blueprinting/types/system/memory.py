@@ -28,7 +28,7 @@ class Memory:
         self.capacity = (cfg.GiB | 0) * 1024**3
         self.bandwidth = (cfg.GBps | 0) * 1e9
         self._efficiency = []
-        for mbytes, eff in (cfg.MB_efficiency | []):
+        for mbytes, eff in cfg.MB_efficiency | []:
             bytes = mbytes * 1e6
             assert 0 < eff <= 1.0
             self._efficiency.append((bytes, eff))

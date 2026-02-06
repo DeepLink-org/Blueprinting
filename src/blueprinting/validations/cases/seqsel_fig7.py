@@ -6,13 +6,14 @@ It validates blueprinting's results against calculon's reference implementation.
 
 import logging
 
-import pandas as pd
 import hyperparameter as hp
-
-# Calculon is used here for validation comparison only
-from calculon.llm import Llm, System as CalculonSystem
+import pandas as pd
 
 from blueprinting import Execution, Model, io
+
+# Calculon is used here for validation comparison only
+from calculon.llm import Llm
+from calculon.llm import System as CalculonSystem
 
 kProfile = {
     "megatron-22B": {
@@ -102,9 +103,13 @@ def seqsel_fig7(show=False):
     for _, row in df.iterrows():
         x = selected[selected.model == row.model][selected.system == row.system]
         df.loc[
-            (df.model == row.model) & (df.system == row.system) & (df["mode"] == row["mode"]),
+            (df.model == row.model)
+            & (df.system == row.system)
+            & (df["mode"] == row["mode"]),
             "act mem(%)",
-        ] = 100 * row["act mem(%)"] / x.iloc[0]["act mem(%)"]
+        ] = (
+            100 * row["act mem(%)"] / x.iloc[0]["act mem(%)"]
+        )
     result = (
         mem_usage.set_index(["model", "system", "mode"])
         .join(
@@ -116,7 +121,9 @@ def seqsel_fig7(show=False):
         .reset_index()
     )
 
-    result["act mem/rtol"] = (result["act mem(%)[act]"] - result["act mem(%)[pred]"]).abs() / result["act mem(%)[act]"]
+    result["act mem/rtol"] = (
+        result["act mem(%)[act]"] - result["act mem(%)[pred]"]
+    ).abs() / result["act mem(%)[act]"]
 
     return (
         result.style.format(

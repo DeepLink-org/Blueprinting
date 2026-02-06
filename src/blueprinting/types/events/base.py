@@ -20,7 +20,9 @@ class Event(dict):
         if name in self:
             return self[name]
         else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
 
     def __setattr__(self, name: str, value: Any) -> None:
         return self.__setitem__(name, value)

@@ -1,17 +1,7 @@
 """Types module for blueprinting."""
 
 from .counters import CommCounter
-from .dtypes import (
-    DType,
-    bf16,
-    bfloat16,
-    float16,
-    float32,
-    fp8,
-    fp16,
-    fp32,
-    fp64,
-)
+from .dtypes import DType, bf16, bfloat16, float16, float32, fp8, fp16, fp32, fp64
 from .execution import Execution
 from .model import Model, ModelComm, ModelFlops, ModelParams
 from .operation import Calculation, Operation

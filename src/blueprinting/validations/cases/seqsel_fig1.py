@@ -6,14 +6,13 @@ It validates blueprinting's results against calculon's reference implementation.
 
 import logging
 
-import pandas as pd
 import hyperparameter as hp
+import pandas as pd
 
 # Calculon is used here for validation comparison only
-import calculon
-from calculon.llm import Llm, System as CalculonSystem
-
 from blueprinting import Execution, Model, io
+from calculon.llm import Llm
+from calculon.llm import System as CalculonSystem
 
 kProfile = {
     "megatron-22B": {
@@ -77,7 +76,11 @@ def seqsel_fig1(show=False):
             model.compile(syst, exe)
             model.run(syst)
             stats = model.get_stats_json(False)
-            act_par_opt = (stats["weight_space"] + stats["weight_grad_space"] + stats["optimizer_space"]) / (1024**3)
+            act_par_opt = (
+                stats["weight_space"]
+                + stats["weight_grad_space"]
+                + stats["optimizer_space"]
+            ) / (1024**3)
             act_act = stats["act_space"] / (1024**3)
             records += [
                 {
@@ -100,12 +103,12 @@ def seqsel_fig1(show=False):
         .reset_index()
     )
 
-    result["w+opt mem/rtol"] = (result["w+opt mem(GiB)[act]"] - result["w+opt mem(GiB)[pred]"]).abs() / result[
-        "w+opt mem(GiB)[act]"
-    ]
-    result["act mem/rtol"] = (result["act mem(GiB)[act]"] - result["act mem(GiB)[pred]"]).abs() / result[
-        "act mem(GiB)[act]"
-    ]
+    result["w+opt mem/rtol"] = (
+        result["w+opt mem(GiB)[act]"] - result["w+opt mem(GiB)[pred]"]
+    ).abs() / result["w+opt mem(GiB)[act]"]
+    result["act mem/rtol"] = (
+        result["act mem(GiB)[act]"] - result["act mem(GiB)[pred]"]
+    ).abs() / result["act mem(GiB)[act]"]
 
     return (
         result.style.format(

@@ -23,9 +23,11 @@ class LLM:
         stats=None,
         peers=False,
         layers=False,
-        define: Optional[List] = [],
+        define: Optional[List] = None,
     ):
         """Analysis LLM training."""
+        if define is None:
+            define = []
         print(f"blueprinting train {model}", define, type(define), len(define))
         app_json = io.read_json_file(model)
         exe_json = io.read_json_file(execution)
@@ -35,16 +37,17 @@ class LLM:
         logger.addHandler(logging.StreamHandler(stream=sys.stdout))
         logger.setLevel("INFO")
 
-        with hp.scope(app=app_json, sys=sys_json, exe=exe_json) as ps:
-            with hp.scope(*define) as ps:
-                app = Model(ps.app)
-                exe = Execution(ps.exe)
-                syst = System(ps.sys)
+        with hp.scope(app=app_json, sys=sys_json, exe=exe_json) as ps, hp.scope(*define) as ps:
+            app = Model(ps.app)
+            exe = Execution(ps.exe)
+            syst = System(ps.sys)
 
-                # TODO: Implement blueprinting's own Llm simulator
-                print(f"Model: {app.hidden}x{app.num_blocks} blocks")
-                print(f"Execution: TP={exe.tensor_par}, PP={exe.pipeline_par}, DP={exe.data_par}")
-                print(f"System: {syst.proc_mode} mode")
+            # TODO: Implement blueprinting's own Llm simulator
+            print(f"Model: {app.hidden}x{app.num_blocks} blocks")
+            print(
+                f"Execution: TP={exe.tensor_par}, PP={exe.pipeline_par}, DP={exe.data_par}"
+            )
+            print(f"System: {syst.proc_mode} mode")
 
         if stats is not None and io.is_json_extension(stats):
             # TODO: Implement stats collection

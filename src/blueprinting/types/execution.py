@@ -13,14 +13,22 @@ class Execution:
 
         self.datatype = cfg.datatype | 0
         self.fused_activation = cfg.fused_activation | 0
-        self.attention_type = cfg.attention_type | "multihead"  # ['multihead', 'multiquery']
-        self.activation_recompute = cfg.activation_recompute | "none"  # ['full', 'attn_only', 'none']
+        self.attention_type = (
+            cfg.attention_type | "multihead"
+        )  # ['multihead', 'multiquery']
+        self.activation_recompute = (
+            cfg.activation_recompute | "none"
+        )  # ['full', 'attn_only', 'none']
 
         self.pipeline_interleaving = cfg.pipeline_interleaving | 0
         self.optimizer_sharding = cfg.optimizer_sharding | 0
-        self.tensor_par_comm_type = cfg.tensor_par_comm_type | "ar"  # ['ar', 'p2p_rs_ag', 'rs_ag']
+        self.tensor_par_comm_type = (
+            cfg.tensor_par_comm_type | "ar"
+        )  # ['ar', 'p2p_rs_ag', 'rs_ag']
 
-        self.tensor_par_overlap = cfg.tensor_par_overlap | "ring"  # ['none', 'ring', 'pipe']
+        self.tensor_par_overlap = (
+            cfg.tensor_par_overlap | "ring"
+        )  # ['none', 'ring', 'pipe']
         self.seq_par_ag_redo = cfg.seq_par_ag_redo | 0
         self.data_par_overlap = cfg.data_par_overlap | 0
 

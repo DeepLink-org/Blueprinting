@@ -1,7 +1,6 @@
 """SimulationResult - Output of the IR compiler.
 
-This module defines the result data structures returned
-by the compiler after evaluation.
+Defines result data structures returned by the compiler after evaluation.
 """
 
 from dataclasses import dataclass, field
@@ -10,14 +9,13 @@ from typing import Any, Dict, Optional, Union
 
 @dataclass
 class MemoryBreakdown:
-    """Breakdown of memory usage.
+    """Breakdown of memory usage (per-GPU).
 
     Attributes:
-        weights: Weight tensor memory (per device)
+        weights: Weight tensor memory
         activations: Activation memory (peak)
         gradients: Gradient memory
-        optimizer_states: Optimizer state memory (for Adam: 2*weights)
-        total: Total memory usage
+        optimizer_states: Optimizer state memory
     """
 
     weights: Union[int, float] = 0
@@ -46,24 +44,28 @@ class TimeBreakdown:
     Attributes:
         forward: Forward pass time
         backward: Backward pass time
-        optimizer: Optimizer step time
         communication: Communication time (exposed)
         bubble: Pipeline bubble time
-        total: Total end-to-end time
+        recompute: Activation recomputation time (gradient checkpointing)
     """
 
     forward: Union[int, float] = 0
     backward: Union[int, float] = 0
-    optimizer: Union[int, float] = 0
     communication: Union[int, float] = 0
     bubble: Union[int, float] = 0
+    recompute: Union[int, float] = 0
+
+    @property
+    def compute(self) -> Union[int, float]:
+        """计算时间 = forward + backward + recompute."""
+        return self.forward + self.backward + self.recompute
 
     @property
     def total(self) -> Union[int, float]:
         return (
             self.forward
             + self.backward
-            + self.optimizer
+            + self.recompute
             + self.communication
             + self.bubble
         )
@@ -72,7 +74,7 @@ class TimeBreakdown:
         return (
             f"TimeBreakdown(forward={self.forward*1e3:.2f}ms, "
             f"backward={self.backward*1e3:.2f}ms, "
-            f"optimizer={self.optimizer*1e3:.2f}ms, "
+            f"recompute={self.recompute*1e3:.2f}ms, "
             f"comm={self.communication*1e3:.2f}ms, "
             f"bubble={self.bubble*1e3:.2f}ms, "
             f"total={self.total*1e3:.2f}ms)"
@@ -80,53 +82,66 @@ class TimeBreakdown:
 
 
 @dataclass
+class BlockMetrics:
+    """单层（Block）指标 - 单个 Transformer 层的内存和时间指标."""
+
+    weights: Union[int, float] = 0
+    activations: Union[int, float] = 0
+    optimizer_states: Union[int, float] = 0
+
+    forward_time: float = 0
+    backward_time: float = 0
+    communication_time: float = 0
+
+    comm_fw: float = 0
+    comm_bw: float = 0
+
+    @property
+    def compute_time(self) -> float:
+        return self.forward_time + self.backward_time
+
+    @property
+    def total_time(self) -> float:
+        return self.forward_time + self.backward_time + self.communication_time
+
+
+@dataclass
 class SimulationResult:
-    """Result of compiling and simulating a model.
+    """模拟结果 - 编译器最终输出.
 
     Attributes:
-        peak_memory: Peak memory usage in bytes
-        e2e_time: End-to-end time in seconds
-        memory_breakdown: Detailed memory breakdown
-        time_breakdown: Detailed time breakdown
-
-    Derived metrics:
-        throughput: Tokens per second (if configured)
-        mfu: Model FLOPs Utilization
-
-    Metadata:
-        config: Configuration used for simulation
-        warnings: Any warnings generated
+        peak_memory: 峰值内存 (bytes, per-GPU)
+        e2e_time: 端到端时间 (seconds)
+        memory_breakdown: 内存分解
+        time_breakdown: 时间分解 (per-layer per-microbatch)
+        total_time_breakdown: 总时间分解 (整个迭代)
+        block_metrics: 单层指标
+        total_flops: 总计算量
+        config: 配置信息
+        timeline: TimelineIR 引用 (用于导出 trace)
+        estimate: SymbolicEstimate (可选)
     """
 
-    # Primary results
     peak_memory: Union[int, float] = 0
     e2e_time: Union[int, float] = 0
-
-    # Detailed breakdowns
     memory_breakdown: Optional[MemoryBreakdown] = None
     time_breakdown: Optional[TimeBreakdown] = None
-
-    # Derived metrics
+    total_time_breakdown: Optional[TimeBreakdown] = None
+    block_metrics: Optional[BlockMetrics] = None
     total_flops: Union[int, float] = 0
-    achieved_flops: Union[int, float] = 0
-    throughput: Optional[float] = None  # tokens/second
-
-    # Metadata
     config: Dict[str, Any] = field(default_factory=dict)
-    warnings: list = field(default_factory=list)
+    timeline: Any = None
+    estimate: Any = None
 
     @property
     def mfu(self) -> float:
-        """Model FLOPs Utilization.
-
-        MFU = achieved_flops / peak_flops
-        """
-        if self.achieved_flops == 0 or self.e2e_time == 0:
-            return 0.0
-        peak_flops = self.config.get("peak_tflops", 0) * 1e12
-        if peak_flops == 0:
-            return 0.0
-        return self.achieved_flops / (peak_flops * self.e2e_time)
+        """Model FLOPs Utilization."""
+        peak_tflops = self.config.get("peak_tflops", 0)
+        pp = self.config.get("pp", 1)
+        if peak_tflops == 0 or self.e2e_time == 0:
+            return 0
+        per_gpu_flops = self.total_flops / pp if pp > 0 else self.total_flops
+        return per_gpu_flops / (peak_tflops * 1e12 * self.e2e_time)
 
     @property
     def memory_utilization(self) -> float:
@@ -149,72 +164,37 @@ class SimulationResult:
             "e2e_time_seconds": self.e2e_time,
             "e2e_time_ms": self.e2e_time * 1e3,
             "total_flops": self.total_flops,
-            "throughput": self.throughput,
             "mfu": self.mfu,
             "memory_utilization": self.memory_utilization,
             "is_feasible": self.is_feasible(),
             "memory_breakdown": (
                 {
-                    "weights_gb": (
-                        self.memory_breakdown.weights / 1e9
-                        if self.memory_breakdown
-                        else 0
-                    ),
-                    "activations_gb": (
-                        self.memory_breakdown.activations / 1e9
-                        if self.memory_breakdown
-                        else 0
-                    ),
-                    "gradients_gb": (
-                        self.memory_breakdown.gradients / 1e9
-                        if self.memory_breakdown
-                        else 0
-                    ),
-                    "optimizer_gb": (
-                        self.memory_breakdown.optimizer_states / 1e9
-                        if self.memory_breakdown
-                        else 0
-                    ),
+                    "weights_gb": self.memory_breakdown.weights / 1e9,
+                    "activations_gb": self.memory_breakdown.activations / 1e9,
+                    "gradients_gb": self.memory_breakdown.gradients / 1e9,
+                    "optimizer_gb": self.memory_breakdown.optimizer_states / 1e9,
                 }
                 if self.memory_breakdown
                 else None
             ),
             "time_breakdown": (
                 {
-                    "forward_ms": (
-                        self.time_breakdown.forward * 1e3 if self.time_breakdown else 0
-                    ),
-                    "backward_ms": (
-                        self.time_breakdown.backward * 1e3 if self.time_breakdown else 0
-                    ),
-                    "optimizer_ms": (
-                        self.time_breakdown.optimizer * 1e3
-                        if self.time_breakdown
-                        else 0
-                    ),
-                    "communication_ms": (
-                        self.time_breakdown.communication * 1e3
-                        if self.time_breakdown
-                        else 0
-                    ),
-                    "bubble_ms": (
-                        self.time_breakdown.bubble * 1e3 if self.time_breakdown else 0
-                    ),
+                    "forward_ms": self.time_breakdown.forward * 1e3,
+                    "backward_ms": self.time_breakdown.backward * 1e3,
+                    "recompute_ms": self.time_breakdown.recompute * 1e3,
+                    "communication_ms": self.time_breakdown.communication * 1e3,
+                    "bubble_ms": self.time_breakdown.bubble * 1e3,
                 }
                 if self.time_breakdown
                 else None
             ),
-            "warnings": self.warnings,
         }
 
     def __repr__(self) -> str:
-        mem_gb = self.peak_memory / 1e9
-        time_ms = self.e2e_time * 1e3
         return (
             f"SimulationResult(\n"
-            f"  peak_memory={mem_gb:.2f} GB,\n"
-            f"  e2e_time={time_ms:.2f} ms,\n"
-            f"  mfu={self.mfu:.1%},\n"
-            f"  feasible={self.is_feasible()}\n"
+            f"  peak_memory={self.peak_memory/1e9:.2f} GB,\n"
+            f"  e2e_time={self.e2e_time*1e3:.2f} ms,\n"
+            f"  mfu={self.mfu:.1%}\n"
             f")"
         )

@@ -18,16 +18,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..types import Phase, ScheduleIR
 from ..estimate import SymbolicEstimate
+from ..types import Phase, ScheduleIR
 from .base import Pass
 
 # 通信 Op 类型
-_COMM_OPS = frozenset({
-    "AllReduce", "AllGather", "ReduceScatter", "Send", "Recv",
-    # 反向版本
-    "AllReduce_BW", "AllGather_BW", "ReduceScatter_BW", "Send_BW", "Recv_BW",
-})
+_COMM_OPS = frozenset(
+    {
+        "AllReduce",
+        "AllGather",
+        "ReduceScatter",
+        "Send",
+        "Recv",
+        # 反向版本
+        "AllReduce_BW",
+        "AllGather_BW",
+        "ReduceScatter_BW",
+        "Send_BW",
+        "Recv_BW",
+    }
+)
 
 
 def _is_comm_op(op_type: str) -> bool:
@@ -77,9 +87,7 @@ class SymbolicEstimatePass(Pass):
         num_layers = metadata.get("num_layers", 1)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
 
-        # ================================================================
         # 1. 时间聚合
-        # ================================================================
         forward_time: Any = 0
         backward_time: Any = 0
         recompute_time: Any = 0
@@ -117,9 +125,7 @@ class SymbolicEstimatePass(Pass):
 
             # 按 op_type 分解（去掉 _BW/_RE 后缀归类）
             base_op = op_type.replace("_BW", "").replace("_RE", "")
-            time_by_op[base_op] = _safe_add(
-                time_by_op.get(base_op, 0), duration
-            )
+            time_by_op[base_op] = _safe_add(time_by_op.get(base_op, 0), duration)
 
         # PP 并行：各 stage 并行执行，per-stage 时间 = 总时间 / pp
         if pp > 1:
@@ -150,9 +156,7 @@ class SymbolicEstimatePass(Pass):
             "bubble": bubble_time,
         }
 
-        # ================================================================
         # 2. 内存聚合
-        # ================================================================
         weight_memory = self._aggregate_weight_memory(ir, pp, dtype_bytes)
         activation_memory = self._aggregate_activation_memory(
             ir, layers_per_stage, gradient_checkpointing, dtype_bytes
@@ -336,9 +340,8 @@ class SymbolicEstimatePass(Pass):
         if layers_per_stage <= 1:
             gradient_memory = block_grad_no_shard
         else:
-            gradient_memory = (
-                block_grad_no_shard
-                + block_grad_sharded * (layers_per_stage - 1)
+            gradient_memory = block_grad_no_shard + block_grad_sharded * (
+                layers_per_stage - 1
             )
 
         return gradient_memory, optimizer_memory

@@ -2,20 +2,14 @@ import functools
 import html
 import sys
 
+import hyperparameter as hp
 import streamlit as st
 from htbuilder import span, styles
 from htbuilder.units import unit
-import hyperparameter as hp
 from sympy import Expr, Symbol, latex
 
 from blueprinting.nn.base import TensorDef
-from blueprinting.ui import (
-    NullFormatter,
-    ReadableFLOPs,
-    ReadableMem,
-    ReadableNum,
-    ReadableTime,
-)
+from blueprinting.ui import NullFormatter, ReadableFLOPs, ReadableMem, ReadableTime
 
 PALETTE = [
     "#ff4b4b",
@@ -72,7 +66,7 @@ def labeled_text(label, body, tooltip="-", background=None, color=None, **style)
     separator = (
         span(
             style=styles(
-                border_bottom=f"1px solid",
+                border_bottom="1px solid",
                 opacity=0.1,
                 margin_bottom=LABEL_SPACING,
                 align_self="stretch",
@@ -124,10 +118,11 @@ def auto_symbol():
     return subs
 
 
-def AnnotatedFormatter(li: TensorDef, subs={}):
+def AnnotatedFormatter(li: TensorDef, subs=None):
+    if subs is None:
+        subs = {}
     human_readable = hp.scope.blueprinting.formatter.human_readable | True
     mem_fmt = ReadableMem if human_readable else NullFormatter
-    num_fmt = ReadableNum if human_readable else NullFormatter
     flops_fmt = ReadableFLOPs if human_readable else NullFormatter
     time_fmt = ReadableTime if human_readable else NullFormatter
 
@@ -172,19 +167,20 @@ def AnnotatedFormatter(li: TensorDef, subs={}):
         out = li.subs(subs)
         st.markdown(f"${ins} \\rightarrow {out}$")
 
-    with timming:
-        with hp.scope(**{"blueprinting.symbolic.subs": subs.items()}):
-            columns = [
-                (labeled_text, "fw", *format(time_fmt, li.time_fw, subs)),
-                (labeled_text, "bw", *format(time_fmt, li.time_bw, subs)),
-                # (labeled_text, "c2c", *format(flops_fmt, "#TODO", subs)),
-            ]
-            cs = st.columns(len(columns))
-            for col, args in zip(cs, columns):
-                with col:
-                    args[0](*args[1:])
+    with timming, hp.scope(**{"blueprinting.symbolic.subs": subs.items()}):
+        columns = [
+            (labeled_text, "fw", *format(time_fmt, li.time_fw, subs)),
+            (labeled_text, "bw", *format(time_fmt, li.time_bw, subs)),
+            # (labeled_text, "c2c", *format(flops_fmt, "#TODO", subs)),
+        ]
+        cs = st.columns(len(columns))
+        for col, args in zip(cs, columns):
+            with col:
+                args[0](*args[1:])
 
 
-AnnotatedFormatter.with_subs = lambda subs: functools.partial(AnnotatedFormatter, subs=subs)
+AnnotatedFormatter.with_subs = lambda subs: functools.partial(
+    AnnotatedFormatter, subs=subs
+)
 
 DefaultFormatter = AnnotatedFormatter

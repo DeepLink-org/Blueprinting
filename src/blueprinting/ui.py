@@ -3,17 +3,15 @@
 import glob
 import hmac
 import json
-from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Union, Callable, Optional, Any
+from typing import Callable, Union
 
+import hyperparameter as hp
 import pandas as pd
 import streamlit as st
-import hyperparameter as hp
 from streamlit_extras.row import row as st_row
 
 from . import io
-
 
 # ============================================================================
 # 页面配置和初始化
@@ -32,7 +30,9 @@ def check_password():
 
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if st.session_state["username"] in st.secrets["passwords"] and hmac.compare_digest(
+        if st.session_state["username"] in st.secrets[
+            "passwords"
+        ] and hmac.compare_digest(
             st.session_state["password"],
             st.secrets.passwords[st.session_state["username"]],
         ):
@@ -134,7 +134,10 @@ CATEGORIES = {
 }
 
 PARSER = {
-    f"{l}_{s}_{c}": (lv, sv, cv) for l, lv in LEVELS.items() for s, sv in STAGES.items() for c, cv in CATEGORIES.items()
+    f"{l}_{s}_{c}": (lv, sv, cv)
+    for l, lv in LEVELS.items()
+    for s, sv in STAGES.items()
+    for c, cv in CATEGORIES.items()
 }
 
 PARSER.update(
@@ -240,7 +243,9 @@ def human_readable_time(num, round_to=2):
 
 def make_summary(stats):
     data = pd.DataFrame(result.parse(k, v) for k, v in stats.items())
-    summary = pd.pivot_table(data, index=["level", "stage"], columns="category", values="value")
+    summary = pd.pivot_table(
+        data, index=["level", "stage"], columns="category", values="value"
+    )
     summary = summary.reindex(
         [
             "前向",
@@ -259,7 +264,9 @@ def make_summary(stats):
         ],
         level=1,
     )
-    return summary.style.format({"flops": human_readable_flops, "显存占用": human_readable_mem})
+    return summary.style.format(
+        {"flops": human_readable_flops, "显存占用": human_readable_mem}
+    )
 
 
 class HumanReadableFormatter:
@@ -308,6 +315,7 @@ def setup_page(title="LLM训练计算器", icon=":eyeglasses:", layout="wide"):
 # 共享 UI 组件 - 可复用的页面元素
 # ============================================================================
 
+
 def parallel_config_row(
     ps: hp.scope,
     show_gbs: bool = True,
@@ -317,7 +325,7 @@ def parallel_config_row(
     mbs_param: str = "exe.microbatch_size",
 ) -> None:
     """渲染并行配置行 (TP/PP/DP/GBS/MBS/SeqLen)
-    
+
     Args:
         ps: hyperparameter scope 对象
         show_gbs: 是否显示 global batch size
@@ -331,40 +339,131 @@ def parallel_config_row(
         pp_options = [1, 2, 4, 8, 16]
         dp_options = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
         row(
-            ele("select_slider", "TP", value=(1, 1), options=tp_options, scope=ps, param="exp.tp"),
-            ele("select_slider", "PP", value=(1, 1), options=pp_options, scope=ps, param="exp.pp"),
-            ele("select_slider", "DP", value=(1, 1), options=dp_options, scope=ps, param="exp.dp"),
+            ele(
+                "select_slider",
+                "TP",
+                value=(1, 1),
+                options=tp_options,
+                scope=ps,
+                param="exp.tp",
+            ),
+            ele(
+                "select_slider",
+                "PP",
+                value=(1, 1),
+                options=pp_options,
+                scope=ps,
+                param="exp.pp",
+            ),
+            ele(
+                "select_slider",
+                "DP",
+                value=(1, 1),
+                options=dp_options,
+                scope=ps,
+                param="exp.dp",
+            ),
             ele("text", ""),
-            ele("number_input", "gbs", value=ps.exe.batch_size | 1, scope=ps, param="exe.batch_size") if show_gbs else ele("text", ""),
-            ele("number_input", "mbs", value=ps.exe.microbatch_size | 1, scope=ps, param=mbs_param) if show_mbs else ele("text", ""),
+            (
+                ele(
+                    "number_input",
+                    "gbs",
+                    value=ps.exe.batch_size | 1,
+                    scope=ps,
+                    param="exe.batch_size",
+                )
+                if show_gbs
+                else ele("text", "")
+            ),
+            (
+                ele(
+                    "number_input",
+                    "mbs",
+                    value=ps.exe.microbatch_size | 1,
+                    scope=ps,
+                    param=mbs_param,
+                )
+                if show_mbs
+                else ele("text", "")
+            ),
             ele("text", ""),
-            ele("number_input", "seqlen", value=ps.model.seq_size | 1, scope=ps, param="model.seq_size") if show_seqlen else ele("text", ""),
+            (
+                ele(
+                    "number_input",
+                    "seqlen",
+                    value=ps.model.seq_size | 1,
+                    scope=ps,
+                    param="model.seq_size",
+                )
+                if show_seqlen
+                else ele("text", "")
+            ),
         )
     else:
         dp_value = int(
-            (ps.exe.num_procs | 1) / 
-            (ps.exe.tensor_par | 1) / 
-            (ps.exe.pipeline_par | 1)
+            (ps.exe.num_procs | 1) / (ps.exe.tensor_par | 1) / (ps.exe.pipeline_par | 1)
         )
         row(
-            ele("number_input", "TP", value=ps.exe.tensor_par | 1, scope=ps, param="exe.tensor_par"),
-            ele("number_input", "PP", value=ps.exe.pipeline_par | 1, scope=ps, param="exe.pipeline_par"),
+            ele(
+                "number_input",
+                "TP",
+                value=ps.exe.tensor_par | 1,
+                scope=ps,
+                param="exe.tensor_par",
+            ),
+            ele(
+                "number_input",
+                "PP",
+                value=ps.exe.pipeline_par | 1,
+                scope=ps,
+                param="exe.pipeline_par",
+            ),
             ele("number_input", "DP", value=dp_value, scope=ps, param="exe.data_par"),
             ele("text", ""),
-            ele("number_input", "gbs", value=ps.exe.batch_size | 1, scope=ps, param="exe.batch_size") if show_gbs else ele("text", ""),
-            ele("number_input", "mbs", value=ps.exe.microbatch_size | 1, scope=ps, param=mbs_param) if show_mbs else ele("text", ""),
+            (
+                ele(
+                    "number_input",
+                    "gbs",
+                    value=ps.exe.batch_size | 1,
+                    scope=ps,
+                    param="exe.batch_size",
+                )
+                if show_gbs
+                else ele("text", "")
+            ),
+            (
+                ele(
+                    "number_input",
+                    "mbs",
+                    value=ps.exe.microbatch_size | 1,
+                    scope=ps,
+                    param=mbs_param,
+                )
+                if show_mbs
+                else ele("text", "")
+            ),
             ele("text", ""),
-            ele("number_input", "seqlen", value=ps.model.seq_size | 1, scope=ps, param="model.seq_size") if show_seqlen else ele("text", ""),
+            (
+                ele(
+                    "number_input",
+                    "seqlen",
+                    value=ps.model.seq_size | 1,
+                    scope=ps,
+                    param="model.seq_size",
+                )
+                if show_seqlen
+                else ele("text", "")
+            ),
         )
 
 
 def config_popover(ps: hp.scope, label: str = "配置") -> dict:
     """渲染配置弹窗
-    
+
     Args:
         ps: hyperparameter scope 对象
         label: 弹窗按钮标签
-        
+
     Returns:
         包含配置选项的字典
     """
@@ -384,40 +483,40 @@ def page_header_with_config(
     mbs_param: str = "exe.microbatch_size",
 ) -> dict:
     """渲染页面头部，包含并行配置和配置弹窗
-    
+
     Args:
         title: 页面标题
         ps: hyperparameter scope 对象
         use_slider: 是否使用滑块模式
         mbs_param: microbatch size 参数路径
-        
+
     Returns:
         配置字典
     """
     st.header(title, divider=True)
     c1, c2 = st.columns([0.9, 0.1], vertical_alignment="bottom")
-    
+
     with c1:
         parallel_config_row(ps, use_slider=use_slider, mbs_param=mbs_param)
         if not use_slider:
             ps.exe.num_proc = (
-                (ps.exe.tensor_par | 1) * 
-                (ps.exe.pipeline_par | 1) * 
-                (ps.exe.data_par | 1)
+                (ps.exe.tensor_par | 1)
+                * (ps.exe.pipeline_par | 1)
+                * (ps.exe.data_par | 1)
             )
-    
+
     with c2:
         config = config_popover(ps)
-    
+
     return config
 
 
 def transformer_config_expander(ps: hp.scope) -> dict:
     """Transformer 模型参数配置展开区
-    
+
     Args:
         ps: hyperparameter scope 对象
-        
+
     Returns:
         配置字典
     """
@@ -427,29 +526,35 @@ def transformer_config_expander(ps: hp.scope) -> dict:
         bias_flags = r.container()
         emb_flags = r.container()
         norm_flags = r.container()
-        
-        config.update({
-            "model.use_attn_bias": bias_flags.checkbox("attention投影bias", True),
-            "model.use_qkv_bias": bias_flags.checkbox("attention输入bias", True),
-            "model.use_mlp_bias": bias_flags.checkbox("MLP使用bias", True),
-            "model.type_posemb": emb_flags.selectbox("位置编码", ["learned", "rope"], 0),
-            "model.vocab_size": emb_flags.number_input("词表大小", ps.model.vocab_size | 51200),
-            "model.type_norm": norm_flags.selectbox("归一化层", ["LN", "RMS"], 0),
-        })
-    
+
+        config.update(
+            {
+                "model.use_attn_bias": bias_flags.checkbox("attention投影bias", True),
+                "model.use_qkv_bias": bias_flags.checkbox("attention输入bias", True),
+                "model.use_mlp_bias": bias_flags.checkbox("MLP使用bias", True),
+                "model.type_posemb": emb_flags.selectbox(
+                    "位置编码", ["learned", "rope"], 0
+                ),
+                "model.vocab_size": emb_flags.number_input(
+                    "词表大小", ps.model.vocab_size | 51200
+                ),
+                "model.type_norm": norm_flags.selectbox("归一化层", ["LN", "RMS"], 0),
+            }
+        )
+
     return config
 
 
 def raw_output_section(stats: dict, summary_fn: Callable = None) -> None:
     """渲染原始输出区域
-    
+
     Args:
         stats: 统计数据字典
         summary_fn: 摘要生成函数
     """
     with st.expander("模拟器日志", expanded=False):
         st.text(json.dumps(stats, indent=2))
-    
+
     if summary_fn:
         with st.expander("模拟器输出", expanded=False):
             st.dataframe(summary_fn(stats), use_container_width=True)
@@ -459,9 +564,10 @@ def raw_output_section(stats: dict, summary_fn: Callable = None) -> None:
 # 布局组件 - 页面结构和视觉元素
 # ============================================================================
 
+
 def page_title(title: str, subtitle: str = None, icon: str = None):
     """渲染页面标题区域
-    
+
     Args:
         title: 主标题
         subtitle: 副标题/描述
@@ -471,16 +577,16 @@ def page_title(title: str, subtitle: str = None, icon: str = None):
         st.markdown(f"# {icon} {title}")
     else:
         st.markdown(f"# {title}")
-    
+
     if subtitle:
         st.caption(subtitle)
-    
+
     st.markdown("---")
 
 
 def section_header(title: str, description: str = None):
     """渲染章节标题
-    
+
     Args:
         title: 章节标题
         description: 章节描述
@@ -492,13 +598,14 @@ def section_header(title: str, description: str = None):
 
 def info_card(title: str, content: str, icon: str = "ℹ️"):
     """渲染信息卡片
-    
+
     Args:
         title: 卡片标题
         content: 卡片内容
         icon: 图标
     """
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="
         background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
         padding: 1rem 1.25rem;
@@ -513,12 +620,14 @@ def info_card(title: str, content: str, icon: str = "ℹ️"):
             {content}
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 def metric_card(label: str, value, delta=None, help_text: str = None):
     """渲染指标卡片
-    
+
     Args:
         label: 指标标签
         value: 指标值
@@ -530,7 +639,7 @@ def metric_card(label: str, value, delta=None, help_text: str = None):
 
 def metrics_row(*metrics):
     """渲染一行指标
-    
+
     Args:
         metrics: [(label, value, delta?, help?), ...] 列表
     """
@@ -547,10 +656,10 @@ def metrics_row(*metrics):
 
 def two_column_layout(left_ratio: float = 0.5):
     """创建两列布局
-    
+
     Args:
         left_ratio: 左列占比
-        
+
     Returns:
         (left_col, right_col) 元组
     """

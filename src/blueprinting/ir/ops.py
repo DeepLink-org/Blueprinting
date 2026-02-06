@@ -1,52 +1,14 @@
 """Op and Block definitions for IR.
 
-Type Hierarchy:
-==============
-
-                    NodeDef (abstract base)
-                        │
-        ┌───────────────┴───────────────┐
-        ▼                               ▼
-     OpDef                          BlockDef
-  (atomic compute)               (unified container)
-        │                               │
-   有类型分类:                      不区分类型:
-   - compute                      - 可有参数 (params)
-   - activation                   - 可嵌套子节点
-   - comm                         - 用于模型结构
-
-Design Philosophy:
-- Op: Atomic computation, stateless, HAS category (compute/activation/comm)
-- Block: Structural container, MAY have params, NO category distinction
-
-This mirrors:
-- Op → CUDA kernel / torch.nn.functional.*
-- Block → torch.nn.Module (Linear, Attention, Transformer, etc.)
-
-Usage:
-    # Define a custom op (atomic computation)
-    @register_op
-    class MyOp(OpDef):
-        op_type = "MyOp"
-        category = "compute"
-        description = "My custom operation"
-
-    # Define a custom block (can have params)
-    @register_block
-    class MyBlock(BlockDef):
-        block_type = "MyBlock"
-        params = ["weight", "bias"]  # optional
-        description = "My custom block"
+NodeDef (abstract base)
+├── OpDef (atomic compute: compute/activation/comm)
+└── BlockDef (structural container, may have params)
 """
 
 from abc import ABC
 from typing import Any, ClassVar, Dict, List, Optional, Type, Union
 
 from sympy import Expr
-
-# ==============================================================================
-# Base Class Hierarchy
-# ==============================================================================
 
 
 class NodeDef(ABC):
@@ -152,11 +114,6 @@ class BlockDef(NodeDef):
     ) -> Optional[Union[int, Expr]]:
         """Compute activation memory bytes."""
         return None
-
-
-# ==============================================================================
-# Blocks with Parameters (formerly LayerDef)
-# ==============================================================================
 
 
 class Linear(BlockDef):
@@ -333,13 +290,6 @@ class Conv2d(BlockDef):
     }
 
 
-# ==============================================================================
-# Ops - Pure computation, stateless
-# ==============================================================================
-
-# --- Matrix Operations ---
-
-
 class Matmul(OpDef):
     """Matrix multiplication (no parameters).
 
@@ -430,9 +380,6 @@ class Softmax(OpDef):
     }
 
 
-# --- Activation Functions (all stateless) ---
-
-
 class SiLU(OpDef):
     """SiLU (Swish) activation: x * sigmoid(x)."""
 
@@ -496,9 +443,6 @@ class Sigmoid(OpDef):
     category = "activation"
 
 
-# --- Element-wise Operations (stateless) ---
-
-
 class Add(OpDef):
     """Element-wise addition."""
 
@@ -531,9 +475,6 @@ class Dropout(OpDef):
     category = "compute"
 
     optional_attrs = {"p": 0.1}
-
-
-# --- Communication Operations ---
 
 
 class AllReduce(OpDef):
@@ -599,11 +540,6 @@ class Recv(OpDef):
     op_type = "Recv"
     description = "Point-to-point receive"
     category = "comm"
-
-
-# ==============================================================================
-# Structural Blocks (no params, pure containers)
-# ==============================================================================
 
 
 class TransformerLayer(BlockDef):
@@ -675,14 +611,7 @@ class OutputBlock(BlockDef):
     description = "Output layer block"
 
 
-# ==============================================================================
-# Registries (Simplified: Op + Block only)
-# ==============================================================================
-
-# Op registry (atomic operations, HAS category)
 _OP_REGISTRY: Dict[str, Type[OpDef]] = {}
-
-# Block registry (unified containers, NO category)
 _BLOCK_REGISTRY: Dict[str, Type[BlockDef]] = {}
 
 
@@ -744,24 +673,6 @@ def has_params(type_name: str) -> bool:
     if block_cls:
         return block_cls.has_params()
     return False
-
-
-# ==============================================================================
-# Compatibility aliases (for migration)
-# ==============================================================================
-
-# Legacy aliases - will be removed
-LayerDef = BlockDef  # Alias for backward compatibility
-_LAYER_REGISTRY = _BLOCK_REGISTRY  # Alias
-register_layer = register_block
-get_layer_def = get_block_def
-list_layers = list_blocks
-is_layer = has_params
-
-
-# ==============================================================================
-# Auto-register all defined classes
-# ==============================================================================
 
 
 def _auto_register():

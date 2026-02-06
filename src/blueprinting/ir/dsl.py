@@ -1,41 +1,7 @@
 """DSL - Block-based Graph construction.
 
-基于 types.py 中定义的 BlockNode 和 GraphIR 构建模型图。
-
-使用方式:
-=========
-
-```python
-from blueprinting.ir.dsl import Model
-
-# 构建 GPT-2 模型
-with Model("gpt2") as m:
-    with m.Layer("layer0") as layer:
-        with layer.Attention("attn") as attn:
-            attn.RMSNorm("input_norm")
-            attn.Linear("q_proj", shard="tp_col")
-            attn.Linear("k_proj", shard="tp_col")
-            attn.Linear("v_proj", shard="tp_col")
-            attn.Linear("o_proj", shard="tp_row")
-
-        with layer.FFN("ffn") as ffn:
-            ffn.RMSNorm("input_norm")
-            ffn.Linear("gate_proj", shard="tp_col")
-            ffn.Linear("up_proj", shard="tp_col")
-            ffn.Linear("down_proj", shard="tp_row")
-
-# 构建 Graph IR
-graph = m.build()
-print(graph)
-```
-
-设计原则:
-=========
-1. Graph IR 只包含 Block，不包含 Op
-2. Block 通过 BlockDef.__call__ 方法在 Schedule 阶段展开成 Op
-3. DSL 使用 with 语句构建层次结构
-4. 通过 ops.py 中的 BlockDef 注册表自动生成方法
-5. BlockNode 直接关联 BlockDef，可访问参数定义和计算方法
+使用 with 语句构建 BlockNode 层次结构，生成 GraphIR。
+Block 方法由 ops.py 中的 BlockDef 注册表自动生成。
 """
 
 from __future__ import annotations
@@ -55,9 +21,7 @@ class BlockBuilder:
     方法由 ops.py 中的 BlockDef 注册表自动生成。
     """
 
-    def __init__(
-        self, name: str, block_type: str, parent: BlockBuilder | None = None
-    ):
+    def __init__(self, name: str, block_type: str, parent: BlockBuilder | None = None):
         self.name = name
         self.block_type = block_type
         self.parent = parent
@@ -92,11 +56,6 @@ class BlockBuilder:
         return f"BlockBuilder({self.block_type}({self.name!r}), children={len(self._children)})"
 
 
-# ==============================================================================
-# 动态方法生成
-# ==============================================================================
-
-
 def _create_block_method(block_type: str):
     """为指定的 block_type 创建方法."""
 
@@ -116,13 +75,7 @@ def _register_block_methods(cls):
     return cls
 
 
-# 注册方法
 _register_block_methods(BlockBuilder)
-
-
-# ==============================================================================
-# Model 入口
-# ==============================================================================
 
 
 class Model(BlockBuilder):
@@ -156,11 +109,6 @@ class Model(BlockBuilder):
         )
 
 
-# ==============================================================================
-# 便捷别名
-# ==============================================================================
-
-
 def Transformer(name: str) -> Model:
     """创建 Transformer 模型."""
     return Model(name, "Transformer")
@@ -174,11 +122,6 @@ def GPT(name: str) -> Model:
 def LLaMA(name: str) -> Model:
     """创建 LLaMA 模型."""
     return Model(name, "LLaMA")
-
-
-# ==============================================================================
-# 打印工具
-# ==============================================================================
 
 
 def print_graph(graph: GraphIR, verbose: bool = False) -> str:
@@ -244,11 +187,6 @@ def graph_to_tree(graph: GraphIR) -> str:
     return "\n".join(lines)
 
 
-# ==============================================================================
-# 便捷构建函数
-# ==============================================================================
-
-
 def build_transformer_model(
     model_name: str,
     num_layers: int,
@@ -308,36 +246,50 @@ def build_transformer_model(
                 # Attention block
                 with layer.Attention("attn") as attn:
                     attn.RMSNorm("norm", normalized_shape=hidden)
-                    attn.Linear("q_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
-                    attn.Linear("k_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
-                    attn.Linear("v_proj", in_features=hidden, out_features=hidden, shard="tp_col" if tp > 1 else None)
-                    attn.Linear("out_proj", in_features=hidden, out_features=hidden, shard="tp_row" if tp > 1 else None)
+                    attn.Linear(
+                        "q_proj",
+                        in_features=hidden,
+                        out_features=hidden,
+                        shard="tp_col" if tp > 1 else None,
+                    )
+                    attn.Linear(
+                        "k_proj",
+                        in_features=hidden,
+                        out_features=hidden,
+                        shard="tp_col" if tp > 1 else None,
+                    )
+                    attn.Linear(
+                        "v_proj",
+                        in_features=hidden,
+                        out_features=hidden,
+                        shard="tp_col" if tp > 1 else None,
+                    )
+                    attn.Linear(
+                        "out_proj",
+                        in_features=hidden,
+                        out_features=hidden,
+                        shard="tp_row" if tp > 1 else None,
+                    )
 
                 # FFN block
                 with layer.FFN("ffn") as ffn:
                     ffn.RMSNorm("norm", normalized_shape=hidden)
-                    ffn.Linear("up_proj", in_features=hidden, out_features=feedforward, shard="tp_col" if tp > 1 else None)
+                    ffn.Linear(
+                        "up_proj",
+                        in_features=hidden,
+                        out_features=feedforward,
+                        shard="tp_col" if tp > 1 else None,
+                    )
                     # 激活函数
                     if activation == "SiLU":
                         ffn.SiLU("act")
                     else:
                         ffn.GELU("act")
-                    ffn.Linear("down_proj", in_features=feedforward, out_features=hidden, shard="tp_row" if tp > 1 else None)
+                    ffn.Linear(
+                        "down_proj",
+                        in_features=feedforward,
+                        out_features=hidden,
+                        shard="tp_row" if tp > 1 else None,
+                    )
 
     return m.build()
-
-
-# ==============================================================================
-# 导出
-# ==============================================================================
-
-__all__ = [
-    "Model",
-    "Transformer",
-    "GPT",
-    "LLaMA",
-    "BlockBuilder",
-    "print_graph",
-    "graph_to_tree",
-    "build_transformer_model",
-]

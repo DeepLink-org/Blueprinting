@@ -7,10 +7,10 @@ from matplotlib import pyplot as plt
 
 def plot_float_formats(formats: dict) -> plt.Figure:
     """绘制浮点数格式的位图布局
-    
+
     Args:
         formats: 格式字典 {name: (sign_bits, exponent_bits, mantissa_bits)}
-        
+
     Returns:
         matplotlib Figure 对象
     """
@@ -22,13 +22,13 @@ def plot_float_formats(formats: dict) -> plt.Figure:
         v_data = [0.0] * v[0] + [0.25] * v[1] + [0.5] * v[2]
         v_data += [0.75] * (32 - len(v_data))
         data.append(v_data)
-    
+
     data = np.array(data)
     fig = plt.figure(figsize=(10, 5))
     ax = plt.gca()
-    
-    ax.set_xticks([x for x in range(32)])
-    ax.set_yticks([x for x in range(len(labels))], labels=labels)
+
+    ax.set_xticks(list(range(32)))
+    ax.set_yticks(list(range(len(labels))), labels=labels)
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
     ax.spines[:].set_visible(False)
 
@@ -43,10 +43,10 @@ def plot_float_formats(formats: dict) -> plt.Figure:
             ["#ff000050", "#00ff0050", "#0000ff50", "#ffffff80"]
         ),
     )
-    
+
     # 添加标签文字
     data = im.get_array()
-    kw = dict(horizontalalignment="center", verticalalignment="center")
+    kw = {"horizontalalignment": "center", "verticalalignment": "center"}
     label_map = {0.0: "S", 0.25: "E", 0.5: "M", 0.75: ""}
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
@@ -63,17 +63,17 @@ def plot_subnormal_distribution(
     rng: float = 0.1,
 ) -> plt.Figure:
     """绘制浮点数分布图，标识 subnormal 区域
-    
+
     Args:
         fp_values: 浮点数值列表
         subnormal: subnormal 阈值
         rng: 可视化范围
-        
+
     Returns:
         matplotlib Figure 对象
     """
     fig = plt.figure(figsize=(20, 2))
-    
+
     # 上方：完整分布
     plt.subplot(2, 1, 1)
     plt.scatter(
@@ -108,19 +108,19 @@ def plot_quantization_error(
     rng: float = 0.1,
 ) -> plt.Figure:
     """绘制量化误差图
-    
+
     Args:
         fp_values: 浮点数值列表
         subnormal: subnormal 阈值
         rng: 可视化范围
-        
+
     Returns:
         matplotlib Figure 对象
     """
     x = np.arange(-rng, rng, 2 * rng / 1e4, dtype=np.float64)
     y = [fp_values[i] for i in np.digitize(x, fp_values)]
     err = np.abs(x - y)
-    
+
     fig = plt.figure(figsize=(20, 3))
     plt.plot(
         x,
@@ -131,7 +131,7 @@ def plot_quantization_error(
         "r",
     )
     plt.legend(labels=["rtol", "subnormal area", "zeroed area"])
-    
+
     return fig
 
 
@@ -140,16 +140,16 @@ def plot_fp16_precision_error(
     spl: int = 10,
 ) -> plt.Figure:
     """绘制 FP16 精度误差图
-    
+
     Args:
         rng: 可视化范围
         spl: 采样间隔
-        
+
     Returns:
         matplotlib Figure 对象
     """
     import torch
-    
+
     x = np.arange(-rng, rng, 2 * rng / 1e4, dtype=np.float64)
     y = torch.tensor(x).to(torch.float16).to(torch.float64).numpy()
 
@@ -158,27 +158,29 @@ def plot_fp16_precision_error(
     fp16_rtol[np.argmax(fp16_rtol)] = 0.0
 
     fig = plt.figure(figsize=(20, 5))
-    
+
     plt.subplot(2, 1, 1)
     plt.plot(x[0::spl], fp16_atol[0::spl], "b")
     plt.title("atol")
-    
+
     plt.subplot(2, 1, 2)
     plt.plot(x[0::spl], fp16_rtol[0::spl], "b")
     plt.title("rtol")
-    
+
     plt.tight_layout()
     return fig
 
 
 # 默认颜色映射
-DEFAULT_COLORMAP = matplotlib.colors.ListedColormap([
-    "#00ff0050",  # 0 => normal
-    "#ff000080",  # 0.25 => maxval
-    "#0000ff80",  # 0.5 => subnormal
-    "#000000FF",  # 0.75 => zeroed
-    "#f000f080",  # 1.0 => traced
-])
+DEFAULT_COLORMAP = matplotlib.colors.ListedColormap(
+    [
+        "#00ff0050",  # 0 => normal
+        "#ff000080",  # 0.25 => maxval
+        "#0000ff80",  # 0.5 => subnormal
+        "#000000FF",  # 0.75 => zeroed
+        "#f000f080",  # 1.0 => traced
+    ]
+)
 
 
 def show_map(
@@ -192,7 +194,7 @@ def show_map(
     limit: float = None,
 ) -> None:
     """绘制操作结果的热图
-    
+
     Args:
         x: 操作结果矩阵
         name: 图表标题
@@ -207,7 +209,7 @@ def show_map(
         colormap = DEFAULT_COLORMAP
     if traced_values is None:
         traced_values = []
-        
+
     cm = (
         ((x > maxval) | (x < -maxval)) * 0.25
         + (np.abs(x) <= subnormal) * 0.50
@@ -215,7 +217,7 @@ def show_map(
     )
     for traced in traced_values:
         cm += (x == traced) * 1.0 + (x == -traced) * 1.0
-    
+
     plt.imshow(cm, cmap=colormap)
     plt.title(name)
 
@@ -232,7 +234,7 @@ def show_scatter(
     limit: float = None,
 ) -> None:
     """绘制操作结果的散点图
-    
+
     Args:
         x: 操作结果矩阵
         name: 图表标题
@@ -250,11 +252,11 @@ def show_scatter(
         traced_values = []
     if fp_values is None:
         fp_values = []
-        
+
     fp = np.array([fp_values])
     xl = fp.repeat(len(fp_values), axis=0)
     yl = xl.T
-    
+
     cm = (
         ((x > maxval) | (x < -maxval)) * 0.25
         + (np.abs(x) <= subnormal) * 0.50
@@ -262,7 +264,7 @@ def show_scatter(
     )
     for traced in traced_values:
         cm += (x == traced) * 1.0 + (x == -traced) * 1.0
-    
+
     plt.scatter(xl, yl, c=cm, linewidths=0.5, marker=".", cmap=colormap)
     if limit is not None:
         plt.xlim([-limit, +limit])
@@ -276,35 +278,35 @@ def plot_basic_op_map(
     **kwargs,
 ) -> plt.Figure:
     """绘制四则运算对精度的影响
-    
+
     Args:
         fp_values: 浮点数值列表
         show_fn: 显示函数 (show_map 或 show_scatter)
         **kwargs: 传递给 show_fn 的参数
             - need_fp_values: 如果为 True，则将处理后的 fp_values 传递给 show_fn
-        
+
     Returns:
         matplotlib Figure 对象
     """
     fig = plt.figure(figsize=(15, 15))
-    
+
     fv = fp_values[:]
     limit = kwargs.get("limit")
     if limit is not None:
         fv = [v for v in fv if abs(v) < limit]
-    
+
     # 限制数据点数量
     while len(fv) > 512:
         fv = fv[::2]
-    
+
     # 如果 show_fn 需要 fp_values 参数（如 show_scatter），则传递处理后的值
     if kwargs.pop("need_fp_values", False):
         kwargs["fp_values"] = fv
-    
+
     fv_arr = np.array([fv])
     xv = fv_arr.repeat(fv_arr.shape[1], axis=0)
     yv = xv.T
-    
+
     # 加法
     plt.subplot(2, 2, 1)
     show_fn(xv + yv, "A+B", **kwargs)

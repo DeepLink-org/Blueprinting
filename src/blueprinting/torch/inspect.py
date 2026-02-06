@@ -7,7 +7,6 @@ from typing import List
 import torch
 import torch.distributed
 
-
 __all__ = ["install_tensorboard_hook"]
 
 WRITER = None
@@ -106,24 +105,32 @@ def inspect_weights(m: torch.nn.Module):
             name = f"unamed_{cnt}"
 
         if world_size > 1 and abs(xxh64(name)) % world_size != rank:
-            print(f"skipping {name} @{GLOBAL_STEP} {abs(xxh64(name))} {rank}/{world_size}")
+            print(
+                f"skipping {name} @{GLOBAL_STEP} {abs(xxh64(name))} {rank}/{world_size}"
+            )
             continue
         print(f"logging {name} @{GLOBAL_STEP} ")
-        wrt = get_writer()
+        get_writer()
         # write_hist(wrt, name, weight.data, global_step=global_step)
         name = name[len(prefix_remove) :]
         try:
             print(f"\t{name} @{GLOBAL_STEP} to tensorboard")
             w = weight.data
             get_writer().add_histogram(name, w, global_step=GLOBAL_STEP)
-            get_writer().add_scalar(f"{name}/norm", (w * w).sum(), global_step=GLOBAL_STEP)
+            get_writer().add_scalar(
+                f"{name}/norm", (w * w).sum(), global_step=GLOBAL_STEP
+            )
         except:
             traceback.print_exc()
 
         did = id(weight.data)
 
         grad = None
-        if did in params and hasattr(params[did], "grad") and params[did].grad is not None:
+        if (
+            did in params
+            and hasattr(params[did], "grad")
+            and params[did].grad is not None
+        ):
             grad = params[did].grad
         elif hasattr(weight, "grad") and weight.grad is not None:
             grad = weight.grad
@@ -131,13 +138,21 @@ def inspect_weights(m: torch.nn.Module):
             if grad is not None:
                 print(f"\t{name}/grad @{GLOBAL_STEP} to tensorboard")
                 # write_hist(wrt, name, weight.grad, global_step=global_step)
-                get_writer().add_histogram(f"{name}/grad", grad, global_step=GLOBAL_STEP)
-                get_writer().add_scalar(f"{name}/grad/norm", (grad * grad).sum(), global_step=GLOBAL_STEP)
+                get_writer().add_histogram(
+                    f"{name}/grad", grad, global_step=GLOBAL_STEP
+                )
+                get_writer().add_scalar(
+                    f"{name}/grad/norm", (grad * grad).sum(), global_step=GLOBAL_STEP
+                )
         except:
             traceback.print_exc()
 
         main_grad = None
-        if did in params and hasattr(params[did], "main_grad") and params[did].main_grad is not None:
+        if (
+            did in params
+            and hasattr(params[did], "main_grad")
+            and params[did].main_grad is not None
+        ):
             main_grad = params[did].main_grad
         elif hasattr(weight, "main_grad") and weight.main_grad is not None:
             main_grad = weight.main_grad
@@ -145,7 +160,9 @@ def inspect_weights(m: torch.nn.Module):
             if main_grad is not None:
                 print(f"\t{name}/main_grad @{GLOBAL_STEP} to tensorboard")
                 # write_hist(wrt, name, weight.main_grad, global_step=global_step)
-                get_writer().add_histogram(f"{name}/main_grad", main_grad, global_step=GLOBAL_STEP)
+                get_writer().add_histogram(
+                    f"{name}/main_grad", main_grad, global_step=GLOBAL_STEP
+                )
                 get_writer().add_scalar(
                     f"{name}/main_grad/norm",
                     (main_grad * main_grad).sum(),
@@ -214,10 +231,7 @@ def optimizer_step_post_hook(optim, *args, **kwargs):
 
 
 def install_tensorboard_hook():
-    from torch.optim.optimizer import (
-        register_optimizer_step_pre_hook,
-        register_optimizer_step_post_hook,
-    )
+    from torch.optim.optimizer import register_optimizer_step_post_hook, register_optimizer_step_pre_hook
 
     register_optimizer_step_pre_hook(optimizer_step_pre_hook)
     register_optimizer_step_post_hook(optimizer_step_post_hook)

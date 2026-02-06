@@ -16,7 +16,7 @@ def read_json_file(filepath: str) -> Dict[str, Any]:
     Returns:
         Dictionary with file contents
     """
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return json.load(f)
 
 

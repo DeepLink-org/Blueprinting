@@ -118,7 +118,10 @@ class OverlapAnalysisPass(Pass):
             if event.event_type in (EventType.COMPUTE_START, EventType.COMM_START):
                 starts[resource] = event.time
 
-            elif event.event_type in (EventType.COMPUTE_END, EventType.COMM_END) and resource in starts:
+            elif (
+                event.event_type in (EventType.COMPUTE_END, EventType.COMM_END)
+                and resource in starts
+            ):
                 intervals.append((starts[resource], event.time))
                 del starts[resource]
 

@@ -3,27 +3,41 @@ import copy
 from IPython.display import Markdown, display
 
 
-def float_point_values_table(sign_bit=True, exponent_bits=5, mantissa_bits=2, draw=False):
+def float_point_values_table(
+    sign_bit=True, exponent_bits=5, mantissa_bits=2, draw=False
+):
     assert (
         exponent_bits > 0
     ), "Exponent bit amount cannot be zero or negative. A float must have at least 1 exponent bit, or else it's just an integer, loses Inf/NaN, etc."
-    assert mantissa_bits >= 0, "Mantissa bit amount cannot be negative. However, mantissa is allowed to have zero bits."
+    assert (
+        mantissa_bits >= 0
+    ), "Mantissa bit amount cannot be negative. However, mantissa is allowed to have zero bits."
     mantissa_base = _generate_mantissa_base(mantissa_bits)
     table_cell_rows = _generate_table_data_cells(sign_bit, mantissa_base, exponent_bits)
     if draw:
-        md = _format_pretty_table(table_cell_rows, sign_bit, exponent_bits, mantissa_bits)
+        md = _format_pretty_table(
+            table_cell_rows, sign_bit, exponent_bits, mantissa_bits
+        )
         display(Markdown(md))
     float_point_values = [float(x) for x in sum(table_cell_rows, [])]
-    float_point_values = [x for x in float_point_values if x == x and x not in (float("inf"), float("-inf"))]
+    float_point_values = [
+        x
+        for x in float_point_values
+        if x == x and x not in (float("inf"), float("-inf"))
+    ]
     float_point_values.sort()
     return float_point_values
 
 
-def _format_pretty_table(table_cell_rows, sign_bit, exponent_bits, mantissa_bits) -> str:
+def _format_pretty_table(
+    table_cell_rows, sign_bit, exponent_bits, mantissa_bits
+) -> str:
     nrow = len(table_cell_rows)
     ncol = len(table_cell_rows[0])
     output_text = "| |"
-    output_text += "|".join(["… " + _int_to_bits(i, mantissa_bits) for i in range(ncol)])
+    output_text += "|".join(
+        ["… " + _int_to_bits(i, mantissa_bits) for i in range(ncol)]
+    )
     output_text += "|\n"
     output_text += "|---|{}|\n".format("|".join(["---"] * ncol))
     for i in range(nrow):
@@ -82,7 +96,7 @@ def _generate_mantissa_base(bits_amount: int):
 def _int_to_bits(number: int, bits_amount: int) -> str:
     ret: str = ""
     digit_value: int = 1
-    for i in range(bits_amount):
+    for _i in range(bits_amount):
         if number & digit_value == 0:
             ret = "0" + ret
         else:

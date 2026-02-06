@@ -10,6 +10,7 @@ from sympy import Symbol
 
 class Model:
     """模型结构相关符号."""
+
     BATCH = Symbol("batch", positive=True, integer=True)
     SEQ = Symbol("seq", positive=True, integer=True)
     HIDDEN = Symbol("hidden", positive=True, integer=True)
@@ -22,6 +23,7 @@ class Model:
 
 class Parallel:
     """并行策略相关符号."""
+
     TP = Symbol("tp", positive=True, integer=True)
     PP = Symbol("pp", positive=True, integer=True)
     DP = Symbol("dp", positive=True, integer=True)
@@ -31,12 +33,14 @@ class Parallel:
 
 class Exec:
     """执行 / 调度相关符号."""
+
     MICRO_BATCH = Symbol("micro_batch", positive=True, integer=True)
     NUM_MICRO_BATCHES = Symbol("num_micro_batches", positive=True, integer=True)
 
 
 class Hardware:
     """硬件能力相关符号."""
+
     PEAK_FLOPS = Symbol("peak_flops", positive=True)
     MEM_BANDWIDTH = Symbol("mem_bandwidth", positive=True)
     NET_BANDWIDTH = Symbol("net_bandwidth", positive=True)
@@ -44,8 +48,14 @@ class Hardware:
 
 # 符号集合
 MODEL_SYMBOLS = {
-    Model.BATCH, Model.SEQ, Model.HIDDEN, Model.FEEDFORWARD,
-    Model.NUM_LAYERS, Model.ATTN_HEADS, Model.HEAD_DIM, Model.VOCAB_SIZE,
+    Model.BATCH,
+    Model.SEQ,
+    Model.HIDDEN,
+    Model.FEEDFORWARD,
+    Model.NUM_LAYERS,
+    Model.ATTN_HEADS,
+    Model.HEAD_DIM,
+    Model.VOCAB_SIZE,
 }
 PARALLEL_SYMBOLS = {Parallel.TP, Parallel.PP, Parallel.DP, Parallel.CP, Parallel.EP}
 EXEC_SYMBOLS = {Exec.MICRO_BATCH, Exec.NUM_MICRO_BATCHES}

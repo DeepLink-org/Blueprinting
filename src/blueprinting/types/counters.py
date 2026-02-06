@@ -31,10 +31,14 @@ class CommCounter:
 
     def __str__(self):
         nops = " / ".join(
-            str(getattr(self, f.name)) for f in dataclasses.fields(CommCounter) if f.name.startswith("n_")
+            str(getattr(self, f.name))
+            for f in dataclasses.fields(CommCounter)
+            if f.name.startswith("n_")
         )
         ncomm = " / ".join(
-            str(getattr(self, f.name)) for f in dataclasses.fields(CommCounter) if not f.name.startswith("n_")
+            str(getattr(self, f.name))
+            for f in dataclasses.fields(CommCounter)
+            if not f.name.startswith("n_")
         )
         return f"{nops}\n{ncomm}"
 

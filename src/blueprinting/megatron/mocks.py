@@ -2,10 +2,9 @@ from contextlib import nullcontext
 
 import torch
 import torch.distributed
-
-from torch.fx.experimental.proxy_tensor import maybe_disable_fake_tensor_mode
 import torch.utils
 import torch.utils.data
+from torch.fx.experimental.proxy_tensor import maybe_disable_fake_tensor_mode
 
 patches = {}
 states = {}
@@ -58,9 +57,11 @@ def torch_cuda_get_rng_state():
 def torch_cuda_synchronize():
     return None
 
+
 @mock("torch.cuda.is_current_stream_capturing")
 def torch_cuda_is_current_stream_capturing():
     return False
+
 
 @mock("torch.Tensor.item")
 def item(*args, **kwargs):
@@ -70,6 +71,7 @@ def item(*args, **kwargs):
 @mock("torch.compile")
 def mock_torch_compile(func):
     return func
+
 
 @mock("torch._amp_foreach_non_finite_check_and_unscale_")
 def _amp_foreach_non_finite_check_and_unscale_(*args, **kwargs):
@@ -97,7 +99,9 @@ class MockDistributedBackend:
     def init_process_group(backend=None, world_size=None, rank=None, timeout=None):
         get_args().do_train = True
         get_args().num_workers = 0
-        MockDistributedBackend.default = MockDistributedBackend(backend, world_size, rank, timeout)
+        MockDistributedBackend.default = MockDistributedBackend(
+            backend, world_size, rank, timeout
+        )
 
     @mock("torch.distributed.is_initialized")
     def is_initialized():
@@ -133,7 +137,7 @@ class MockDistributedBackend:
     def barrier(group=None):
         if group is not None:
             return print(f"barrier(group={group})")
-        print(f"barrier()")
+        print("barrier()")
         return MockDistributedWork()
 
     @mock("torch.distributed._all_gather_base")
@@ -155,14 +159,15 @@ class MockDistributedGroup:
     @mock("torch.distributed.new_group")
     def new_group(ranks, timeout=None, pg_options=None, backend=None):
         return MockDistributedGroup(ranks, timeout, pg_options, backend=None)
-    
+
     # @mock("torch.distributed.all_reduce")
     def allreduce(*args, **kwargs):
         # print(f"all_redice({args}, {kwargs})")
         return MockDistributedWork()
-    
+
     def allreduce_coalesced(*args, **kwargs):
         return MockDistributedWork()
+
 
 import megatron
 import megatron.core
@@ -218,7 +223,9 @@ megatron.core.tensor_parallel.random.CudaRNGStatesTracker.fork = nullcontext
 
 
 @mock("megatron.core.optimizer.optimizer.Float16OptimizerWithFloat16Params.__init__")
-def Float16OptimizerWithFloat16Params_init(self, optimizer, config, grad_scaler, init_state_fn):
+def Float16OptimizerWithFloat16Params_init(
+    self, optimizer, config, grad_scaler, init_state_fn
+):
     megatron.core.optimizer.optimizer.MixedPrecisionOptimizer.__init__(
         self, optimizer, config, grad_scaler, init_state_fn
     )

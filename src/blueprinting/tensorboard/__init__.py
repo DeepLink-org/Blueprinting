@@ -55,7 +55,7 @@ def inspect_weights(m: torch.nn.Module):
             name = f"unamed_{cnt}"
         if world_size > 1 and cnt % world_size != rank:
             continue
-        wrt = get_writer()
+        get_writer()
         # write_hist(wrt, name, weight.data, global_step=global_step)
         try:
             print(f"logging {name} @{global_step} to tensorboard")

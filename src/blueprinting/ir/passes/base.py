@@ -3,7 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import TypeVar
 
-from ..types import GraphIR, ScheduleIR, SimulationResult, TimelineIR
+from ..result import SimulationResult
+from ..types import GraphIR, ScheduleIR, TimelineIR
 
 # Type variable for IR types
 IR = TypeVar("IR", GraphIR, ScheduleIR, TimelineIR, SimulationResult)

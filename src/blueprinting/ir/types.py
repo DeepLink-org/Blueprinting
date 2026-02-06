@@ -1,43 +1,8 @@
-"""IR Types - Three-layer IR definitions for blueprinting compiler.
+"""IR Types - Three-layer IR definitions.
 
-================================================================================
-Three-Layer IR Architecture
-================================================================================
-
-Layer 1: Graph IR (Block-level)
-    描述模型结构，纯 Block 组成，不包含 Op
-
-    Module → Block → Block → ...
-
-    特点:
-    - 高层抽象，描述模型的逻辑结构
-    - Block 可以嵌套 Block
-    - 不包含具体的计算 Op
-    - BlockNode 关联 ops.py 中的 BlockDef
-    - Pass 操作: 并行策略、重计算标记、Block 融合
-
-Layer 2: Schedule IR (Op-level)
-    描述执行计划，由 Block 展开成 Op 序列
-
-    Stage → Device → Op → Op → ...
-
-    特点:
-    - Block 通过 BlockDef.__call__ 方法展开成 Op 序列
-    - OpNode 关联 ops.py 中的 OpDef
-    - 包含时序信息 (start, duration)
-    - Pass 操作: 计算/通信重叠、Op 融合、流分配
-
-Layer 3: Timeline IR (Event-level)
-    描述执行时间线，细粒度事件流
-
-    Event → Event → Event → ...
-
-    特点:
-    - 每个 Op 展开成多个事件 (start, end, alloc, free)
-    - 用于精确的内存和时间模拟
-    - 支持多流并行建模
-
-================================================================================
+Layer 1: Graph IR (Block-level) — 模型结构 (Module → Block → Block)
+Layer 2: Schedule IR (Op-level) — 执行计划 (Stage → Device → Op)
+Layer 3: Timeline IR (Event-level) — 细粒度事件流
 """
 
 from __future__ import annotations
@@ -51,11 +16,6 @@ from sympy import Expr, Symbol
 # 延迟导入避免循环依赖
 if TYPE_CHECKING:
     from .ops import BlockDef, OpDef
-
-
-# ==============================================================================
-# Common Enums
-# ==============================================================================
 
 
 class Phase(Enum):
@@ -112,11 +72,6 @@ class TensorRef:
         if self.shape is None:
             return 0
         return reduce(mul, self.shape, 1) * dtype_sizes.get(self.dtype, 2)
-
-
-# ==============================================================================
-# Layer 1: Graph IR (Block-level)
-# ==============================================================================
 
 
 @dataclass
@@ -253,7 +208,7 @@ class GraphIR:
 
         # 顶层结构
         lines.append("├─ structure:")
-        for i, child in enumerate(self.root.children[:8]):
+        for _i, child in enumerate(self.root.children[:8]):
             child_blocks = sum(1 for _ in child.iter_blocks())
             lines.append(f"│   {child.block_type}({child.name}): {child_blocks} blocks")
         if len(self.root.children) > 8:
@@ -291,11 +246,6 @@ class GraphIR:
 
         _tree(self.root, 0, "", "")
         return "\n".join(lines)
-
-
-# ==============================================================================
-# Layer 2: Schedule IR (Op-level)
-# ==============================================================================
 
 
 @dataclass
@@ -558,11 +508,6 @@ class ScheduleIR:
         return f"ScheduleIR(stages={len(self.stages)}, devices={self.num_devices}, ops={self.total_ops})"
 
 
-# ==============================================================================
-# Layer 3: Timeline IR (Event-level)
-# ==============================================================================
-
-
 class EventType(Enum):
     """事件类型."""
 
@@ -692,7 +637,7 @@ class TimelineIR:
         memory_snapshots: 内存快照列表
         metadata: 元数据
         num_devices: 设备数量
-    
+
     Example:
         timeline = TimelineIR(num_devices=2)
         timeline.add_event(TimelineEvent(...))
@@ -723,10 +668,12 @@ class TimelineIR:
             if all_numeric:
                 self.events.sort(key=lambda e: e.time)
             else:
+
                 def sort_key(e):
                     if isinstance(e.time, (int, float)):
                         return (e.time, "")
                     return (float("inf"), str(e.time))
+
                 self.events.sort(key=sort_key)
             self._sorted = True
 
@@ -804,26 +751,30 @@ class TimelineIR:
                 if event.resource_id in live_tensors:
                     live_tensors.remove(event.resource_id)
 
-            snapshots.append(MemorySnapshot(
-                time=event.time,
-                device=device,
-                allocated=current,
-                tensors=list(live_tensors),
-            ))
+            snapshots.append(
+                MemorySnapshot(
+                    time=event.time,
+                    device=device,
+                    allocated=current,
+                    tensors=list(live_tensors),
+                )
+            )
         return snapshots
 
     def makespan(self, device: int | None = None) -> float | Expr:
         """计算总执行时间 (makespan)."""
         self._ensure_sorted()
         events = (
-            self.events if device is None
+            self.events
+            if device is None
             else [e for e in self.events if e.device == device]
         )
         if not events:
             return 0
 
         end_events = [
-            e for e in events
+            e
+            for e in events
             if e.event_type in (EventType.COMPUTE_END, EventType.COMM_END)
         ]
         if not end_events:
@@ -844,7 +795,10 @@ class TimelineIR:
         for event in compute_events:
             if event.event_type == EventType.COMPUTE_START:
                 starts[event.resource_id] = event.time
-            elif event.event_type == EventType.COMPUTE_END and event.resource_id in starts:
+            elif (
+                event.event_type == EventType.COMPUTE_END
+                and event.resource_id in starts
+            ):
                 duration = event.time - starts[event.resource_id]
                 total = total + duration
                 del starts[event.resource_id]
@@ -989,7 +943,10 @@ class TimelineIR:
                 ph = "B"
             elif event.event_type == EventType.COMM_END:
                 ph = "E"
-            elif event.event_type == EventType.ALLOC or event.event_type == EventType.FREE:
+            elif (
+                event.event_type == EventType.ALLOC
+                or event.event_type == EventType.FREE
+            ):
                 ph = "i"
 
             if ph is None:
@@ -1214,6 +1171,7 @@ class TimelineIR:
 
         class _SafeEncoder(json.JSONEncoder):
             """跳过不可序列化的对象（如 SymbolicEstimate）."""
+
             def default(self, o):
                 try:
                     return super().default(o)
@@ -1226,209 +1184,3 @@ class TimelineIR:
 
     def __repr__(self) -> str:
         return f"TimelineIR(events={len(self.events)})"
-
-
-# ==============================================================================
-# Simulation Result
-# ==============================================================================
-
-
-@dataclass
-class MemoryBreakdown:
-    """内存分解."""
-
-    weights: int | float = 0
-    activations: int | float = 0
-    gradients: int | float = 0
-    optimizer_states: int | float = 0
-
-    @property
-    def total(self) -> int | float:
-        return self.weights + self.activations + self.gradients + self.optimizer_states
-
-
-@dataclass
-class TimeBreakdown:
-    """时间分解."""
-
-    forward: float = 0
-    backward: float = 0
-    communication: float = 0
-    bubble: float = 0
-    recompute: float = 0  # 激活重计算时间 (gradient checkpointing)
-
-    @property
-    def compute(self) -> float:
-        """计算时间 = forward + backward + recompute."""
-        return self.forward + self.backward + self.recompute
-
-    @property
-    def total(self) -> float:
-        """总时间 = compute + communication + bubble."""
-        return (
-            self.forward
-            + self.backward
-            + self.recompute
-            + self.communication
-            + self.bubble
-        )
-
-
-@dataclass
-class BlockMetrics:
-    """单层（Block）指标.
-
-    用于存储单个 Transformer 层的内存和时间指标。
-    """
-
-    # 单层内存
-    weights: int | float = 0
-    activations: int | float = 0
-    optimizer_states: int | float = 0
-
-    # 单层时间 (per-layer per-microbatch)
-    forward_time: float = 0
-    backward_time: float = 0
-    communication_time: float = 0
-
-    # TP 通信时间 (前向/反向分开)
-    comm_fw: float = 0  # 前向阶段的 TP 通信
-    comm_bw: float = 0  # 反向阶段的 TP 通信
-
-    @property
-    def compute_time(self) -> float:
-        """计算时间 = forward + backward."""
-        return self.forward_time + self.backward_time
-
-    @property
-    def total_time(self) -> float:
-        """总时间 = compute + communication."""
-        return self.forward_time + self.backward_time + self.communication_time
-
-
-@dataclass
-class SimulationResult:
-    """模拟结果 - 编译器最终输出.
-
-    Attributes:
-        peak_memory: 峰值内存 (bytes)
-        e2e_time: 端到端时间 (seconds)
-        memory_breakdown: 内存分解 (per-GPU 总内存)
-        time_breakdown: 时间分解 (per-layer per-microbatch)
-        total_time_breakdown: 总时间分解 (整个迭代)
-        block_metrics: 单层指标 (单个 Transformer 层)
-        total_flops: 总计算量
-        config: 配置信息
-        timeline: TimelineIR 引用 (用于导出 trace)
-    """
-
-    peak_memory: int | float = 0
-    e2e_time: float = 0
-    memory_breakdown: MemoryBreakdown | None = None
-    time_breakdown: TimeBreakdown | None = None  # per-layer per-microbatch
-    total_time_breakdown: TimeBreakdown | None = None  # 整个迭代的总时间
-    block_metrics: BlockMetrics | None = None  # 单层指标
-    total_flops: int | float = 0
-    config: dict[str, Any] = field(default_factory=dict)
-    timeline: TimelineIR | None = None  # TimelineIR 引用，用于导出 Chrome Trace
-    estimate: Any = None  # SymbolicEstimate (符号化估算，可选)
-
-    @property
-    def mfu(self) -> float:
-        """Model FLOPs Utilization.
-
-        MFU = per_GPU_FLOPs / (peak_FLOPs × e2e_time)
-
-        对于 PP 并行，每个 GPU 只处理部分层，
-        所以 per_GPU_FLOPs = total_flops / pp
-        """
-        peak_tflops = self.config.get("peak_tflops", 0)
-        pp = self.config.get("pp", 1)
-        if peak_tflops == 0 or self.e2e_time == 0:
-            return 0
-        # per-GPU FLOPs = total_flops / pp
-        per_gpu_flops = self.total_flops / pp if pp > 0 else self.total_flops
-        return per_gpu_flops / (peak_tflops * 1e12 * self.e2e_time)
-
-    def __repr__(self) -> str:
-        return (
-            f"SimulationResult(\n"
-            f"  peak_memory={self.peak_memory/1e9:.2f} GB,\n"
-            f"  e2e_time={self.e2e_time*1e3:.2f} ms,\n"
-            f"  mfu={self.mfu:.1%}\n"
-            f")"
-        )
-
-
-# ==============================================================================
-# Render Mixin - 动态绑定渲染方法
-# ==============================================================================
-
-
-def _bind_render_methods():
-    """动态绑定渲染方法到 IR 类型.
-    
-    这种方式避免了循环导入问题，同时让 IR 类型具有渲染能力。
-    """
-    from .render import (
-        GraphRenderMixin,
-        ScheduleRenderMixin,
-        TimelineRenderMixin,
-    )
-    
-    # 绑定 GraphIR 的渲染方法
-    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
-        if hasattr(GraphRenderMixin, name):
-            setattr(GraphIR, name, getattr(GraphRenderMixin, name))
-    
-    # 绑定 ScheduleIR 的渲染方法
-    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
-        if hasattr(ScheduleRenderMixin, name):
-            setattr(ScheduleIR, name, getattr(ScheduleRenderMixin, name))
-    
-    # 绑定 TimelineIR 的渲染方法
-    for name in ('to_terminal', 'to_tree_html', 'to_table', '_repr_html_'):
-        if hasattr(TimelineRenderMixin, name):
-            setattr(TimelineIR, name, getattr(TimelineRenderMixin, name))
-
-
-# 模块加载时绑定渲染方法
-try:
-    _bind_render_methods()
-except ImportError:
-    # 如果 render 模块不可用，忽略
-    pass
-
-
-# ==============================================================================
-# Exports
-# ==============================================================================
-
-__all__ = [
-    # Common
-    "Phase",
-    "NodeType",
-    "TensorRef",
-    # Graph IR
-    "BlockNode",
-    "GraphIR",
-    # Schedule IR
-    "OpNode",
-    "TensorLifetime",
-    "ScheduledOp",
-    "DeviceSchedule",
-    "StageSchedule",
-    "ScheduleIR",
-    # Timeline IR
-    "EventType",
-    "StreamType",
-    "TimelineEvent",
-    "MemorySnapshot",
-    "StreamState",
-    "TimelineIR",
-    # Result
-    "MemoryBreakdown",
-    "TimeBreakdown",
-    "BlockMetrics",
-    "SimulationResult",
-]
