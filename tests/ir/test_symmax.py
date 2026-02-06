@@ -1,9 +1,20 @@
-"""Tests for SymMax / SymMin - lazy symbolic max/min (sympy.Function)."""
+"""Tests for SymMax / SymMin - lazy symbolic max/min (sympy.Function).
+
+Imports only from blueprinting.core (no blueprinting.core.symbolic, no _to_float).
+"""
 
 import pytest
-from sympy import Symbol, Add, Max, Min
+from sympy import Symbol, Add
 
-from blueprinting.core import SymMax, SymMin, sym_max, sym_min, eval_lazy, BATCH, TP
+from blueprinting.core import (
+    SymMax,
+    SymMin,
+    sym_max,
+    sym_min,
+    eval_lazy,
+    BATCH,
+    TP,
+)
 
 
 class TestSymMax:

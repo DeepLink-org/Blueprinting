@@ -1,6 +1,7 @@
 """Unit tests for symbolic computation compatibility.
 
 测试新的三层 IR 架构是否与 SymPy 符号运算兼容。
+Imports: from blueprinting.core import SymMax only (no clear_expr_cache).
 """
 
 import pytest
