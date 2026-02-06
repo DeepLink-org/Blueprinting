@@ -6,8 +6,8 @@
 
 编译流程:
     GraphIR → ParallelPass → ExpandPass → SchedulePass 
-           → OptimizerPass → PipelineSchedulePass → TimelinePass 
-           → OverlapAnalysisPass → SimulatePass
+           → OptimizerPass → PipelineSchedulePass → SymbolicEstimatePass
+           → TimelinePass → OverlapAnalysisPass → SimulatePass
 
 使用方法:
     python examples/gpt175b_compile.py
@@ -50,6 +50,7 @@ from blueprinting.ir.passes import (
     TimelinePass,
     OverlapAnalysisPass,
     SimulatePass,
+    SymbolicEstimatePass,
     PrintSchedulePass,
 )
 
@@ -603,13 +604,16 @@ def create_compiler(
             ),
         ))
     
-    # 6. TimelinePass: Op → Event
+    # 6. SymbolicEstimatePass: 符号化聚合估算（透明 Pass）
+    passes.append(SymbolicEstimatePass())
+    
+    # 7. TimelinePass: Op → Event
     passes.append(TimelinePass(track_memory=True))
     
-    # 7. OverlapAnalysisPass: 重叠分析
+    # 8. OverlapAnalysisPass: 重叠分析
     passes.append(OverlapAnalysisPass())
     
-    # 8. SimulatePass: 最终评估
+    # 9. SimulatePass: 最终评估
     passes.append(SimulatePass(
         peak_tflops=peak_tflops,
         training=training,
@@ -843,6 +847,172 @@ def compare_results(
 
 
 # ============================================================================
+# 符号化估算对比
+# ============================================================================
+
+def _eval_to_float(value: Any) -> float:
+    """将表达式求值为 float（支持惰性表达式）."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    # 惰性表达式
+    if hasattr(value, 'eval'):
+        try:
+            return float(value.eval({}))
+        except (TypeError, ValueError):
+            return 0.0
+    # SymPy Expr
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def show_symbolic_estimate(result):
+    """展示符号化估算分析结果，并与 Timeline 精确结果对比."""
+    est = result.estimate
+    if not est:
+        console.print("  [yellow]跳过[/yellow]: 无符号化估算 (未启用 SymbolicEstimatePass)")
+        return
+
+    # === Estimate vs Timeline 对比表 ===
+    cmp_table = Table(
+        title="符号化估算 vs Timeline 精确值",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    cmp_table.add_column("指标", style="cyan", width=14)
+    cmp_table.add_column("Estimate", justify="right", style="blue", width=14)
+    cmp_table.add_column("Timeline", justify="right", style="green", width=14)
+    cmp_table.add_column("Diff", justify="right", width=10)
+
+    # 时间对比
+    ir_total_tb = getattr(result, "total_time_breakdown", None)
+
+    time_rows = [
+        ("前向", est.forward_time, ir_total_tb.forward if ir_total_tb else 0),
+        ("反向", est.backward_time, ir_total_tb.backward if ir_total_tb else 0),
+        ("重计算", est.recompute_time, ir_total_tb.recompute if ir_total_tb else 0),
+        ("通信", est.comm_time, ir_total_tb.communication if ir_total_tb else 0),
+        ("Bubble", est.bubble_time, ir_total_tb.bubble if ir_total_tb else 0),
+    ]
+    for name, est_val, tl_val in time_rows:
+        est_f = _eval_to_float(est_val)
+        tl_f = _eval_to_float(tl_val)
+        cmp_table.add_row(
+            name,
+            format_time(est_f),
+            format_time(tl_f),
+            format_diff(est_f, tl_f) if tl_f else "-",
+        )
+
+    # E2E 总计
+    est_e2e = _eval_to_float(est.e2e_time)
+    cmp_table.add_row(
+        "E2E 总计",
+        format_time(est_e2e),
+        format_time(result.e2e_time),
+        format_diff(est_e2e, result.e2e_time) if result.e2e_time else "-",
+        style="bold",
+    )
+
+    console.print(cmp_table)
+
+    # 内存对比
+    ir_mb = getattr(result, "memory_breakdown", None)
+    mem_table = Table(
+        title="符号化估算 vs Timeline 内存",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    mem_table.add_column("指标", style="cyan", width=14)
+    mem_table.add_column("Estimate", justify="right", style="blue", width=14)
+    mem_table.add_column("Timeline", justify="right", style="green", width=14)
+    mem_table.add_column("Diff", justify="right", width=10)
+
+    mem_rows = [
+        ("权重", est.weight_memory, ir_mb.weights if ir_mb else 0),
+        ("激活", est.activation_memory, ir_mb.activations if ir_mb else 0),
+        ("梯度", est.gradient_memory, ir_mb.gradients if ir_mb else 0),
+        ("优化器", est.optimizer_memory, ir_mb.optimizer_states if ir_mb else 0),
+    ]
+    for name, est_val, tl_val in mem_rows:
+        est_f = _eval_to_float(est_val)
+        tl_f = _eval_to_float(tl_val)
+        mem_table.add_row(
+            name,
+            format_bytes(est_f),
+            format_bytes(tl_f),
+            format_diff(est_f, tl_f) if tl_f else "-",
+        )
+
+    est_peak = _eval_to_float(est.peak_memory)
+    mem_table.add_row(
+        "峰值合计",
+        format_bytes(est_peak),
+        format_bytes(result.peak_memory),
+        format_diff(est_peak, result.peak_memory) if result.peak_memory else "-",
+        style="bold",
+    )
+
+    console.print(mem_table)
+
+    # === 瓶颈分析 ===
+    bn = est.bottleneck()
+
+    bn_table = Table(
+        title="瓶颈分析 (时间)",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    bn_table.add_column("项目", style="cyan", width=14)
+    bn_table.add_column("时间", justify="right", style="green", width=12)
+    bn_table.add_column("占比", justify="right", width=10)
+    bn_table.add_column("", width=30)
+
+    for name, val, frac in bn["time"]:
+        bar_len = int(frac * 25)
+        bar = "█" * bar_len + "░" * (25 - bar_len)
+        bn_table.add_row(name, format_time(val), f"{frac:.1%}", f"[blue]{bar}[/blue]")
+
+    console.print(bn_table)
+
+    # 内存瓶颈
+    bn_mem_table = Table(
+        title="瓶颈分析 (内存)",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    bn_mem_table.add_column("项目", style="cyan", width=14)
+    bn_mem_table.add_column("大小", justify="right", style="green", width=12)
+    bn_mem_table.add_column("占比", justify="right", width=10)
+    bn_mem_table.add_column("", width=30)
+
+    for name, val, frac in bn["memory"]:
+        bar_len = int(frac * 25)
+        bar = "█" * bar_len + "░" * (25 - bar_len)
+        bn_mem_table.add_row(name, format_bytes(val), f"{frac:.1%}", f"[blue]{bar}[/blue]")
+
+    console.print(bn_mem_table)
+
+    # === 校准 ===
+    calibrated = est.calibrate(result)
+    if calibrated.overlap_ratio > 0:
+        console.print(
+            f"\n  [dim]校准后 overlap_ratio = {calibrated.overlap_ratio:.3f}[/dim]"
+        )
+        cal_e2e = _eval_to_float(calibrated.e2e_time)
+        console.print(
+            f"  [dim]校准后 e2e_time = {format_time(cal_e2e)} "
+            f"(Timeline: {format_time(result.e2e_time)}, "
+            f"diff: {format_diff(cal_e2e, result.e2e_time)})[/dim]"
+        )
+
+
+# ============================================================================
 # 主程序
 # ============================================================================
 
@@ -986,6 +1156,11 @@ def main():
     console.rule("[bold]IR vs Calculon 对比[/bold]", style="blue")
     
     compare_results(model_name, model_cfg_adj, execution_cfg_adj, result, calc_stats)
+    
+    # 5. 符号化估算分析
+    console.print()
+    console.rule("[bold]符号化估算分析 (Estimate vs Timeline)[/bold]", style="blue")
+    show_symbolic_estimate(result)
     
     console.print()
     console.rule("[green]完成[/green]", style="green")

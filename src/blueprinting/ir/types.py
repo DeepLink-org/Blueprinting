@@ -1212,9 +1212,17 @@ class TimelineIR:
         """
         import json
 
+        class _SafeEncoder(json.JSONEncoder):
+            """跳过不可序列化的对象（如 SymbolicEstimate）."""
+            def default(self, o):
+                try:
+                    return super().default(o)
+                except TypeError:
+                    return f"<{type(o).__name__}>"
+
         trace = self.to_chrome_trace(time_unit, include_blocks=include_blocks)
         with open(path, "w") as f:
-            json.dump(trace, f, indent=2)
+            json.dump(trace, f, indent=2, cls=_SafeEncoder)
 
     def __repr__(self) -> str:
         return f"TimelineIR(events={len(self.events)})"
