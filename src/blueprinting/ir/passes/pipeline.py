@@ -118,6 +118,7 @@ class PipelineSchedulePass(Pass):
         new_ir = ScheduleIR(
             num_devices=ir.num_devices,
             metadata=ir.metadata.copy(),
+            memory_pools=list(ir.memory_pools),  # 保留上游 Pass 生成的内存注解
         )
         new_ir.metadata["pp_mode"] = self.config.mode.value
         new_ir.metadata["num_microbatches"] = num_mb

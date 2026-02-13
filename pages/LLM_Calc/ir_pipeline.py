@@ -479,7 +479,6 @@ def create_compiler(execution: Dict[str, Any], system_cfg: Dict[str, Any], seq_l
     passes.append(SimulatePass(
         subs=subs,
         peak_tflops=peak_tflops,
-        training=True,
     ))
 
     return Pipeline(passes)

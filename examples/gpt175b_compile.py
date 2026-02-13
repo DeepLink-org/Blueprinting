@@ -613,10 +613,9 @@ def create_compiler(
     # 8. OverlapAnalysisPass: 重叠分析
     passes.append(OverlapAnalysisPass())
     
-    # 9. SimulatePass: 最终评估
+    # 9. SimulatePass: 最终评估（纯观测，不区分训练/推理）
     passes.append(SimulatePass(
         peak_tflops=peak_tflops,
-        training=training,
     ))
     
     return Pipeline(passes)

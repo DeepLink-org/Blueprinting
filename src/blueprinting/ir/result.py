@@ -11,30 +11,45 @@ from typing import Any, Dict, Optional, Union
 class MemoryBreakdown:
     """Breakdown of memory usage (per-GPU).
 
+    通用设计：通过 pools dict 存储任意类型的内存项。
+    训练时可能有 weight/activation/gradient/optimizer；
+    推理时可能有 weight/activation/kv_cache。
+    SimulatePass 纯观测，按事件的 type 标签分类统计，不关心具体语义。
+
     Attributes:
-        weights: Weight tensor memory
-        activations: Activation memory (peak)
-        gradients: Gradient memory
-        optimizer_states: Optimizer state memory
+        pools: 各内存类型 → 大小 (bytes)，如 {"weight": ..., "activation": ..., "kv_cache": ...}
     """
 
-    weights: Union[int, float] = 0
-    activations: Union[int, float] = 0
-    gradients: Union[int, float] = 0
-    optimizer_states: Union[int, float] = 0
+    pools: Dict[str, Union[int, float]] = field(default_factory=dict)
+
+    # 常用快捷属性（兼容旧 API）
+    @property
+    def weights(self) -> Union[int, float]:
+        return self.pools.get("weight", 0)
+
+    @property
+    def activations(self) -> Union[int, float]:
+        return self.pools.get("activation", 0)
+
+    @property
+    def gradients(self) -> Union[int, float]:
+        return self.pools.get("gradient", 0)
+
+    @property
+    def optimizer_states(self) -> Union[int, float]:
+        return self.pools.get("optimizer", 0)
+
+    @property
+    def kv_cache(self) -> Union[int, float]:
+        return self.pools.get("kv_cache", 0)
 
     @property
     def total(self) -> Union[int, float]:
-        return self.weights + self.activations + self.gradients + self.optimizer_states
+        return sum(self.pools.values())
 
     def __repr__(self) -> str:
-        return (
-            f"MemoryBreakdown(weights={self.weights/1e9:.2f}GB, "
-            f"activations={self.activations/1e9:.2f}GB, "
-            f"gradients={self.gradients/1e9:.2f}GB, "
-            f"optimizer={self.optimizer_states/1e9:.2f}GB, "
-            f"total={self.total/1e9:.2f}GB)"
-        )
+        parts = [f"{k}={v/1e9:.2f}GB" for k, v in self.pools.items() if v > 0]
+        return f"MemoryBreakdown({', '.join(parts)}, total={self.total/1e9:.2f}GB)"
 
 
 @dataclass
@@ -168,12 +183,7 @@ class SimulationResult:
             "memory_utilization": self.memory_utilization,
             "is_feasible": self.is_feasible(),
             "memory_breakdown": (
-                {
-                    "weights_gb": self.memory_breakdown.weights / 1e9,
-                    "activations_gb": self.memory_breakdown.activations / 1e9,
-                    "gradients_gb": self.memory_breakdown.gradients / 1e9,
-                    "optimizer_gb": self.memory_breakdown.optimizer_states / 1e9,
-                }
+                {f"{k}_gb": v / 1e9 for k, v in self.memory_breakdown.pools.items()}
                 if self.memory_breakdown
                 else None
             ),

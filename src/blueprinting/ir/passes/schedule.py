@@ -17,7 +17,7 @@ from sympy import Expr
 
 from blueprinting.core import SymMax
 
-from ..types import OpNode, ScheduleIR
+from ..types import MemoryPool, OpNode, ScheduleIR
 from .base import Pass
 
 
@@ -83,7 +83,13 @@ class SchedulePass(Pass):
         self.processing_mode = processing_mode
 
     def run(self, ir: ScheduleIR) -> ScheduleIR:
-        """执行调度计算."""
+        """执行调度计算.
+
+        职责:
+        1. 计算每个 Op 的 workload + duration
+        2. 生成 memory_pools 中的权重和激活内存注解
+           （梯度和 optimizer 由 OptimizerPass 追加）
+        """
         metadata = ir.metadata
 
         # 提取常用参数
@@ -110,7 +116,108 @@ class SchedulePass(Pass):
             op.start = current_time
             current_time = current_time + duration
 
+        # 生成权重和激活内存注解
+        self._emit_weight_pool(ir)
+        self._emit_activation_pool(ir)
+
         return ir
+
+    def _emit_weight_pool(self, ir: ScheduleIR) -> None:
+        """生成权重内存池（训练/推理通用）.
+
+        遍历 Matmul Op，按 source_block 去重，用 dtype_bytes 计算权重大小。
+        PP 分片后 per-GPU。权重不释放。
+        """
+        seen = set()
+        pp = ir.metadata.get("pp", 1)
+        total = 0.0
+
+        for op in ir.iter_ops():
+            if op.op_type == "Matmul" and op.op:
+                source = op.op.source_block or ""
+                if source in seen:
+                    continue
+                seen.add(source)
+                K = op.op.attrs.get("K", 0)
+                N = op.op.attrs.get("N", 0)
+                total += K * N * self.dtype_bytes
+
+        weight_per_gpu = total / pp if pp > 0 else total
+        if weight_per_gpu > 0:
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="weight",
+                    mem_type="weight",
+                    size_bytes=weight_per_gpu,
+                    alloc_time=0,
+                    free_time=None,
+                )
+            )
+
+    def _emit_activation_pool(self, ir: ScheduleIR) -> None:
+        """生成训练激活内存池.
+
+        训练时需要保留所有层激活给反向用（除非 gradient_checkpointing）。
+        激活的释放时间由 OptimizerPass 在追加反向 Op 后更新。
+        """
+        import re
+
+        metadata = ir.metadata
+        pp = metadata.get("pp", 1)
+        num_layers = metadata.get("num_layers", 1)
+        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+        gradient_checkpointing = metadata.get("gradient_checkpointing", False)
+
+        # 从首层 Op 推导单层激活
+        layer_ops: dict[int, list] = {}
+        for op in ir.iter_ops():
+            source = op.op.source_block if op.op else ""
+            idx = 0
+            if source:
+                m = re.search(r"layer(\d+)", source, re.IGNORECASE)
+                if m:
+                    idx = int(m.group(1))
+            if idx not in layer_ops:
+                layer_ops[idx] = []
+            layer_ops[idx].append(op)
+
+        per_layer = 0.0
+        if layer_ops:
+            first = layer_ops[min(layer_ops.keys())]
+            for op in first:
+                if not op.op or not op.op.attrs:
+                    continue
+                attrs = op.op.attrs
+                if op.op_type == "Matmul":
+                    per_layer += attrs.get("M", 0) * attrs.get("N", 0) * self.dtype_bytes
+                elif op.op_type in ("RMSNorm", "LayerNorm"):
+                    ns = attrs.get("normalized_shape", 0)
+                    batch_seq = metadata.get("batch_size", 1) * metadata.get("seq_len", 2048)
+                    per_layer += batch_seq * ns * self.dtype_bytes
+                elif op.op_type in ("Softmax", "SiLU", "GELU", "ReLU"):
+                    per_layer += attrs.get("num_elements", 0) * self.dtype_bytes
+
+        if gradient_checkpointing:
+            peak = per_layer  # 只需单层
+        else:
+            peak = per_layer * layers_per_stage
+
+        if peak > 0:
+            # free_time 暂不设置；OptimizerPass 追加反向 Op 后会更新
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="activation",
+                    mem_type="activation",
+                    size_bytes=peak,
+                    alloc_time=0,
+                    free_time=None,  # 由 OptimizerPass 设置
+                    metadata={
+                        "per_layer": per_layer,
+                        "layers_per_stage": layers_per_stage,
+                        "gradient_checkpointing": gradient_checkpointing,
+                    },
+                )
+            )
 
     def _compute_workload(
         self,

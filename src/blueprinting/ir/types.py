@@ -456,6 +456,32 @@ class StageSchedule:
 
 
 @dataclass
+class MemoryPool:
+    """内存池注解 — 由 Schedule Pass 生成，供 TimelinePass 机械转译成 ALLOC/FREE 事件.
+
+    Schedule Pass（训练/推理）是「领域专家」，负责计算每个内存池的大小和生命周期；
+    TimelinePass 只做 MemoryPool → ALLOC/FREE 的机械翻译，无需区分训练或推理。
+
+    Attributes:
+        name: 唯一标识（如 "weight", "activation", "kv_cache", "gradient", "optimizer"）
+        mem_type: 内存类别（用于 MemoryBreakdown 分类统计）
+        size_bytes: 大小 (bytes, per-GPU)
+        alloc_time: 分配时刻（通常 0 = 模型加载时）
+        free_time: 释放时刻（None = 不释放，例如权重）
+        device: 设备 ID
+        metadata: 额外信息
+    """
+
+    name: str = ""
+    mem_type: str = "other"  # "weight", "activation", "kv_cache", "gradient", "optimizer", ...
+    size_bytes: float | Expr = 0
+    alloc_time: float | Expr = 0
+    free_time: float | Expr | None = None  # None = 不释放
+    device: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ScheduleIR:
     """Schedule IR - Op 级别的执行计划.
 
@@ -464,15 +490,20 @@ class ScheduleIR:
 
     结构: Stage → Device → ScheduledOp
 
+    memory_pools: Schedule Pass 输出的内存注解列表。
+    TimelinePass 根据这些注解生成 ALLOC/FREE 事件，自身不做内存估算。
+
     Attributes:
         stages: 阶段调度字典
         num_devices: 设备总数
         metadata: 元数据
+        memory_pools: 内存池列表（由 Schedule Pass / OptimizerPass 填充）
     """
 
     stages: dict[int, StageSchedule] = field(default_factory=dict)
     num_devices: int = 1
     metadata: dict[str, Any] = field(default_factory=dict)
+    memory_pools: list[MemoryPool] = field(default_factory=list)
 
     # Event counter
     _event_seq: int = 0

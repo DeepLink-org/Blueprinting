@@ -27,7 +27,7 @@ IR Pipeline (推理):
          │
     TimelineIR (Event)
          │
-         ↓ SimulatePass (评估，复用训练的 SimulatePass，training=False)
+         ↓ SimulatePass (纯观测，不区分训练/推理)
          │
     SimulationResult
 """
@@ -40,7 +40,7 @@ from sympy import Expr
 
 from blueprinting.core import SymMax
 
-from ..types import BlockNode, GraphIR, OpNode, Phase, ScheduledOp, ScheduleIR
+from ..types import BlockNode, GraphIR, MemoryPool, OpNode, Phase, ScheduledOp, ScheduleIR
 from .base import Pass
 
 
@@ -876,7 +876,13 @@ class InferenceSchedulePass(Pass):
         self.perf_db = perf_db
 
     def run(self, ir: ScheduleIR) -> ScheduleIR:
-        """执行推理调度计算."""
+        """执行推理调度计算.
+
+        职责:
+        1. 计算每个 Op 的 workload + duration（roofline 或查表）
+        2. 生成 memory_pools 内存注解（权重、激活、KV cache），
+           下游 TimelinePass 机械翻译成 ALLOC/FREE 事件，无需了解推理语义。
+        """
         metadata = ir.metadata
 
         batch = metadata.get("batch_size", metadata.get("batch", 1))
@@ -899,22 +905,91 @@ class InferenceSchedulePass(Pass):
             op.start = current_time
             current_time = current_time + duration
 
-        # 估算 KV-cache 内存并写入 metadata
-        self._estimate_kv_cache_memory(ir)
+        # ---- 生成 memory_pools 内存注解 ----
+        forward_end = current_time  # 所有 Op 的结束时间
+
+        self._emit_weight_pools(ir)
+        self._emit_activation_pool(ir, forward_end)
+        self._emit_kv_cache_pool(ir, forward_end)
 
         return ir
 
-    def _estimate_kv_cache_memory(self, ir: ScheduleIR) -> None:
-        """估算 KV-cache 内存.
+    # ---- memory_pools 生成 ----
+
+    def _emit_weight_pools(self, ir: ScheduleIR) -> None:
+        """生成权重内存池.
+
+        遍历前向 Matmul Op，按 source_block 去重，用 quant.weight_bytes 计算权重大小。
+        权重在模型加载时分配（alloc_time=0），推理期间不释放。
+        """
+        seen = set()
+        pp = ir.metadata.get("pp", 1)
+        total_weight = 0.0
+
+        for op in ir.iter_ops():
+            if op.op_type == "Matmul" and op.op:
+                source = op.op.source_block or ""
+                if source in seen:
+                    continue
+                seen.add(source)
+                K = op.op.attrs.get("K", 0)
+                N = op.op.attrs.get("N", 0)
+                weight_bytes = K * N * self.quant.weight_bytes
+                total_weight += weight_bytes
+
+        # per-GPU：PP 分片后每个 GPU 只存部分层权重
+        weight_per_gpu = total_weight / pp if pp > 0 else total_weight
+        if weight_per_gpu > 0:
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="weight",
+                    mem_type="weight",
+                    size_bytes=weight_per_gpu,
+                    alloc_time=0,
+                    free_time=None,  # 推理期间不释放
+                )
+            )
+
+    def _emit_activation_pool(self, ir: ScheduleIR, forward_end) -> None:
+        """生成推理激活内存池.
+
+        推理不需要为反向保留所有层激活，工作集约 1~2 层。
+        前向结束时释放。
+        """
+        metadata = ir.metadata
+        pp = metadata.get("pp", 1)
+        num_layers = metadata.get("num_layers", 1)
+        layers_per_stage = num_layers // pp if pp > 0 else num_layers
+
+        # 从 Op 推导单层激活大小
+        per_layer_activation = self._estimate_per_layer_activation(ir)
+        # 推理工作集：1~2 层
+        peak_activation = per_layer_activation * min(2, layers_per_stage)
+
+        if peak_activation > 0:
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="activation",
+                    mem_type="activation",
+                    size_bytes=peak_activation,
+                    alloc_time=0,
+                    free_time=forward_end,
+                    metadata={
+                        "per_layer": per_layer_activation,
+                        "layers_per_stage": layers_per_stage,
+                        "model": "inference_working_set",
+                    },
+                )
+            )
+
+    def _emit_kv_cache_pool(self, ir: ScheduleIR, forward_end) -> None:
+        """生成 KV-cache 内存池.
 
         KV-cache 存储每层的 K 和 V 张量:
         - 每层 KV-cache = 2 * batch_size * kv_len * num_kv_heads_per_gpu * head_dim * kv_cache_bytes
         - 总 KV-cache = per_layer * layers_per_stage (PP 分片)
 
-        量化影响: KV-cache 使用 quant_config.kv_cache_bytes 精度存储,
-        fp8/int8 KV-cache 可将内存减半 (1B vs 2B per element)。
-
-        参考 aiconfigurator 中 KVCacheQuantMode: float16(2B), fp8(1B), int8(1B)。
+        量化影响: KV-cache 使用 quant_config.kv_cache_bytes 精度存储。
         """
         metadata = ir.metadata
         batch_size = metadata.get("batch_size", 1)
@@ -926,24 +1001,73 @@ class InferenceSchedulePass(Pass):
         tp = max(1, metadata.get("tp", 1))
 
         head_dim = hidden // num_heads
-        # KV heads: 对于 GQA/MQA，可能少于 num_heads
         num_kv_heads = metadata.get("num_kv_heads", num_heads)
-        num_kv_heads_per_gpu = num_kv_heads // tp
-
+        num_kv_heads_per_gpu = max(1, num_kv_heads // tp)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
-
-        # kv_len: context 阶段写入，generation 阶段读取
         kv_len = metadata.get("kv_len", seq_len)
 
-        # 每层 KV-cache = 2 (K+V) * batch_size * kv_len * kv_heads_per_gpu * head_dim * kv_bytes
         per_layer_kv = (
             2 * batch_size * kv_len * num_kv_heads_per_gpu * head_dim * self.quant.kv_cache_bytes
         )
-
         total_kv_cache = per_layer_kv * layers_per_stage
 
+        if total_kv_cache > 0:
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="kv_cache",
+                    mem_type="kv_cache",
+                    size_bytes=total_kv_cache,
+                    alloc_time=0,
+                    free_time=forward_end,
+                    metadata={"per_layer": per_layer_kv},
+                )
+            )
+
+        # 兼容：写入 metadata 供上层读
         metadata["kv_cache_per_layer_bytes"] = per_layer_kv
         metadata["kv_cache_bytes"] = total_kv_cache
+
+    def _estimate_per_layer_activation(self, ir: ScheduleIR) -> float:
+        """从 Op 推导单层激活大小（首层前向 Op 输出的累积）."""
+        import re
+
+        layer_ops: dict[int, list[ScheduledOp]] = {}
+        for op in ir.iter_ops():
+            source = op.op.source_block if op.op else ""
+            layer_idx = 0
+            if source:
+                m = re.search(r"layer(\d+)", source, re.IGNORECASE)
+                if m:
+                    layer_idx = int(m.group(1))
+            if layer_idx not in layer_ops:
+                layer_ops[layer_idx] = []
+            layer_ops[layer_idx].append(op)
+
+        if not layer_ops:
+            return 0.0
+
+        first_layer = layer_ops[min(layer_ops.keys())]
+        per_layer = 0.0
+        for op in first_layer:
+            if not op.op or not op.op.attrs:
+                continue
+            attrs = op.op.attrs
+            if op.op_type == "Matmul":
+                M = attrs.get("M", 0)
+                N = attrs.get("N", 0)
+                per_layer += M * N * self.quant.activation_bytes
+            elif op.op_type in ("RMSNorm", "LayerNorm"):
+                ns = attrs.get("normalized_shape", 0)
+                metadata = ir.metadata
+                batch_seq = metadata.get("batch_size", 1) * metadata.get("seq_len", 2048)
+                phase = metadata.get("phase", "context")
+                if phase == "generation":
+                    batch_seq = metadata.get("batch_size", 1)
+                per_layer += batch_seq * ns * self.quant.activation_bytes
+            elif op.op_type in ("Softmax", "SiLU", "GELU", "ReLU"):
+                ne = attrs.get("num_elements", 0)
+                per_layer += ne * self.quant.activation_bytes
+        return per_layer
 
     def _compute_workload(
         self,

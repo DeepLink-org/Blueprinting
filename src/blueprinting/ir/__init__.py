@@ -52,6 +52,7 @@ from .types import (
     DeviceSchedule,
     EventType,
     GraphIR,
+    MemoryPool,
     MemorySnapshot,
     NodeType,
     ScheduledOp,

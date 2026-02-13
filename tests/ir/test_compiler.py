@@ -111,14 +111,15 @@ class TestSimulationResult:
     def test_memory_breakdown(self):
         """Test MemoryBreakdown class."""
         breakdown = MemoryBreakdown(
-            weights=1e9,
-            activations=2e9,
-            gradients=1e9,
-            optimizer_states=4e9
+            pools={"weight": 1e9, "activation": 2e9, "gradient": 1e9, "optimizer": 4e9}
         )
 
         assert breakdown.total == 8e9
-        assert "weights" in repr(breakdown).lower()
+        assert breakdown.weights == 1e9
+        assert breakdown.activations == 2e9
+        assert breakdown.gradients == 1e9
+        assert breakdown.optimizer_states == 4e9
+        assert "weight" in repr(breakdown).lower()
 
     def test_time_breakdown(self):
         """Test TimeBreakdown class."""
@@ -148,7 +149,7 @@ class TestSimulationResult:
         result = SimulationResult(
             peak_memory=10e9,
             e2e_time=0.1,
-            memory_breakdown=MemoryBreakdown(weights=1e9),
+            memory_breakdown=MemoryBreakdown(pools={"weight": 1e9}),
             time_breakdown=TimeBreakdown(forward=0.05),
             config={"memory_capacity": 80e9}
         )

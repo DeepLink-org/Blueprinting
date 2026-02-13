@@ -37,15 +37,15 @@ IR Pipeline (推理):
          │
     ScheduleIR (Op, 无 workload)
          │
-         ↓ InferenceSchedulePass (计算 workload + timing + KV-cache)
+         ↓ InferenceSchedulePass (workload + timing + memory_pools)
          │
-    ScheduleIR (Op, 有 workload)
+    ScheduleIR (Op + workload + memory_pools[weight, activation, kv_cache])
          │
-         ↓ TimelinePass (Op → Event, 复用)
+         ↓ TimelinePass (Op → Event, memory_pools → ALLOC/FREE)
          │
     TimelineIR (Event)
          │
-         ↓ SimulatePass (评估, training=False, 复用)
+         ↓ SimulatePass (纯观测, 不区分训练/推理)
          │
     SimulationResult
 """
@@ -65,7 +65,8 @@ from .passes.optimizer import OptimizerConfig, OptimizerPass
 from .passes.parallel import ParallelPass
 from .passes.pipeline import PipelineSchedulePass
 from .passes.schedule import SchedulePass
-from .passes.timeline import SimulatePass, TimelinePass
+from .passes.simulate import SimulatePass
+from .passes.timeline import TimelinePass
 from .result import SimulationResult
 from .types import GraphIR, ScheduleIR, TimelineIR
 
@@ -236,7 +237,7 @@ class Compiler:
 
         compiler.add_pass(TimelinePass())
         compiler.add_pass(
-            SimulatePass(subs=subs, peak_tflops=peak_tflops, training=training)
+            SimulatePass(subs=subs, peak_tflops=peak_tflops)
         )
 
         return compiler
@@ -256,13 +257,14 @@ class Compiler:
 
         推理管道:
             InferenceParallelPass → InferenceExpandPass → InferenceSchedulePass
-            → TimelinePass → SimulatePass(training=False)
+            → TimelinePass → SimulatePass
 
         与训练管道的区别:
         - 使用推理专用的 Parallel/Expand/Schedule Pass
         - 无 OptimizerPass (推理不需要反向传播)
         - 无 PipelineSchedulePass (推理不需要 micro-batch 交错调度)
-        - SimulatePass 使用 training=False
+        - InferenceSchedulePass 生成 memory_pools（含权重/激活/KV cache）
+        - TimelinePass/SimulatePass 完全复用，不感知训练/推理
         - 支持量化配置 (QuantConfig)
         - 支持性能数据库 (PerfDatabase) 查表
 
@@ -311,7 +313,7 @@ class Compiler:
             )
             .add_pass(TimelinePass(track_memory=True))
             .add_pass(
-                SimulatePass(subs=subs, peak_tflops=peak_tflops, training=False)
+                SimulatePass(subs=subs, peak_tflops=peak_tflops)
             )
         )
 

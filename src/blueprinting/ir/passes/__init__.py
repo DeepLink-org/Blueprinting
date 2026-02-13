@@ -17,5 +17,6 @@ from .overlap import OverlapAnalysisPass
 from .parallel import ParallelPass
 from .pipeline import PipelineConfig, PipelineSchedulePass, PPScheduleMode
 from .schedule import SchedulePass
+from .simulate import SimulatePass
 from .symbolic_estimate import SymbolicEstimatePass
-from .timeline import SimulatePass, TimelinePass
+from .timeline import TimelinePass

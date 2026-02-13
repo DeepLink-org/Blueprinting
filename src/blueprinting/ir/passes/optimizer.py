@@ -11,7 +11,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ..types import OpNode, Phase, ScheduledOp, ScheduleIR
+from ..types import MemoryPool, OpNode, Phase, ScheduledOp, ScheduleIR
 from .base import Pass
 
 
@@ -218,10 +218,92 @@ class OptimizerPass(Pass):
         ir.metadata["forward_ops"] = len(forward_ops)
         ir.metadata["backward_ops"] = len(backward_ops)
         ir.metadata["total_weight_bytes"] = total_weight_bytes
-        # 存储优化器配置，供 SimulatePass 计算内存使用
         ir.metadata["optimizer_config"] = self.config.to_dict()
 
+        # 生成梯度和 optimizer 内存池，并更新激活的 free_time
+        self._emit_memory_pools(ir, forward_ops, backward_ops, current_time)
+
         return ir
+
+    def _emit_memory_pools(
+        self,
+        ir: ScheduleIR,
+        forward_ops: List[ScheduledOp],
+        backward_ops: List[ScheduledOp],
+        optimizer_end_time,
+    ) -> None:
+        """生成梯度和 optimizer 内存池，并设置激活释放时间.
+
+        职责：
+        - 设置 SchedulePass 生成的 activation pool 的 free_time（= 反向结束）
+        - 追加 gradient pool
+        - 追加 optimizer pool
+        """
+        pp = ir.metadata.get("pp", 1)
+        layers_per_stage = ir.metadata.get("layers_per_stage",
+            ir.metadata.get("num_layers", 1) // pp if pp > 0 else 1)
+
+        # 1) 设置激活释放时间 = 反向结束
+        if backward_ops:
+            last_bw_end = max(op.start + op.duration for op in backward_ops)
+            for pool in ir.memory_pools:
+                if pool.mem_type == "activation" and pool.free_time is None:
+                    pool.free_time = last_bw_end
+
+        # 2) 计算权重 per-GPU（从已有 weight pool 读取）
+        weight_per_gpu = 0.0
+        for pool in ir.memory_pools:
+            if pool.mem_type == "weight":
+                weight_per_gpu = pool.size_bytes
+                break
+
+        if weight_per_gpu <= 0:
+            return
+
+        dtype_bytes = self.config.dtype_bytes or 2
+        num_params = weight_per_gpu / dtype_bytes
+        dp = self.config.dp or 1
+
+        # 3) 梯度内存 (Calculon 模型)
+        single_layer_params = num_params / layers_per_stage if layers_per_stage > 0 else num_params
+        grad_dtype_bytes = self.config.grad_accumulation_dtype_bytes or 4
+
+        block_grad_no_shard = single_layer_params * grad_dtype_bytes
+        block_grad_sharded = (
+            single_layer_params * dtype_bytes / dp if dp > 1 else single_layer_params * dtype_bytes
+        )
+
+        if layers_per_stage <= 1:
+            gradient_memory = block_grad_no_shard
+        else:
+            gradient_memory = block_grad_no_shard + block_grad_sharded * (layers_per_stage - 1)
+
+        if gradient_memory > 0:
+            bw_end = last_bw_end if backward_ops else optimizer_end_time
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="gradient",
+                    mem_type="gradient",
+                    size_bytes=gradient_memory,
+                    alloc_time=bw_end if backward_ops else 0,  # 反向开始产生
+                    free_time=optimizer_end_time,  # optimizer 完成后释放
+                )
+            )
+
+        # 4) Optimizer 状态内存
+        optimizer_bytes_per_param = self.config.get_optimizer_memory_per_param()
+        optimizer_memory = num_params * optimizer_bytes_per_param
+
+        if optimizer_memory > 0:
+            ir.memory_pools.append(
+                MemoryPool(
+                    name="optimizer",
+                    mem_type="optimizer",
+                    size_bytes=optimizer_memory,
+                    alloc_time=0,  # 始终驻留
+                    free_time=None,
+                )
+            )
 
     def _generate_backward_ops(
         self, forward_ops: List[ScheduledOp]
