@@ -7,7 +7,7 @@ import contextlib
 
 from blueprinting.core import SymMax, SymMin, eval_lazy, sym_max, sym_min
 
-from .compiler import Compiler, compile_inference, compile_model
+from .compiler import Compiler, compile_inference, compile_model, compile_to_program
 from .dsl import build_transformer_model
 from .estimate import SymbolicEstimate
 from .perf_database import (
@@ -46,6 +46,7 @@ from .passes import (
 )
 from .render import GraphRenderMixin, ScheduleRenderMixin, SimulationResultRenderMixin, TimelineRenderMixin
 from .result import SimulationResult
+from .program import CollapseBackend, Program, SimulationBackend, SymbolicBackend
 from .system import SystemConfig, load_system_config
 from .types import (
     BlockNode,

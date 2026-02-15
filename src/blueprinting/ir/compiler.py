@@ -81,6 +81,7 @@ from .passes.simulate import SimulatePass
 from .passes.symbolic_estimate import SymbolicEstimatePass
 from .passes.timeline import TimelinePass
 from .perf_database import PerfDatabase
+from .program import Program, SimulationBackend, SymbolicBackend
 from .result import SimulationResult
 from .types import GraphIR, ScheduleIR, TimelineIR
 
@@ -144,25 +145,81 @@ class Compiler:
         Returns:
             SimulationResult after all passes
         """
+        return self.compile_to_program(ir).simulate()
+
+    def _split_for_program(self) -> tuple[list[Pass], list[Pass]]:
+        """将 pass 链拆分为前端（到 ScheduleIR）和后端（用于仿真）."""
+        boundary = len(self.passes)
+        for idx, p in enumerate(self.passes):
+            if isinstance(p, (TimelinePass, OverlapAnalysisPass, SimulatePass)):
+                boundary = idx
+                break
+        return self.passes[:boundary], self.passes[boundary:]
+
+    def compile_to_program(self, ir: GraphIR) -> Program:
+        """编译到 Program（残留程序），支持后续多次/多目的塌缩."""
+        frontend_passes, backend_passes = self._split_for_program()
         current: Any = ir
 
-        for p in self.passes:
+        for p in frontend_passes:
             current = p.run(current)
             if self.debug:
                 self._print_ir_snapshot(p, current)
 
-        # Ensure we return a SimulationResult
-        if isinstance(current, SimulationResult):
-            return current
-        elif isinstance(current, TimelineIR):
-            # If no SimulatePass was added, create a default one
-            return SimulatePass().run(current)
-        elif isinstance(current, ScheduleIR):
-            # Need to convert to TimelineIR first
-            timeline = TimelinePass().run(current)
-            return SimulatePass().run(timeline)
-        else:
-            raise ValueError(f"Unexpected final IR type: {type(current)}")
+        if not isinstance(current, ScheduleIR):
+            raise ValueError(
+                "compile_to_program expects frontend passes to produce ScheduleIR, "
+                f"got {type(current)}"
+            )
+
+        # 快照当前 scope 参数，供 Program 后续多次塌缩复用
+        try:
+            scope = hp.scope.current()
+            system_ns = getattr(scope, "system", None)
+            parallel_ns = getattr(scope, "parallel", None)
+            if system_ns is not None:
+                current.metadata.setdefault(
+                    "system_config",
+                    {
+                        k: v
+                        for k, v in vars(system_ns).items()
+                        if not k.startswith("_")
+                    },
+                )
+            if parallel_ns is not None:
+                current.metadata.setdefault(
+                    "parallel_config",
+                    {
+                        k: v
+                        for k, v in vars(parallel_ns).items()
+                        if not k.startswith("_")
+                    },
+                )
+        except Exception:
+            pass
+
+        timeline_pass = None
+        overlap_pass = None
+        simulate_pass = None
+        for p in backend_passes:
+            if timeline_pass is None and isinstance(p, TimelinePass):
+                timeline_pass = p
+            elif overlap_pass is None and isinstance(p, OverlapAnalysisPass):
+                overlap_pass = p
+            elif simulate_pass is None and isinstance(p, SimulatePass):
+                simulate_pass = p
+
+        simulation_backend = SimulationBackend(
+            timeline_pass=timeline_pass,
+            overlap_pass=overlap_pass,
+            simulate_pass=simulate_pass,
+        )
+        symbolic_backend = SymbolicBackend()
+        return Program(
+            ir=current,
+            simulation_backend=simulation_backend,
+            symbolic_backend=symbolic_backend,
+        )
 
     def _print_ir_snapshot(self, p: Pass, ir: Any) -> None:
         """Print a snapshot of IR after each pass."""
@@ -460,6 +517,35 @@ def compile_model(
             debug=debug,
         )
         return compiler.compile(graph)
+
+
+def compile_to_program(
+    graph: GraphIR,
+    tp: int = 1,
+    pp: int = 1,
+    dp: int = 1,
+    num_microbatches: int = 1,
+    system_config: Optional[Dict] = None,
+    training: bool = True,
+    gradient_checkpointing: bool = False,
+    debug: bool = False,
+) -> Program:
+    """Convenience function to compile a graph into Program."""
+    system_params, parallel_params = _build_scope_params(
+        system_config=system_config, tp=tp, pp=pp, dp=dp,
+        training=training, gradient_checkpointing=gradient_checkpointing,
+    )
+
+    with hp.scope(system=system_params, parallel=parallel_params):
+        compiler = Compiler.default_pipeline(
+            num_microbatches=num_microbatches,
+            training=training,
+            gradient_checkpointing=gradient_checkpointing,
+            dp=dp,
+            subs=None,
+            debug=debug,
+        )
+        return compiler.compile_to_program(graph)
 
 
 def compile_inference(

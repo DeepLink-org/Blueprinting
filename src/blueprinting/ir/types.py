@@ -7,6 +7,7 @@ Layer 3: Timeline IR (Event-level) — 细粒度事件流
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterator
@@ -534,6 +535,113 @@ class ScheduleIR:
     def total_ops(self) -> int:
         """Op 总数."""
         return sum(len(d.ops) for s in self.stages.values() for d in s.devices.values())
+
+    @staticmethod
+    def _apply_subs_value(value: Any, mapping: dict) -> Any:
+        """递归替换值中的符号表达式."""
+        from blueprinting.core.symbolic import eval_lazy
+
+        if isinstance(value, Expr):
+            return eval_lazy(value, mapping)
+        if isinstance(value, dict):
+            return {
+                ScheduleIR._apply_subs_value(k, mapping): ScheduleIR._apply_subs_value(v, mapping)
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            return [ScheduleIR._apply_subs_value(v, mapping) for v in value]
+        if isinstance(value, tuple):
+            return tuple(ScheduleIR._apply_subs_value(v, mapping) for v in value)
+        if isinstance(value, set):
+            return {ScheduleIR._apply_subs_value(v, mapping) for v in value}
+        return value
+
+    @staticmethod
+    def _collect_symbols(value: Any) -> set[Symbol]:
+        """递归收集值中的自由符号."""
+        if isinstance(value, Expr):
+            return set(value.free_symbols)
+        if isinstance(value, dict):
+            symbols: set[Symbol] = set()
+            for k, v in value.items():
+                symbols.update(ScheduleIR._collect_symbols(k))
+                symbols.update(ScheduleIR._collect_symbols(v))
+            return symbols
+        if isinstance(value, (list, tuple, set)):
+            symbols = set()
+            for item in value:
+                symbols.update(ScheduleIR._collect_symbols(item))
+            return symbols
+        return set()
+
+    def subs(self, mapping: dict) -> ScheduleIR:
+        """返回新的 ScheduleIR，所有 Expr 字段按 mapping 替换."""
+        if not mapping:
+            return deepcopy(self)
+
+        normalized_mapping: dict[Any, Any] = dict(mapping)
+        symbols_by_name: dict[str, set[Symbol]] = {}
+        for sym in self.free_symbols:
+            symbols_by_name.setdefault(sym.name, set()).add(sym)
+
+        for key, value in mapping.items():
+            if isinstance(key, str):
+                for sym in symbols_by_name.get(key, set()):
+                    normalized_mapping[sym] = value
+            elif isinstance(key, Symbol):
+                for sym in symbols_by_name.get(key.name, set()):
+                    normalized_mapping[sym] = value
+
+        new_ir = deepcopy(self)
+
+        for stage in new_ir.stages.values():
+            for device in stage.devices.values():
+                for op in device.ops:
+                    op.start = self._apply_subs_value(op.start, normalized_mapping)
+                    op.duration = self._apply_subs_value(op.duration, normalized_mapping)
+                    if op.op is not None:
+                        op.op.flops = self._apply_subs_value(op.op.flops, normalized_mapping)
+                        op.op.memory_bytes = self._apply_subs_value(
+                            op.op.memory_bytes, normalized_mapping
+                        )
+                        op.op.comm_bytes = self._apply_subs_value(
+                            op.op.comm_bytes, normalized_mapping
+                        )
+                        op.op.attrs = self._apply_subs_value(op.op.attrs, normalized_mapping)
+
+        for pool in new_ir.memory_pools:
+            pool.size_bytes = self._apply_subs_value(pool.size_bytes, normalized_mapping)
+            pool.alloc_time = self._apply_subs_value(pool.alloc_time, normalized_mapping)
+            pool.free_time = self._apply_subs_value(pool.free_time, normalized_mapping)
+            pool.metadata = self._apply_subs_value(pool.metadata, normalized_mapping)
+
+        new_ir.metadata = self._apply_subs_value(new_ir.metadata, normalized_mapping)
+        return new_ir
+
+    @property
+    def free_symbols(self) -> set[Symbol]:
+        """收集 ScheduleIR 中所有 Expr 字段的自由符号."""
+        symbols: set[Symbol] = set()
+
+        for stage in self.stages.values():
+            for device in stage.devices.values():
+                for op in device.ops:
+                    symbols.update(self._collect_symbols(op.start))
+                    symbols.update(self._collect_symbols(op.duration))
+                    if op.op is not None:
+                        symbols.update(self._collect_symbols(op.op.flops))
+                        symbols.update(self._collect_symbols(op.op.memory_bytes))
+                        symbols.update(self._collect_symbols(op.op.comm_bytes))
+                        symbols.update(self._collect_symbols(op.op.attrs))
+
+        for pool in self.memory_pools:
+            symbols.update(self._collect_symbols(pool.size_bytes))
+            symbols.update(self._collect_symbols(pool.alloc_time))
+            symbols.update(self._collect_symbols(pool.free_time))
+            symbols.update(self._collect_symbols(pool.metadata))
+
+        symbols.update(self._collect_symbols(self.metadata))
+        return symbols
 
     def __repr__(self) -> str:
         return f"ScheduleIR(stages={len(self.stages)}, devices={self.num_devices}, ops={self.total_ops})"
