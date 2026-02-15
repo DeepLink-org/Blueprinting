@@ -11,11 +11,16 @@ PP 调度模式:
 - 1F1B: 一个 forward 后紧跟一个 backward（稳态时）
 - Interleaved 1F1B: 每个设备持有多个 stage
 - Zero Bubble: 将 BW 拆分为 W 和 B，最小化 bubble
+
+参数管理:
+- 使用 @hp.param("parallel") 从 hyperparameter scope 自动注入并行参数
 """
 
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+import hyperparameter as hp
 
 from ..types import OpNode, Phase, ScheduledOp, ScheduleIR
 from .base import Pass
@@ -61,6 +66,7 @@ class PipelineSchedulePass(Pass):
     输出: ScheduleIR (多个 micro-batch 交错后的 Op)
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         config: Optional[PipelineConfig] = None,

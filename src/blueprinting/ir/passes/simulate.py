@@ -11,10 +11,14 @@ SimulatePass 是纯观测者：遍历 TimelineIR 的事件流，统计各项指�
 4. 累加 FLOPs
 5. 计算 MFU (Model FLOPs Utilization)
 6. 生成时间分解
+
+参数管理:
+- 使用 @hp.param("system") 从 hyperparameter scope 自动注入硬件参数
 """
 
 from __future__ import annotations
 
+import hyperparameter as hp
 from sympy import Expr
 
 from ..result import MemoryBreakdown, TimeBreakdown
@@ -34,6 +38,7 @@ class SimulatePass(Pass):
     6. 生成时间分解
     """
 
+    @hp.param("system")
     def __init__(
         self,
         subs: dict[str, float] | None = None,

@@ -2,6 +2,8 @@
 
 import pytest
 
+import hyperparameter as hp
+
 from blueprinting.ir.compiler import Compiler
 from blueprinting.ir.passes import (
     ExpandPass,
@@ -62,17 +64,22 @@ class TestCompiler:
 
     def test_default_pipeline(self):
         """Test default pipeline creation."""
-        compiler = Compiler.default_pipeline(
-            tp=8,
-            pp=4,
-            dp=2,
-            subs={"B": 4},
-            training=True
-        )
+        with hp.scope(
+            system={"peak_tflops": 312, "memory_bandwidth": 2e12},
+            parallel={"tp": 8, "pp": 4, "dp": 2, "training": True,
+                      "memory_bandwidth": 2e12, "peak_flops": 312e12},
+        ):
+            compiler = Compiler.default_pipeline(
+                num_microbatches=4,
+                training=True,
+                dp=2,
+                subs={"B": 4},
+            )
 
-        # With pp=4 and training=True, we expect:
-        # ParallelPass, ExpandPass, SchedulePass, OptimizerPass, PipelineSchedulePass, TimelinePass, SimulatePass
-        assert len(compiler.passes) >= 6
+        # With training=True and num_microbatches=4, we expect:
+        # ParallelPass, ExpandPass, SchedulePass, OptimizerPass, PipelineSchedulePass,
+        # SymbolicEstimatePass, TimelinePass, OverlapAnalysisPass, SimulatePass
+        assert len(compiler.passes) >= 8
         assert isinstance(compiler.passes[0], ParallelPass)
         assert isinstance(compiler.passes[1], ExpandPass)
         assert isinstance(compiler.passes[2], SchedulePass)

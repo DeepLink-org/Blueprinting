@@ -6,10 +6,15 @@
 3. 更新 metadata (tp, pp, dp)
 
 不修改 workload 计算（由 SchedulePass 负责）。
+
+参数管理:
+- 使用 @hp.param("parallel") 从 hyperparameter scope 自动注入并行参数
 """
 
 import re
 from typing import Optional
+
+import hyperparameter as hp
 
 from ..types import BlockNode, GraphIR
 from .base import Pass
@@ -28,6 +33,7 @@ class ParallelPass(Pass):
     - 插入通信 Op（由 ExpandPass 根据 shard 策略处理）
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         tp: int = 1,

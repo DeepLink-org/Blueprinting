@@ -7,7 +7,7 @@ import contextlib
 
 from blueprinting.core import SymMax, SymMin, eval_lazy, sym_max, sym_min
 
-from .compiler import Compiler
+from .compiler import Compiler, compile_inference, compile_model
 from .dsl import build_transformer_model
 from .estimate import SymbolicEstimate
 from .perf_database import (

@@ -19,7 +19,7 @@ from calculon import System
 from calculon.llm import Llm
 
 # 从 ir_pipeline 导入构建函数
-from pages.LLM_Calc.ir_pipeline import build_transformer_graph, create_compiler
+from pages.LLM_Calc.ir_pipeline import build_transformer_graph, create_compiler, extract_scope_params
 
 
 # ============================================================================
@@ -293,9 +293,13 @@ with st.expander("🧪 IR vs Calculon 路径对比", expanded=True):
             execution_cfg = cfg["execution"]
 
         with st.spinner("运行 IR 编译器..."):
-            graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
-            pipeline = create_compiler(execution_cfg, system_cfg, model_cfg.get("seq_size", 2048))
-            ir_result = pipeline.run(graph)
+            micro_batch_size = execution_cfg.get("microbatch_size", 1)
+            graph = build_transformer_graph(model_cfg, model_name, micro_batch_size)
+            compiler, system_params, parallel_params = create_compiler(
+                execution_cfg, system_cfg, model_cfg.get("seq_size", 2048),
+            )
+            with hp.scope(system=system_params, parallel=parallel_params):
+                ir_result = compiler.compile(graph)
 
         with st.spinner("运行 Calculon..."):
             calc_stats = run_calculon(model_cfg, execution_cfg, system_cfg)

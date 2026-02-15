@@ -17,21 +17,7 @@ from blueprinting.ir import (
     SimulationResult,
 )
 from blueprinting.ir.dsl import Transformer
-from blueprinting.ir.passes import (
-    Pipeline,
-    ParallelPass,
-    ExpandPass,
-    SchedulePass,
-    OptimizerPass,
-    OptimizerConfig,
-    PipelineSchedulePass,
-    PipelineConfig,
-    PPScheduleMode,
-    SymbolicEstimatePass,
-    TimelinePass,
-    OverlapAnalysisPass,
-    SimulatePass,
-)
+from blueprinting.ir.compiler import Compiler
 from blueprinting import Model, Execution
 from calculon import System
 from calculon.llm import Llm
@@ -316,13 +302,15 @@ def normalize_calculon_stats(calc_stats: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], model_name: str) -> GraphIR:
+def build_transformer_graph(model: Dict[str, Any], model_name: str, micro_batch_size: int = 1) -> GraphIR:
     """使用新 DSL 构建 Transformer 模型的 GraphIR.
+    
+    只声明模型结构和形状参数，并行策略和训练配置由 Compiler Pass 通过 hp.scope 注入。
     
     Args:
         model: 模型配置字典
-        execution: 执行配置字典
         model_name: 模型名称
+        micro_batch_size: micro-batch 大小
     
     Returns:
         GraphIR
@@ -333,16 +321,9 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     head_dim = model["attn_size"]
     num_layers = model["num_blocks"]
     seq_len = model.get("seq_size", 2048)
-    micro_batch_size = execution["microbatch_size"]
-    tp = execution["tensor_par"]
-    pp = execution.get("pipeline_par", 1)
-    dp = execution.get("data_par", 1)
-    batch_seq = micro_batch_size * seq_len
-    gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
-    optimizer_sharding = execution.get("optimizer_sharding", False)
 
     with Transformer(model_name) as m:
-        # 元数据
+        # 模型结构元数据（不含并行/训练配置，由 Pass 注入）
         m.metadata(
             model_name=model_name,
             num_layers=num_layers,
@@ -352,12 +333,6 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
             head_dim=head_dim,
             batch_size=micro_batch_size,
             seq_len=seq_len,
-            tp=tp,
-            pp=pp,
-            dp=dp,
-            batch_seq=batch_seq,
-            gradient_checkpointing=gradient_checkpointing,
-            optimizer_sharding=optimizer_sharding,
         )
         
         # Transformer layers
@@ -393,95 +368,84 @@ def build_transformer_graph(model: Dict[str, Any], execution: Dict[str, Any], mo
     return m.build()
 
 
-def create_compiler(execution: Dict[str, Any], system_cfg: Dict[str, Any], seq_len: int) -> Pipeline:
-    """创建 IR 编译流水线（使用新架构）.
+def extract_scope_params(
+    execution_cfg: Dict[str, Any],
+    system_cfg: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """从执行配置和系统配置中提取 hp.scope 参数.
+    
+    Returns:
+        (system_params, parallel_params) tuple
+    """
+    # 从系统配置 JSON 解析硬件参数
+    peak_tflops = system_cfg.get("matrix", {}).get("float16", {}).get("tflops", 1000)
+    memory_bandwidth = system_cfg.get("mem1", {}).get("GBps", 3072) * 1e9  # GB/s → B/s
+    network = system_cfg.get("networks", [{}])[0]
+    network_bw = network.get("bandwidth", 450)          # GB/s
+    network_eff = network.get("efficiency", 0.65)
+    network_lat = network.get("latency", 10e-6)         # seconds
+
+    system_params = {
+        "peak_tflops": peak_tflops,
+        "memory_bandwidth": memory_bandwidth,
+        "network_bandwidth": network_bw * 1e9 * network_eff,
+        "network_efficiency": network_eff,
+        "network_latency": network_lat,
+        "compute_efficiency": 0.95,
+        "processing_mode": system_cfg.get("processing_mode", "no_overlap"),
+        "all_reduce_offset": 1.0,
+    }
+
+    # 从执行配置提取并行策略
+    tp = execution_cfg.get("tensor_par", 1)
+    pp = execution_cfg.get("pipeline_par", 1)
+    dp = execution_cfg.get("data_par", 1)
+    gradient_checkpointing = execution_cfg.get("activation_recompute", "none") != "none"
+
+    parallel_params = {
+        "tp": tp,
+        "pp": pp,
+        "dp": dp,
+        "tp_comm_type": execution_cfg.get("tensor_par_comm_type", "ar"),
+        "training": True,
+        "gradient_checkpointing": gradient_checkpointing,
+    }
+
+    return system_params, parallel_params
+
+
+def create_compiler(
+    execution_cfg: Dict[str, Any],
+    system_cfg: Dict[str, Any],
+    seq_len: int,
+) -> tuple[Compiler, Dict[str, Any], Dict[str, Any]]:
+    """创建 IR 编译器（使用新架构）.
+    
+    返回 (compiler, system_params, parallel_params)。
+    调用方需将编译和执行包裹在 hp.scope 中。
     
     配置与 gpt175b_compile.py 对齐，确保结果一致性。
     """
-    tp = execution["tensor_par"]
-    pp = execution["pipeline_par"]
-    dp = execution["data_par"]
-    batch_size = execution["batch_size"]
-    micro_batch_size = execution["microbatch_size"]
-    gradient_checkpointing = execution.get("activation_recompute", "none") != "none"
-    num_microbatches = batch_size // (micro_batch_size * dp)
+    system_params, parallel_params = extract_scope_params(execution_cfg, system_cfg)
 
-    # 从系统配置中提取硬件参数
-    peak_tflops = system_cfg.get("peak_processing", {}).get("float16_TFLOP", 1000)
-    memory_bandwidth = system_cfg.get("mem1_bw_GBps", 3072) * 1e9  # Convert to bytes/s
-    # 网络带宽: 使用 Calculon 对齐的效率 0.65
-    network_bandwidth = system_cfg.get("net1_bw_Gbps", 450) * 1e9 * 0.65  # 450 GB/s × 0.65 效率
+    tp = execution_cfg.get("tensor_par", 1)
+    pp = execution_cfg.get("pipeline_par", 1)
+    dp = execution_cfg.get("data_par", 1)
+    batch_size = execution_cfg.get("batch_size", 1)
+    micro_batch_size = execution_cfg.get("microbatch_size", 1)
+    gradient_checkpointing = execution_cfg.get("activation_recompute", "none") != "none"
+    num_microbatches = batch_size // (micro_batch_size * dp) if micro_batch_size * dp > 0 else 1
 
-    # 构建新的编译流水线
-    passes = []
-
-    # 1. ParallelPass: 标记并行策略
-    passes.append(ParallelPass(
-        tp=tp, pp=pp, dp=dp,
-        tp_comm_type=execution.get("tensor_par_comm_type", "ar"),
-        sequence_parallel=execution.get("sequence_par", False),
-    ))
-
-    # 2. ExpandPass: Block → Op
-    passes.append(ExpandPass())
-
-    # 3. SchedulePass: 计算 workload + timing
-    # 参数与 Calculon H100 配置对齐
-    passes.append(SchedulePass(
-        peak_tflops=peak_tflops,
-        memory_bandwidth=memory_bandwidth,
-        network_bandwidth=network_bandwidth,
-        network_efficiency=0.65,  # NVLink 效率 (与 Calculon H100 配置对齐)
-        network_latency=10e-6,  # 10µs 延迟
-        compute_efficiency=0.95,  # 95% 计算效率
-        processing_mode="no_overlap",  # 处理模式 (与 Calculon 对齐)
-        all_reduce_offset=1.0,  # AllReduce 通信偏移量 (Calculon 模型)
-    ))
-
-    # 4. OptimizerPass: 追加反向 Op（训练时）
-    # 配置与 gpt175b_compile.py 对齐: ZeRO Stage 1
-    recompute_mode = "full" if gradient_checkpointing else "none"
-    passes.append(OptimizerPass(
-        optimizer_config=OptimizerConfig(
-            optimizer_type="adam",
-            master_weights=True,
+    with hp.scope(system=system_params, parallel=parallel_params):
+        compiler = Compiler.default_pipeline(
+            num_microbatches=num_microbatches,
+            training=True,
             gradient_checkpointing=gradient_checkpointing,
-            recompute_mode=recompute_mode,
-            zero_stage=1,  # 启用 ZeRO Stage 1: optimizer states 分片到 DP ranks
-            dp=dp,  # DP 度数，用于 ZeRO 分片计算
-        ),
-        training=True,
-        memory_bandwidth=memory_bandwidth,
-        peak_flops=peak_tflops * 1e12,
-    ))
+            dp=dp,
+            subs={"batch_seq": micro_batch_size * seq_len},
+        )
 
-    # 5. PipelineSchedulePass: PP 调度（PP>1 时）
-    if pp > 1:
-        passes.append(PipelineSchedulePass(
-            PipelineConfig(
-                num_stages=pp,
-                num_microbatches=num_microbatches,
-                mode=PPScheduleMode.ONE_F_ONE_B,
-            )
-        ))
-
-    # 6. SymbolicEstimatePass: 符号化聚合估算（透明 Pass）
-    passes.append(SymbolicEstimatePass())
-
-    # 7. TimelinePass: Op → Event
-    passes.append(TimelinePass(track_memory=True))
-
-    # 8. OverlapAnalysisPass: 重叠分析
-    passes.append(OverlapAnalysisPass())
-
-    # 9. SimulatePass: 评估
-    subs = {"batch_seq": micro_batch_size * seq_len}
-    passes.append(SimulatePass(
-        subs=subs,
-        peak_tflops=peak_tflops,
-    ))
-
-    return Pipeline(passes)
+    return compiler, system_params, parallel_params
 
 
 def run_calculon(model_cfg: Dict[str, Any], execution_cfg: Dict[str, Any], system_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -584,17 +548,20 @@ def snapshot_ir(
 
 def run_ir_pipeline_with_snapshots(
     graph: GraphIR,
-    pipeline: Pipeline,
+    compiler: Compiler,
     max_rows: int = 120,
     timeline_device: int = 0,
     timeline_single_device: bool = True,
 ) -> Dict[str, Any]:
-    """运行 IR 编译流程并返回各 Pass 的快照。"""
+    """运行 IR 编译流程并返回各 Pass 的快照。
+    
+    注意: 调用方需确保 hp.scope 处于活跃状态。
+    """
     snapshots: List[Dict[str, Any]] = []
     snapshots.append(snapshot_ir("InputGraph", graph, max_rows=max_rows))
 
     current: Any = graph
-    for p in pipeline.passes:
+    for p in compiler.passes:
         current = p.run(current)
         snapshots.append(
             snapshot_ir(
@@ -605,6 +572,11 @@ def run_ir_pipeline_with_snapshots(
                 timeline_single_device=timeline_single_device,
             )
         )
+
+    # 确保返回 SimulationResult
+    if isinstance(current, TimelineIR):
+        from blueprinting.ir.passes import SimulatePass
+        current = SimulatePass().run(current)
 
     return {"final": current, "snapshots": snapshots}
 
@@ -656,17 +628,21 @@ if run_btn:
         execution_cfg = cfg["execution"]
 
     with st.spinner("构建 GraphIR..."):
-        graph = build_transformer_graph(model_cfg, execution_cfg, model_name)
+        micro_batch_size = execution_cfg.get("microbatch_size", 1)
+        graph = build_transformer_graph(model_cfg, model_name, micro_batch_size)
 
     with st.spinner("运行 IR 编译流程..."):
-        pipeline = create_compiler(execution_cfg, system_cfg, model_cfg.get("seq_size", 2048))
-        pipeline_result = run_ir_pipeline_with_snapshots(
-            graph,
-            pipeline,
-            max_rows=max_rows,
-            timeline_device=int(timeline_device),
-            timeline_single_device=timeline_single_device,
+        compiler, system_params, parallel_params = create_compiler(
+            execution_cfg, system_cfg, model_cfg.get("seq_size", 2048),
         )
+        with hp.scope(system=system_params, parallel=parallel_params):
+            pipeline_result = run_ir_pipeline_with_snapshots(
+                graph,
+                compiler,
+                max_rows=max_rows,
+                timeline_device=int(timeline_device),
+                timeline_single_device=timeline_single_device,
+            )
         ir_result = pipeline_result["final"]
         snapshots = pipeline_result["snapshots"]
 

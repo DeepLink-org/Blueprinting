@@ -27,6 +27,7 @@ from typing import Dict, Any, Optional
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+import hyperparameter as hp
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -34,32 +35,15 @@ from rich.text import Text
 from rich import box
 
 # 新架构导入
-from blueprinting.ir.dsl import Transformer, Model
+from blueprinting.ir.dsl import Transformer
 from blueprinting.ir.types import GraphIR
-from blueprinting.ir.passes import (
-    Pipeline,
-    PrintGraphPass,
-    ExpandPass,
-    SchedulePass,
-    ParallelPass,
-    OptimizerPass,
-    OptimizerConfig,
-    PipelineSchedulePass,
-    PipelineConfig,
-    PPScheduleMode,
-    TimelinePass,
-    OverlapAnalysisPass,
-    SimulatePass,
-    SymbolicEstimatePass,
-    PrintSchedulePass,
-)
+from blueprinting.ir.compiler import Compiler
 
 # Calculon 对比 (可选)
 try:
     from blueprinting import Model as CalcModel, Execution
     from calculon import System
     from calculon.llm import Llm
-    import hyperparameter as hp
     HAS_CALCULON = True
 except ImportError:
     HAS_CALCULON = False
@@ -429,13 +413,10 @@ def build_transformer_graph(
     num_layers: int,
     seq_len: int,
     batch_size: int,
-    tp: int = 1,
-    pp: int = 1,
-    dp: int = 1,
-    gradient_checkpointing: bool = False,
-    optimizer_sharding: bool = False,
 ) -> GraphIR:
     """使用新 DSL 构建 Transformer 模型的 GraphIR.
+    
+    只声明模型结构和形状参数，并行策略和训练配置由 Compiler Pass 处理。
     
     Args:
         model_name: 模型名称
@@ -445,18 +426,13 @@ def build_transformer_graph(
         head_dim: 每个头的维度
         num_layers: Transformer 层数
         seq_len: 序列长度
-        batch_size: batch 大小 (micro-batch)
-        tp: Tensor Parallelism 度数
-        pp: Pipeline Parallelism 度数
-        dp: Data Parallelism 度数
+        batch_size: micro-batch 大小
     
     Returns:
         GraphIR
     """
-    batch_seq = batch_size * seq_len
-    
     with Transformer(model_name) as m:
-        # 元数据
+        # 模型结构元数据（不含并行/训练配置，由 Pass 注入）
         m.metadata(
             model_name=model_name,
             num_layers=num_layers,
@@ -466,12 +442,6 @@ def build_transformer_graph(
             head_dim=head_dim,
             batch_size=batch_size,
             seq_len=seq_len,
-            tp=tp,
-            pp=pp,
-            dp=dp,
-            batch_seq=batch_seq,
-            gradient_checkpointing=gradient_checkpointing,
-            optimizer_sharding=optimizer_sharding,
         )
         
         # Transformer layers
@@ -509,119 +479,6 @@ def build_transformer_graph(
 
 
 # ============================================================================
-# 编译流水线 (新架构)
-# ============================================================================
-
-def create_compiler(
-    tp: int = 1,
-    pp: int = 1,
-    dp: int = 1,
-    num_microbatches: int = 1,
-    training: bool = True,
-    gradient_checkpointing: bool = False,
-    peak_tflops: float = 1000.0,  # H100 FP16 峰值
-    memory_bandwidth: float = 3.35e12,  # H100 内存带宽 3.35 TB/s
-    network_bandwidth: float = 450e9 * 0.65,  # NVLink 450 GB/s × 0.65 效率 (与 Calculon 对齐)
-    processing_mode: str = "no_overlap",  # 处理模式: "roofline" 或 "no_overlap"
-    debug: bool = False,
-) -> Pipeline:
-    """创建新架构的编译流水线.
-    
-    Args:
-        tp: Tensor Parallelism 度数
-        pp: Pipeline Parallelism 度数
-        dp: Data Parallelism 度数
-        num_microbatches: micro-batch 数量
-        training: 是否训练模式
-        gradient_checkpointing: 是否启用梯度检查点
-        peak_tflops: 硬件峰值算力 (TFLOPS)
-        memory_bandwidth: 内存带宽 (bytes/s)
-        network_bandwidth: 网络带宽 (bytes/s)
-        debug: 是否打印调试信息
-    
-    Returns:
-        Pipeline
-    """
-    passes = []
-    
-    # 调试: 打印 Graph IR
-    if debug:
-        passes.append(PrintGraphPass("Graph IR"))
-    
-    # 1. ParallelPass: 标记并行策略
-    passes.append(ParallelPass(
-        tp=tp,
-        pp=pp,
-        dp=dp,
-        tp_comm_type="ar",  # AllReduce
-    ))
-    
-    # 2. ExpandPass: Block → Op
-    passes.append(ExpandPass())
-    
-    # 3. SchedulePass: 计算 workload + timing
-    # 参数与 Calculon H100 配置对齐:
-    # - network_efficiency: 0.65 (NVLink 效率)
-    # - all_reduce_offset: 1.0 (AllReduce 双向通信偏移)
-    passes.append(SchedulePass(
-        peak_tflops=peak_tflops,
-        memory_bandwidth=memory_bandwidth,
-        network_bandwidth=network_bandwidth,
-        network_efficiency=0.65,  # NVLink 效率 (与 Calculon H100 配置对齐)
-        network_latency=10e-6,  # 10µs 延迟
-        compute_efficiency=0.95,  # 95% 计算效率
-        processing_mode=processing_mode,  # 处理模式 (与 Calculon 对齐)
-        all_reduce_offset=1.0,  # AllReduce 通信偏移量 (Calculon 模型)
-    ))
-    
-    # 调试: 打印 Schedule IR
-    if debug:
-        passes.append(PrintSchedulePass("Schedule IR (after SchedulePass)"))
-    
-    # 4. OptimizerPass: 追加反向 Op (训练模式)
-    if training:
-        passes.append(OptimizerPass(
-            optimizer_config=OptimizerConfig(
-                optimizer_type="adam",
-                master_weights=True,
-                gradient_checkpointing=gradient_checkpointing,
-                recompute_mode="full" if gradient_checkpointing else "none",
-                zero_stage=1,  # 启用 ZeRO Stage 1: optimizer states 分片到 DP ranks
-                dp=dp,  # DP 度数，用于 ZeRO 分片计算
-            ),
-            training=True,
-            memory_bandwidth=memory_bandwidth,
-            peak_flops=peak_tflops * 1e12,
-        ))
-    
-    # 5. PipelineSchedulePass: PP 调度 (PP > 1 时)
-    if pp > 1 and num_microbatches > 1:
-        passes.append(PipelineSchedulePass(
-            config=PipelineConfig(
-                mode=PPScheduleMode.ONE_F_ONE_B,
-                num_microbatches=num_microbatches,
-                num_stages=pp,
-            ),
-        ))
-    
-    # 6. SymbolicEstimatePass: 符号化聚合估算（透明 Pass）
-    passes.append(SymbolicEstimatePass())
-    
-    # 7. TimelinePass: Op → Event
-    passes.append(TimelinePass(track_memory=True))
-    
-    # 8. OverlapAnalysisPass: 重叠分析
-    passes.append(OverlapAnalysisPass())
-    
-    # 9. SimulatePass: 最终评估（纯观测，不区分训练/推理）
-    passes.append(SimulatePass(
-        peak_tflops=peak_tflops,
-    ))
-    
-    return Pipeline(passes)
-
-
-# ============================================================================
 # Calculon 对比
 # ============================================================================
 
@@ -634,7 +491,6 @@ def run_calculon(
     if not HAS_CALCULON:
         console.print("  [yellow]跳过[/yellow]: Calculon 未安装")
         return None
-    
     
     try:
         with hp.scope(app=model_cfg, exe=execution_cfg) as ps:
@@ -1052,7 +908,6 @@ def main():
     micro_batch_size = execution_cfg.get("microbatch_size", 4)
     num_microbatches = batch_size // (micro_batch_size * dp)
     gradient_checkpointing = execution_cfg.get("activation_recompute", "none") != "none"
-    optimizer_sharding = execution_cfg.get("optimizer_sharding", False)
     
     # 调整 PP 以匹配层数
     if num_layers % pp != 0:
@@ -1092,11 +947,6 @@ def main():
         num_layers=num_layers,
         seq_len=seq_len,
         batch_size=micro_batch_size,
-        tp=tp,
-        pp=pp,
-        dp=dp,
-        gradient_checkpointing=gradient_checkpointing,
-        optimizer_sharding=optimizer_sharding,
     )
     console.print(f"  结构: {graph}")
     console.print(f"  Block 总数: {graph.count_blocks()}")
@@ -1108,27 +958,49 @@ def main():
     
     # 2. 编译 (新架构)
     console.print("\n[bold cyan]▶ 编译 (新架构 Pipeline)[/bold cyan]")
-    
-    # 系统参数
-    peak_tflops = system_cfg.get("peak_tflops", 1000)
-    memory_bandwidth = system_cfg.get("memory_bandwidth_gbps", 3072) * 1e9
-    
-    pipeline = create_compiler(
-        tp=tp,
-        pp=pp,
-        dp=dp,
-        num_microbatches=num_microbatches,
-        training=True,
-        gradient_checkpointing=gradient_checkpointing,
-        peak_tflops=peak_tflops,
-        memory_bandwidth=memory_bandwidth,
-        debug=args.debug,
-    )
-    
-    console.print(f"  Pipeline: {pipeline}")
-    
-    result = pipeline.run(graph)
-    console.print("  [green]✓[/green] 完成")
+
+    # 从系统配置 JSON 解析硬件参数 → hp.scope(system=...)
+    peak_tflops = system_cfg.get("matrix", {}).get("float16", {}).get("tflops", 1000)
+    memory_bandwidth = system_cfg.get("mem1", {}).get("GBps", 3072) * 1e9  # GB/s → B/s
+    network = system_cfg.get("networks", [{}])[0]
+    network_bw = network.get("bandwidth", 450)          # GB/s
+    network_eff = network.get("efficiency", 0.65)
+    network_lat = network.get("latency", 10e-6)         # seconds
+
+    system_params = {
+        "peak_tflops": peak_tflops,
+        "memory_bandwidth": memory_bandwidth,
+        "network_bandwidth": network_bw * 1e9 * network_eff,
+        "network_efficiency": network_eff,
+        "network_latency": network_lat,
+        "compute_efficiency": 0.95,
+        "processing_mode": system_cfg.get("processing_mode", "no_overlap"),
+        "all_reduce_offset": 1.0,
+    }
+
+    # 并行参数 → hp.scope(parallel=...)
+    parallel_params = {
+        "tp": tp,
+        "pp": pp,
+        "dp": dp,
+        "tp_comm_type": "ar",
+        "training": True,
+        "gradient_checkpointing": gradient_checkpointing,
+    }
+
+    with hp.scope(system=system_params, parallel=parallel_params):
+        compiler = Compiler.default_pipeline(
+            num_microbatches=num_microbatches,
+            training=True,
+            gradient_checkpointing=gradient_checkpointing,
+            dp=dp,
+            debug=args.debug,
+        )
+
+        console.print(f"  Compiler: {compiler}")
+
+        result = compiler.compile(graph)
+        console.print("  [green]✓[/green] 完成")
     
     # 打印结果摘要
     console.print(f"\n  E2E Time: {result.e2e_time*1e3:.2f} ms")

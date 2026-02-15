@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import hyperparameter as hp
+
 from ..estimate import SymbolicEstimate
 from ..types import Phase, ScheduleIR
 from .base import Pass
@@ -83,7 +85,8 @@ class SymbolicEstimatePass(Pass):
         pp = metadata.get("pp", 1)
         num_microbatches = metadata.get("num_microbatches", 1)
         dtype_bytes = metadata.get("dtype_bytes", 2)
-        gradient_checkpointing = metadata.get("gradient_checkpointing", False)
+        scope = hp.scope.current()
+        gradient_checkpointing = scope.parallel.gradient_checkpointing | metadata.get("gradient_checkpointing", False)
         num_layers = metadata.get("num_layers", 1)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
 

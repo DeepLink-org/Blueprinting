@@ -10,6 +10,10 @@
 - Context (Prefill): 一次性处理所有输入 token，全量注意力
 - Generation (Decode): 逐 token 生成，使用 KV-cache，memory-bandwidth bound
 
+参数管理:
+- InferenceParallelPass / InferenceExpandPass: @hp.param("parallel")
+- InferenceSchedulePass: @hp.param("parallel")
+
 IR Pipeline (推理):
     GraphIR (Block)
          │
@@ -36,6 +40,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
+import hyperparameter as hp
 from sympy import Expr
 
 from blueprinting.core import SymMax
@@ -186,6 +191,7 @@ class InferenceParallelPass(Pass):
     - 更新 metadata (mode, phase, tp, pp)
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         tp: int = 1,
@@ -728,6 +734,7 @@ class InferenceExpandPass(Pass):
     输出: ScheduleIR (Op 级别，无 workload 和 timing)
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         phase: str = "context",
@@ -827,6 +834,7 @@ class InferenceSchedulePass(Pass):
     输出: ScheduleIR (有 workload 和 timing)
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         # 硬件参数

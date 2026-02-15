@@ -3,6 +3,12 @@
 The Compiler combines multiple passes into a compilation pipeline,
 transforming hierarchical GraphIR through various stages to produce a SimulationResult.
 
+参数管理:
+- 各 Pass 通过 @hp.param 从 hp.scope() 自动注入参数
+- system namespace: 硬件参数 (peak_tflops, memory_bandwidth, ...)
+- parallel namespace: 并行策略 (tp, pp, dp, training, ...)
+- 便捷函数 compile_model() / compile_inference() 自动设置 hp.scope
+
 IR Pipeline (训练):
     GraphIR (Block)
          │
@@ -20,7 +26,11 @@ IR Pipeline (训练):
          │
          ↓ PipelineSchedulePass (PP 调度，PP>1 时)
          │
+         ↓ SymbolicEstimatePass (符号化估算)
+         │
          ↓ TimelinePass (Op → Event)
+         │
+         ↓ OverlapAnalysisPass (重叠分析)
          │
     TimelineIR (Event)
          │
@@ -52,6 +62,8 @@ IR Pipeline (推理):
 
 from typing import Any, Dict, List, Optional
 
+import hyperparameter as hp
+
 from .passes.base import Pass
 from .passes.expand import ExpandPass
 from .passes.inference import (
@@ -60,13 +72,15 @@ from .passes.inference import (
     InferenceSchedulePass,
     QuantConfig,
 )
-from .perf_database import PerfDatabase
 from .passes.optimizer import OptimizerConfig, OptimizerPass
+from .passes.overlap import OverlapAnalysisPass
 from .passes.parallel import ParallelPass
-from .passes.pipeline import PipelineSchedulePass
+from .passes.pipeline import PipelineConfig, PipelineSchedulePass, PPScheduleMode
 from .passes.schedule import SchedulePass
 from .passes.simulate import SimulatePass
+from .passes.symbolic_estimate import SymbolicEstimatePass
 from .passes.timeline import TimelinePass
+from .perf_database import PerfDatabase
 from .result import SimulationResult
 from .types import GraphIR, ScheduleIR, TimelineIR
 
@@ -78,36 +92,34 @@ class Compiler:
     a hierarchical GraphIR into a SimulationResult. Each pass adds
     or transforms information in the IR.
 
-    Example:
-        # Build a graph
-        graph = build_transformer_model(num_layers=32, hidden=4096, ...)
+    使用方式:
 
-        # Create compiler with passes
-        compiler = (Compiler()
-            .add_pass(ParallelPass(tp=8, pp=4, dp=2))
-            .add_pass(ExpandPass())
-            .add_pass(SchedulePass(system_config))
-            .add_pass(OptimizerPass(OptimizerConfig()))  # 训练时
-            .add_pass(PipelineSchedulePass())  # PP>1 时
-            .add_pass(TimelinePass())
-            .add_pass(SimulatePass(subs={...})))
-
-        # Compile
+    1. 手动组装 (完全控制):
+        compiler = Compiler()
+        compiler.add_pass(ParallelPass())
+        compiler.add_pass(ExpandPass())
+        ...
         result = compiler.compile(graph)
-        print(f"Peak memory: {result.peak_memory / 1e9:.2f} GB")
-        print(f"E2E time: {result.e2e_time * 1e3:.2f} ms")
+
+    2. 工厂方法 + hp.scope (推荐):
+        with hp.scope(
+            system={"peak_tflops": 1000, "memory_bandwidth": 3.35e12},
+            parallel={"tp": 4, "pp": 48, "dp": 12},
+        ):
+            compiler = Compiler.default_pipeline(num_microbatches=64)
+            result = compiler.compile(graph)
+
+    3. 便捷函数 (最简):
+        result = compile_model(graph, tp=4, pp=48, dp=12,
+                               system_config={...})
     """
 
-    def __init__(
-        self, system_config: Optional[Dict[str, Any]] = None, debug: bool = False
-    ):
+    def __init__(self, debug: bool = False):
         """Initialize Compiler.
 
         Args:
-            system_config: Optional system configuration to use for scheduling
             debug: If True, print IR snapshot after each pass
         """
-        self.system_config = system_config or {}
         self.passes: List[Pass] = []
         self.debug = debug
 
@@ -157,7 +169,6 @@ class Compiler:
         name = getattr(p, "name", p.__class__.__name__)
 
         if isinstance(ir, GraphIR):
-            # Use the hierarchical repr
             print(f"[IR] {name}: {ir}")
         elif isinstance(ir, ScheduleIR):
             print(f"[IR] {name}: {ir}")
@@ -179,76 +190,93 @@ class Compiler:
 
     @staticmethod
     def default_pipeline(
-        tp: int = 1,
-        pp: int = 1,
+        num_microbatches: int = 1,
+        training: bool = True,
+        gradient_checkpointing: bool = False,
         dp: int = 1,
         subs: Optional[Dict] = None,
-        system_config: Optional[Dict] = None,
-        training: bool = True,
         debug: bool = False,
     ) -> "Compiler":
-        """Create a compiler with a default pass pipeline.
+        """Create a compiler with a default training pass pipeline.
+
+        系统参数和并行参数通过 hp.scope() 自动注入到各 Pass，
+        不需要显式传递硬件配置。
+
+        使用示例:
+            with hp.scope(
+                system={"peak_tflops": 1000, "memory_bandwidth": 3.35e12},
+                parallel={"tp": 4, "pp": 48, "dp": 12},
+            ):
+                compiler = Compiler.default_pipeline(
+                    num_microbatches=64,
+                    training=True,
+                    gradient_checkpointing=True,
+                    dp=12,
+                )
+                result = compiler.compile(graph)
 
         Args:
-            tp: Tensor parallelism degree
-            pp: Pipeline parallelism degree
-            dp: Data parallelism degree
-            subs: Symbol substitutions
-            system_config: System configuration
-            training: Whether this is a training workload
-            debug: Print IR snapshot after each pass
+            num_microbatches: micro-batch 数量
+            training: 是否训练模式
+            gradient_checkpointing: 是否启用梯度检查点
+            dp: Data Parallelism 度数 (用于 OptimizerConfig ZeRO 分片)
+            subs: 符号替换字典 (e.g., {"B": 4, "S": 2048})
+            debug: 是否打印调试信息
 
         Returns:
             Configured Compiler
         """
-        system_config = system_config or {
-            "peak_tflops": 312,  # A100
-            "memory_bandwidth_gbps": 2000,
-            "network_bandwidth_gbps": 400,
-            "memory_capacity_gb": 80,
-        }
+        compiler = Compiler(debug=debug)
 
-        peak_tflops = system_config.get("peak_tflops", 312)
-        memory_bandwidth = (
-            system_config.get("memory_bandwidth_gbps", 2000) * 1e9
-        )  # Convert to bytes/s
-        network_bandwidth = (
-            system_config.get("network_bandwidth_gbps", 400) * 1e9
-        )  # Convert to bits/s
+        # ParallelPass: tp, pp, dp from hp.scope(parallel=...)
+        compiler.add_pass(ParallelPass())
 
-        compiler = (
-            Compiler(system_config, debug=debug)
-            .add_pass(ParallelPass(tp=tp, pp=pp, dp=dp))
-            .add_pass(ExpandPass())
-            .add_pass(
-                SchedulePass(
-                    peak_tflops=peak_tflops,
-                    memory_bandwidth=memory_bandwidth,
-                    network_bandwidth=network_bandwidth,
-                )
-            )
-        )
+        # ExpandPass: Block → Op
+        compiler.add_pass(ExpandPass())
 
+        # SchedulePass: peak_tflops, memory_bandwidth etc from hp.scope(system=...)
+        compiler.add_pass(SchedulePass())
+
+        # OptimizerPass: training, memory_bandwidth, peak_flops from hp.scope(parallel=...)
         if training:
-            compiler.add_pass(OptimizerPass(OptimizerConfig(dp=dp)))
+            compiler.add_pass(OptimizerPass(
+                optimizer_config=OptimizerConfig(
+                    optimizer_type="adam",
+                    master_weights=True,
+                    gradient_checkpointing=gradient_checkpointing,
+                    recompute_mode="full" if gradient_checkpointing else "none",
+                    zero_stage=1,
+                    dp=dp,
+                ),
+            ))
 
-        if pp > 1:
-            compiler.add_pass(PipelineSchedulePass())
+        # PipelineSchedulePass: p2p params from hp.scope(parallel=...)
+        if num_microbatches > 1:
+            compiler.add_pass(PipelineSchedulePass(
+                config=PipelineConfig(
+                    mode=PPScheduleMode.ONE_F_ONE_B,
+                    num_microbatches=num_microbatches,
+                ),
+            ))
 
-        compiler.add_pass(TimelinePass())
-        compiler.add_pass(
-            SimulatePass(subs=subs, peak_tflops=peak_tflops)
-        )
+        # SymbolicEstimatePass: 符号化聚合估算
+        compiler.add_pass(SymbolicEstimatePass())
+
+        # TimelinePass: Op → Event (含内存追踪)
+        compiler.add_pass(TimelinePass(track_memory=True))
+
+        # OverlapAnalysisPass: 重叠分析
+        compiler.add_pass(OverlapAnalysisPass())
+
+        # SimulatePass: peak_tflops from hp.scope(system=...)
+        compiler.add_pass(SimulatePass(subs=subs))
 
         return compiler
 
     @staticmethod
     def inference_pipeline(
-        tp: int = 1,
-        pp: int = 1,
         phase: str = "context",
         subs: Optional[Dict] = None,
-        system_config: Optional[Dict] = None,
         quant_config: Optional["QuantConfig"] = None,
         perf_db: Optional["PerfDatabase"] = None,
         debug: bool = False,
@@ -259,63 +287,48 @@ class Compiler:
             InferenceParallelPass → InferenceExpandPass → InferenceSchedulePass
             → TimelinePass → SimulatePass
 
-        与训练管道的区别:
-        - 使用推理专用的 Parallel/Expand/Schedule Pass
-        - 无 OptimizerPass (推理不需要反向传播)
-        - 无 PipelineSchedulePass (推理不需要 micro-batch 交错调度)
-        - InferenceSchedulePass 生成 memory_pools（含权重/激活/KV cache）
-        - TimelinePass/SimulatePass 完全复用，不感知训练/推理
-        - 支持量化配置 (QuantConfig)
-        - 支持性能数据库 (PerfDatabase) 查表
+        系统参数和并行参数通过 hp.scope() 自动注入。
+
+        使用示例:
+            with hp.scope(
+                system={"peak_tflops": 1000, "memory_bandwidth": 3.35e12},
+                parallel={"tp": 8, "pp": 1, "phase": "generation"},
+            ):
+                compiler = Compiler.inference_pipeline(
+                    phase="generation",
+                    quant_config=QuantConfig.fp8(),
+                )
+                result = compiler.compile(graph)
 
         Args:
-            tp: Tensor parallelism degree
-            pp: Pipeline parallelism degree
-            phase: Inference phase ("context" for prefill, "generation" for decode)
-            subs: Symbol substitutions
-            system_config: System configuration
-            quant_config: Quantization configuration (default: fp16)
-            perf_db: PerfDatabase instance for table-driven performance estimation.
-                     When provided, GEMM and communication ops use measured data,
-                     with roofline fallback for other ops or when table lookup fails.
-            debug: Print IR snapshot after each pass
+            phase: 推理阶段 ("context" for prefill, "generation" for decode)
+            subs: 符号替换字典
+            quant_config: 量化配置 (默认 fp16)
+            perf_db: PerfDatabase 实例 (可选, 用于查表估算)
+            debug: 是否打印调试信息
 
         Returns:
             Configured Compiler
         """
-        system_config = system_config or {
-            "peak_tflops": 312,
-            "memory_bandwidth_gbps": 2000,
-            "network_bandwidth_gbps": 400,
-            "memory_capacity_gb": 80,
-        }
+        compiler = Compiler(debug=debug)
 
-        peak_tflops = system_config.get("peak_tflops", 312)
-        memory_bandwidth = (
-            system_config.get("memory_bandwidth_gbps", 2000) * 1e9
-        )
-        network_bandwidth = (
-            system_config.get("network_bandwidth_gbps", 400) * 1e9
-        )
+        # InferenceParallelPass: tp, pp, phase from hp.scope(parallel=...)
+        compiler.add_pass(InferenceParallelPass(phase=phase))
 
-        compiler = (
-            Compiler(system_config, debug=debug)
-            .add_pass(InferenceParallelPass(tp=tp, pp=pp, phase=phase))
-            .add_pass(InferenceExpandPass(phase=phase))
-            .add_pass(
-                InferenceSchedulePass(
-                    peak_tflops=peak_tflops,
-                    memory_bandwidth=memory_bandwidth,
-                    network_bandwidth=network_bandwidth,
-                    quant_config=quant_config,
-                    perf_db=perf_db,
-                )
-            )
-            .add_pass(TimelinePass(track_memory=True))
-            .add_pass(
-                SimulatePass(subs=subs, peak_tflops=peak_tflops)
-            )
-        )
+        # InferenceExpandPass: phase from hp.scope(parallel=...)
+        compiler.add_pass(InferenceExpandPass(phase=phase))
+
+        # InferenceSchedulePass: hardware params from hp.scope(parallel=...)
+        compiler.add_pass(InferenceSchedulePass(
+            quant_config=quant_config,
+            perf_db=perf_db,
+        ))
+
+        # TimelinePass: Op → Event (含内存追踪)
+        compiler.add_pass(TimelinePass(track_memory=True))
+
+        # SimulatePass: peak_tflops from hp.scope(system=...)
+        compiler.add_pass(SimulatePass(subs=subs))
 
         return compiler
 
@@ -324,11 +337,65 @@ class Compiler:
         return f"Compiler([{', '.join(pass_names)}])"
 
 
+def _build_scope_params(
+    system_config: Optional[Dict[str, Any]] = None,
+    tp: int = 1,
+    pp: int = 1,
+    dp: int = 1,
+    training: bool = True,
+    gradient_checkpointing: bool = False,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """从 system_config 和并行参数构建 hp.scope 所需的 system/parallel 字典.
+
+    Args:
+        system_config: 系统配置 (包含 peak_tflops, memory_bandwidth_gbps 等)
+        tp: Tensor Parallelism 度数
+        pp: Pipeline Parallelism 度数
+        dp: Data Parallelism 度数
+        training: 是否训练模式
+        gradient_checkpointing: 是否启用梯度检查点
+
+    Returns:
+        (system_params, parallel_params) tuple
+    """
+    system_config = system_config or {
+        "peak_tflops": 312,  # A100
+        "memory_bandwidth_gbps": 2000,
+        "network_bandwidth_gbps": 400,
+    }
+
+    peak_tflops = system_config.get("peak_tflops", 312)
+    memory_bandwidth = system_config.get("memory_bandwidth_gbps", 2000) * 1e9
+    network_bandwidth = system_config.get("network_bandwidth_gbps", 400) * 1e9
+
+    system_params = {
+        "peak_tflops": peak_tflops,
+        "memory_bandwidth": memory_bandwidth,
+        "network_bandwidth": network_bandwidth,
+        "network_efficiency": system_config.get("network_efficiency", 0.65),
+        "network_latency": system_config.get("network_latency", 10e-6),
+        "compute_efficiency": system_config.get("compute_efficiency", 0.95),
+        "processing_mode": system_config.get("processing_mode", "roofline"),
+        "all_reduce_offset": system_config.get("all_reduce_offset", 1.0),
+    }
+
+    parallel_params = {
+        "tp": tp,
+        "pp": pp,
+        "dp": dp,
+        "training": training,
+        "gradient_checkpointing": gradient_checkpointing,
+    }
+
+    return system_params, parallel_params
+
+
 def compile_model(
     graph: GraphIR,
     tp: int = 1,
     pp: int = 1,
     dp: int = 1,
+    num_microbatches: int = 1,
     batch_size: int = 1,
     seq_len: int = 2048,
     hidden: int = 4096,
@@ -336,15 +403,20 @@ def compile_model(
     num_layers: int = 32,
     system_config: Optional[Dict] = None,
     training: bool = True,
+    gradient_checkpointing: bool = False,
     debug: bool = False,
 ) -> SimulationResult:
     """Convenience function to compile a model graph.
+
+    自动设置 hp.scope 并创建 Compiler pipeline。
+    适合一行代码完成编译的场景。
 
     Args:
         graph: GraphIR to compile
         tp: Tensor parallelism degree
         pp: Pipeline parallelism degree
         dp: Data parallelism degree
+        num_microbatches: micro-batch 数量
         batch_size: Batch size
         seq_len: Sequence length
         hidden: Hidden dimension
@@ -352,6 +424,7 @@ def compile_model(
         num_layers: Number of transformer layers
         system_config: System configuration
         training: Whether this is a training workload
+        gradient_checkpointing: 是否启用梯度检查点
         debug: Print IR snapshot after each pass
 
     Returns:
@@ -372,17 +445,21 @@ def compile_model(
         "num_layers": num_layers,
     }
 
-    compiler = Compiler.default_pipeline(
-        tp=tp,
-        pp=pp,
-        dp=dp,
-        subs=subs,
-        system_config=system_config,
-        training=training,
-        debug=debug,
+    system_params, parallel_params = _build_scope_params(
+        system_config=system_config, tp=tp, pp=pp, dp=dp,
+        training=training, gradient_checkpointing=gradient_checkpointing,
     )
 
-    return compiler.compile(graph)
+    with hp.scope(system=system_params, parallel=parallel_params):
+        compiler = Compiler.default_pipeline(
+            num_microbatches=num_microbatches,
+            training=training,
+            gradient_checkpointing=gradient_checkpointing,
+            dp=dp,
+            subs=subs,
+            debug=debug,
+        )
+        return compiler.compile(graph)
 
 
 def compile_inference(
@@ -405,8 +482,7 @@ def compile_inference(
 ) -> SimulationResult:
     """Convenience function to compile a model graph for inference.
 
-    推理编译的便捷函数，类似 compile_model 但面向推理场景。
-    自动设置推理阶段 (context/generation) 的相关参数。
+    推理编译的便捷函数。自动设置 hp.scope 并创建推理 Compiler pipeline。
 
     Example:
         # FP8 量化推理 (roofline 模型)
@@ -467,15 +543,18 @@ def compile_inference(
         "kv_len": kv_len,
     }
 
-    compiler = Compiler.inference_pipeline(
-        tp=tp,
-        pp=pp,
-        phase=phase,
-        subs=subs,
-        system_config=system_config,
-        quant_config=quant_config,
-        perf_db=perf_db,
-        debug=debug,
+    system_params, parallel_params = _build_scope_params(
+        system_config=system_config, tp=tp, pp=pp, dp=1, training=False,
     )
+    # 推理阶段写入 parallel 空间
+    parallel_params["phase"] = phase
 
-    return compiler.compile(graph)
+    with hp.scope(system=system_params, parallel=parallel_params):
+        compiler = Compiler.inference_pipeline(
+            phase=phase,
+            subs=subs,
+            quant_config=quant_config,
+            perf_db=perf_db,
+            debug=debug,
+        )
+        return compiler.compile(graph)

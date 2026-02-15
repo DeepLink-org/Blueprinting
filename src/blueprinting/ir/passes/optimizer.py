@@ -6,10 +6,15 @@
 3. 处理 gradient checkpointing (recompute)
 
 只在训练模式下工作，推理模式跳过。
+
+参数管理:
+- 使用 @hp.param("parallel") 从 hyperparameter scope 自动注入并行参数
 """
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+import hyperparameter as hp
 
 from ..types import MemoryPool, OpNode, Phase, ScheduledOp, ScheduleIR
 from .base import Pass
@@ -140,28 +145,31 @@ class OptimizerPass(Pass):
 
     输入: ScheduleIR (只有前向 Op)
     输出: ScheduleIR (前向 + 反向 + 优化器 Op)
+
+    系统感知:
+    - 硬件参数 (memory_bandwidth, peak_tflops) 从 hp.scope(system=...) 自动读取
+    - 不需要在 parallel namespace 中重复声明硬件参数
     """
 
+    @hp.param("parallel")
     def __init__(
         self,
         optimizer_config: Optional[OptimizerConfig] = None,
         training: bool = True,
-        # 硬件参数
-        memory_bandwidth: float = 2.0e12,  # 2 TB/s
-        peak_flops: float = 312e12,  # 312 TFLOPS
     ):
         """初始化 OptimizerPass.
 
         Args:
             optimizer_config: 优化器配置
             training: 是否训练模式（推理模式跳过）
-            memory_bandwidth: 内存带宽 (bytes/s)
-            peak_flops: 峰值算力 (FLOPS)
         """
         self.config = optimizer_config or OptimizerConfig()
         self.training = training
-        self.memory_bandwidth = memory_bandwidth
-        self.peak_flops = peak_flops
+
+        # 硬件参数: 从 system namespace 感知，不在 parallel 中重复声明
+        system = hp.scope.current()
+        self.memory_bandwidth = system.system.memory_bandwidth | 2.0e12
+        self.peak_flops = (system.system.peak_tflops | 312) * 1e12
 
     def run(self, ir: ScheduleIR) -> ScheduleIR:
         """执行优化器 Pass."""

@@ -9,10 +9,18 @@
 职责分离:
 - ExpandPass: 纯展开，生成 Op 结构
 - SchedulePass: 计算 workload、duration、设备分配
+
+参数管理:
+- 使用 @hp.param("system") 从 hyperparameter scope 自动注入硬件参数
+- 支持三种使用方式:
+  1. hp.scope 自动注入:  with hp.scope(system={...}): SchedulePass()
+  2. 显式传参 (优先):    SchedulePass(peak_tflops=1000)
+  3. 默认值兜底:         SchedulePass()  # 使用 A100 默认值
 """
 
 from typing import Dict, Union
 
+import hyperparameter as hp
 from sympy import Expr
 
 from blueprinting.core import SymMax
@@ -39,8 +47,14 @@ class SchedulePass(Pass):
 
     输入: ScheduleIR (无 workload 和 timing)
     输出: ScheduleIR (有 workload 和 timing)
+
+    参数注入 (via @hp.param("system")):
+        with hp.scope(system={"peak_tflops": 1000, "memory_bandwidth": 3.35e12}):
+            pass_ = SchedulePass()  # 自动从 scope 读取
+        pass_ = SchedulePass(peak_tflops=500)  # 显式传参优先
     """
 
+    @hp.param("system")
     def __init__(
         self,
         # 硬件参数
@@ -53,8 +67,6 @@ class SchedulePass(Pass):
         # 数据类型
         dtype_bytes: int = 2,  # float16
         # 通信模型参数 (与 Calculon 对齐)
-        # all_reduce_offset: Calculon 使用 offset=1 表示双向通信
-        # 公式: comm_size_effective = comm_size * (1 + offset/num_peers)
         all_reduce_offset: float = 1.0,
         # 处理模式: "roofline" (max(compute, memory)) 或 "no_overlap" (compute + memory)
         processing_mode: str = "roofline",
@@ -70,6 +82,7 @@ class SchedulePass(Pass):
             compute_efficiency: 计算效率 (0-1，默认 0.95)
             dtype_bytes: 数据类型字节数
             all_reduce_offset: AllReduce 通信偏移量 (Calculon 模型，默认 1.0)
+            processing_mode: "roofline" (max(compute, memory)) 或 "no_overlap" (compute + memory)
         """
         self.peak_tflops = peak_tflops
         self.peak_flops = peak_tflops * 1e12 * compute_efficiency  # 应用效率
@@ -166,7 +179,10 @@ class SchedulePass(Pass):
         pp = metadata.get("pp", 1)
         num_layers = metadata.get("num_layers", 1)
         layers_per_stage = num_layers // pp if pp > 0 else num_layers
-        gradient_checkpointing = metadata.get("gradient_checkpointing", False)
+
+        # 从 hp.scope parallel namespace 感知 gradient_checkpointing
+        scope = hp.scope.current()
+        gradient_checkpointing = scope.parallel.gradient_checkpointing | metadata.get("gradient_checkpointing", False)
 
         # 从首层 Op 推导单层激活
         layer_ops: dict[int, list] = {}
