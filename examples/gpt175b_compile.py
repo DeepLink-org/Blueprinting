@@ -28,6 +28,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import hyperparameter as hp
+from sympy import Symbol
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -38,6 +39,7 @@ from rich import box
 from blueprinting.ir.dsl import Transformer
 from blueprinting.ir.types import GraphIR
 from blueprinting.ir.compiler import Compiler
+from blueprinting.core.symbolic import eval_lazy
 
 # Calculon 对比 (可选)
 try:
@@ -111,6 +113,32 @@ def format_num(n: float) -> str:
     if n >= 1e9: return f"{n/1e9:.2f}B"
     if n >= 1e6: return f"{n/1e6:.2f}M"
     return f"{n:.0f}"
+
+
+def parse_bind(bind_str: str) -> Dict[str, float]:
+    """解析 --bind 'k1=v1,k2=v2'."""
+    if not bind_str:
+        return {}
+    out: Dict[str, float] = {}
+    for item in bind_str.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"非法绑定参数: {item} (应为 key=value)")
+        key, value = item.split("=", 1)
+        out[key.strip()] = float(value.strip())
+    return out
+
+
+def parse_int_list(s: str) -> list[int]:
+    """解析 '4,8,16' -> [4, 8, 16]."""
+    return [int(x.strip()) for x in s.split(",") if x.strip()]
+
+
+def cli_has_flag(flag: str) -> bool:
+    """判断某命令行参数是否被显式传入."""
+    return flag in sys.argv
 
 
 def pct_diff(a: float, b: float) -> float:
@@ -705,24 +733,22 @@ def compare_results(
 # 符号化估算对比
 # ============================================================================
 
-def _eval_to_float(value: Any) -> float:
+def _eval_to_float(value: Any, subs: Optional[Dict[str, float]] = None) -> float:
     """将表达式求值为 float（支持惰性表达式）."""
     if isinstance(value, (int, float)):
         return float(value)
-    # 惰性表达式
-    if hasattr(value, 'eval'):
-        try:
-            return float(value.eval({}))
-        except (TypeError, ValueError):
-            return 0.0
-    # SymPy Expr
+
+    evaluated = eval_lazy(value, subs or {})
+    if isinstance(evaluated, (int, float)):
+        return float(evaluated)
+
     try:
-        return float(value)
+        return float(evaluated)
     except (TypeError, ValueError):
         return 0.0
 
 
-def show_symbolic_estimate(result):
+def show_symbolic_estimate(result, subs: Optional[Dict[str, float]] = None):
     """展示符号化估算分析结果，并与 Timeline 精确结果对比."""
     est = result.estimate
     if not est:
@@ -752,8 +778,8 @@ def show_symbolic_estimate(result):
         ("Bubble", est.bubble_time, ir_total_tb.bubble if ir_total_tb else 0),
     ]
     for name, est_val, tl_val in time_rows:
-        est_f = _eval_to_float(est_val)
-        tl_f = _eval_to_float(tl_val)
+        est_f = _eval_to_float(est_val, subs=subs)
+        tl_f = _eval_to_float(tl_val, subs=subs)
         cmp_table.add_row(
             name,
             format_time(est_f),
@@ -762,7 +788,7 @@ def show_symbolic_estimate(result):
         )
 
     # E2E 总计
-    est_e2e = _eval_to_float(est.e2e_time)
+    est_e2e = _eval_to_float(est.e2e_time, subs=subs)
     cmp_table.add_row(
         "E2E 总计",
         format_time(est_e2e),
@@ -793,8 +819,8 @@ def show_symbolic_estimate(result):
         ("优化器", est.optimizer_memory, ir_mb.optimizer_states if ir_mb else 0),
     ]
     for name, est_val, tl_val in mem_rows:
-        est_f = _eval_to_float(est_val)
-        tl_f = _eval_to_float(tl_val)
+        est_f = _eval_to_float(est_val, subs=subs)
+        tl_f = _eval_to_float(tl_val, subs=subs)
         mem_table.add_row(
             name,
             format_bytes(est_f),
@@ -802,7 +828,7 @@ def show_symbolic_estimate(result):
             format_diff(est_f, tl_f) if tl_f else "-",
         )
 
-    est_peak = _eval_to_float(est.peak_memory)
+    est_peak = _eval_to_float(est.peak_memory, subs=subs)
     mem_table.add_row(
         "峰值合计",
         format_bytes(est_peak),
@@ -814,7 +840,7 @@ def show_symbolic_estimate(result):
     console.print(mem_table)
 
     # === 瓶颈分析 ===
-    bn = est.bottleneck()
+    bn = est.bottleneck(subs=subs)
 
     bn_table = Table(
         title="瓶颈分析 (时间)",
@@ -859,7 +885,7 @@ def show_symbolic_estimate(result):
         console.print(
             f"\n  [dim]校准后 overlap_ratio = {calibrated.overlap_ratio:.3f}[/dim]"
         )
-        cal_e2e = _eval_to_float(calibrated.e2e_time)
+        cal_e2e = _eval_to_float(calibrated.e2e_time, subs=subs)
         console.print(
             f"  [dim]校准后 e2e_time = {format_time(cal_e2e)} "
             f"(Timeline: {format_time(result.e2e_time)}, "
@@ -883,6 +909,25 @@ def main():
     parser.add_argument("--debug", action="store_true", help="打印调试信息")
     parser.add_argument("--skip-calculon", action="store_true", help="跳过 Calculon 对比")
     parser.add_argument("--trace", type=str, default=None, help="输出 Chrome Trace JSON 文件路径")
+    parser.add_argument(
+        "--mode",
+        choices=["one-shot", "progressive"],
+        default="progressive",
+        help="编译模式: one-shot=一次性编译; progressive=Program 多次坍缩/多目的投影",
+    )
+    parser.add_argument(
+        "--bind",
+        type=str,
+        default="",
+        help="progressive 模式下先执行一次 Program.bind，格式: k1=v1,k2=v2",
+    )
+    parser.add_argument(
+        "--scan",
+        action="store_true",
+        help="progressive 模式下执行 estimate.sweep 扫描（若存在自由符号）",
+    )
+    parser.add_argument("--scan-batch", type=str, default=None, help="扫描 batch 列表（指定后自动保留 batch 为自由符号）")
+    parser.add_argument("--scan-seq", type=str, default=None, help="扫描 seq 列表（指定后自动保留 seq 为自由符号）")
     parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
     args = parser.parse_args()
     
@@ -936,9 +981,19 @@ def main():
         border_style="blue"
     ))
     
+    # progressive 模式下：命令行显式指定扫描维度时，自动保留对应自由符号
+    keep_batch_symbol = args.mode == "progressive" and cli_has_flag("--scan-batch")
+    keep_seq_symbol = args.mode == "progressive" and cli_has_flag("--scan-seq")
+    symbolic_micro_batch = (
+        Symbol("batch", positive=True, integer=True) if keep_batch_symbol else micro_batch_size
+    )
+    symbolic_seq = Symbol("seq", positive=True, integer=True) if keep_seq_symbol else seq_len
+
     # 1. 构建图 (使用新 DSL)
+    # 主仿真轨道：始终用具体值，保证与 Calculon 可比
+    # 搜索轨道：按 CLI 显式参数保留自由符号
     console.print("\n[bold cyan]▶ 构建计算图 (新 DSL)[/bold cyan]")
-    graph = build_transformer_graph(
+    graph_main = build_transformer_graph(
         model_name=model_name,
         hidden=hidden,
         feedforward=feedforward,
@@ -948,13 +1003,23 @@ def main():
         seq_len=seq_len,
         batch_size=micro_batch_size,
     )
-    console.print(f"  结构: {graph}")
-    console.print(f"  Block 总数: {graph.count_blocks()}")
+    graph_scan = build_transformer_graph(
+        model_name=model_name,
+        hidden=hidden,
+        feedforward=feedforward,
+        num_heads=num_heads,
+        head_dim=head_dim,
+        num_layers=num_layers,
+        seq_len=symbolic_seq,
+        batch_size=symbolic_micro_batch,
+    )
+    console.print(f"  结构: {graph_main}")
+    console.print(f"  Block 总数: {graph_main.count_blocks()}")
     
     if args.verbose:
         console.print()
         from blueprinting.ir.dsl import print_graph
-        print_graph(graph)
+        print_graph(graph_main)
     
     # 2. 编译 (新架构)
     console.print("\n[bold cyan]▶ 编译 (新架构 Pipeline)[/bold cyan]")
@@ -988,19 +1053,107 @@ def main():
         "gradient_checkpointing": gradient_checkpointing,
     }
 
+    estimate_subs: Dict[str, float] = {}
     with hp.scope(system=system_params, parallel=parallel_params):
-        compiler = Compiler.default_pipeline(
+        # 主仿真轨道（用于最终指标与 Calculon 对比，配置不变）
+        compiler_main = Compiler.default_pipeline(
             num_microbatches=num_microbatches,
             training=True,
             gradient_checkpointing=gradient_checkpointing,
             dp=dp,
             debug=args.debug,
         )
+        console.print(f"  Compiler(main): {compiler_main}")
+        result = compiler_main.compile(graph_main)
+        console.print("  [green]✓[/green] 主仿真轨道完成（用于对比）")
 
-        console.print(f"  Compiler: {compiler}")
+        if args.mode == "one-shot":
+            console.print("  [green]✓[/green] one-shot 编译完成")
+        else:
+            effective_num_microbatches = num_microbatches
+            if (keep_batch_symbol or keep_seq_symbol) and pp > 1 and num_microbatches > 1:
+                # 搜索轨道降级，不影响主仿真结果
+                effective_num_microbatches = 1
+                console.print(
+                    "  [yellow]提示[/yellow]: 搜索轨道检测到符号化扫描 + PP 调度，"
+                    "自动将 num_microbatches 设为 1（仅影响搜索轨道，不影响主对比结果）。"
+                )
 
-        result = compiler.compile(graph)
-        console.print("  [green]✓[/green] 完成")
+            compiler_scan = Compiler.default_pipeline(
+                num_microbatches=effective_num_microbatches,
+                training=True,
+                gradient_checkpointing=gradient_checkpointing,
+                dp=dp,
+                debug=args.debug,
+            )
+            console.print(f"  Compiler(scan): {compiler_scan}")
+
+            program = compiler_scan.compile_to_program(graph_scan)
+            symbols = sorted(sym.name for sym in program.free_symbols)
+            symbol_desc = ", ".join(symbols) if symbols else "(none)"
+            console.print(f"  Program free symbols: [cyan]{symbol_desc}[/cyan]")
+
+            bind_params = parse_bind(args.bind)
+            if bind_params:
+                program = program.bind(**bind_params)
+                after_symbols = sorted(sym.name for sym in program.free_symbols)
+                after_desc = ", ".join(after_symbols) if after_symbols else "(none)"
+                console.print(
+                    f"  bind({bind_params}) 后 free symbols: [cyan]{after_desc}[/cyan]"
+                )
+
+            # 目的 A: 仿真
+            simulate_subs = {}
+            if keep_batch_symbol:
+                simulate_subs["batch"] = micro_batch_size
+            if keep_seq_symbol:
+                simulate_subs["seq"] = seq_len
+            # 若用户显式 --bind 同名键，以 --bind 为准
+            simulate_subs.update(bind_params)
+            scan_result = program.simulate(**simulate_subs)
+            estimate_subs = simulate_subs.copy()
+            console.print(
+                f"  [green]✓[/green] progressive simulate 完成（搜索轨道 e2e={format_time(scan_result.e2e_time)}）"
+            )
+
+            # 目的 B: 规划/瓶颈分析（仅展示接口）
+            if program.estimate is not None:
+                bn = program.estimate.bottleneck(subs=simulate_subs)
+                top_time = bn.get("time", [])
+                if top_time:
+                    name, val, frac = top_time[0]
+                    console.print(
+                        f"  规划视角(top bottleneck): [magenta]{name}[/magenta] "
+                        f"{format_time(val)} ({frac:.1%})"
+                    )
+
+            # 目的 C: 快速扫描（若符号可扫描）
+            if args.scan and program.estimate is not None:
+                est = program.estimate
+                if program.free_symbols:
+                    scan_batch = parse_int_list(args.scan_batch or "4,8,16,32")
+                    scan_seq = parse_int_list(args.scan_seq or "1024,2048,4096")
+                    sweep_kwargs: Dict[str, list[int]] = {}
+                    if keep_batch_symbol:
+                        sweep_kwargs["batch"] = scan_batch
+                    if keep_seq_symbol:
+                        sweep_kwargs["seq"] = scan_seq
+                    if not sweep_kwargs:
+                        console.print(
+                            "  [yellow]sweep 跳过[/yellow]: 未通过命令行显式指定扫描维度 "
+                            "(请传 --scan-batch 和/或 --scan-seq)"
+                        )
+                    else:
+                        console.print(f"  执行 sweep: {sweep_kwargs}")
+                        try:
+                            sweep_results = est.sweep(**sweep_kwargs)
+                            console.print(
+                                f"  [green]✓[/green] sweep 完成，共 {len(sweep_results)} 个点"
+                            )
+                        except Exception as e:
+                            console.print(f"  [yellow]sweep 跳过[/yellow]: {e}")
+                else:
+                    console.print("  [yellow]sweep 跳过[/yellow]: 当前 Program 无自由符号")
     
     # 打印结果摘要
     console.print(f"\n  E2E Time: {result.e2e_time*1e3:.2f} ms")
@@ -1031,7 +1184,7 @@ def main():
     # 5. 符号化估算分析
     console.print()
     console.rule("[bold]符号化估算分析 (Estimate vs Timeline)[/bold]", style="blue")
-    show_symbolic_estimate(result)
+    show_symbolic_estimate(result, subs=estimate_subs)
     
     console.print()
     console.rule("[green]完成[/green]", style="green")

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import hyperparameter as hp
 
+from ...core.symbolic import sym_max
 from ..types import OpNode, Phase, ScheduledOp, ScheduleIR
 from .base import Pass
 
@@ -136,7 +137,9 @@ class PipelineSchedulePass(Pass):
         # 添加优化器等其他 Op（在最后）
         # 每个 stage 的 optimizer 在该 stage 的 backward 完成后执行
         if scheduled_ops:
-            final_time = max(op.start + op.duration for op in scheduled_ops)
+            final_time = 0
+            for op in scheduled_ops:
+                final_time = sym_max(final_time, op.start + op.duration)
         else:
             final_time = 0
 
@@ -231,7 +234,7 @@ class PipelineSchedulePass(Pass):
             for stage in range(pp):
                 # 等待前一个 stage 完成 + P2P 通信时间
                 if stage > 0:
-                    stage_time[stage] = max(
+                    stage_time[stage] = sym_max(
                         stage_time[stage], stage_time[stage - 1] + 2 * p2p_time
                     )
 
@@ -265,7 +268,7 @@ class PipelineSchedulePass(Pass):
             for stage in reversed(range(pp)):
                 # 等待后一个 stage 完成 + P2P 通信时间
                 if stage < pp - 1:
-                    stage_time[stage] = max(
+                    stage_time[stage] = sym_max(
                         stage_time[stage], stage_time[stage + 1] + 2 * p2p_time
                     )
 
@@ -379,7 +382,7 @@ class PipelineSchedulePass(Pass):
                 # 等待上一个 stage 的 Forward 完成 + P2P 通信时间 (Send + Recv)
                 # 这样 Forward 计算在 P2P Recv 完成后才开始
                 prev_fw_complete = fw_complete_time.get((stage - 1, mb), 0)
-                start_time = max(start_time, prev_fw_complete + 2 * p2p_time_act)
+                start_time = sym_max(start_time, prev_fw_complete + 2 * p2p_time_act)
 
             # 调度 Forward ops
             current = start_time
@@ -438,13 +441,13 @@ class PipelineSchedulePass(Pass):
             # 2. 当前 stage 的 Forward 完成时间（数据依赖）
             # 3. 下一个 stage 发送的梯度到达时间（数据依赖）
             start_time = stage_current_time[stage]
-            start_time = max(start_time, fw_complete_time.get((stage, mb), 0))
+            start_time = sym_max(start_time, fw_complete_time.get((stage, mb), 0))
 
             if stage < pp - 1:
                 # 等待下一个 stage 的 Backward 完成 + P2P 通信时间 (Send + Recv)
                 # 这样 Backward 计算在 P2P Recv 完成后才开始
                 next_bw_complete = bw_complete_time.get((stage + 1, mb), 0)
-                start_time = max(start_time, next_bw_complete + 2 * p2p_time_grad)
+                start_time = sym_max(start_time, next_bw_complete + 2 * p2p_time_grad)
 
             # 调度 Backward ops
             current = start_time
@@ -652,13 +655,15 @@ class PipelineSchedulePass(Pass):
             return 0.0
 
         # 总时间
-        total_time = max(op.start + op.duration for op in scheduled_ops)
+        total_time = 0
+        for op in scheduled_ops:
+            total_time = sym_max(total_time, op.start + op.duration)
 
         # 有效计算时间 (假设完美调度下的最小时间)
         total_compute = sum(op.duration for op in scheduled_ops)
         ideal_time = total_compute / pp  # 完美并行
 
         # Bubble time
-        bubble = max(0.0, total_time - ideal_time)
+        bubble = sym_max(0.0, total_time - ideal_time)
 
         return bubble
