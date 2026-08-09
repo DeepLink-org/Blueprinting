@@ -86,7 +86,7 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/DeepLink-org/Blueprinting"
-Documentation = "https://github.com/DeepLink-org/Blueprinting/tree/main/docs"
+Documentation = "https://deeplink-org.github.io/Blueprinting/"
 Repository = "https://github.com/DeepLink-org/Blueprinting.git"
 Issues = "https://github.com/DeepLink-org/Blueprinting/issues"
 Changelog = "https://github.com/DeepLink-org/Blueprinting/releases"

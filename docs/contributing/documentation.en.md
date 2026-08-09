@@ -120,7 +120,7 @@ Before review, inspect both locale routes, page-to-page language switching, navi
 
 ## Continuous delivery
 
-`.github/workflows/docs.yml` runs the bilingual contract check and strict site build for documentation pull requests and `main`. Every successful run uploads the exact `site/` output as a versioned build artifact. Public hosting remains a repository-level deployment decision; do not add a second source tree or claim a public URL until that hosting path is enabled.
+`.github/workflows/docs.yml` runs the bilingual contract check and strict site build for documentation pull requests and `main`. Pull requests retain the exact `site/` output as a versioned preview artifact. Successful `main` runs package the same output as a GitHub Pages artifact and deploy it through the protected `github-pages` environment to [deeplink-org.github.io/Blueprinting](https://deeplink-org.github.io/Blueprinting/). The Markdown under `docs/` remains the only documentation source tree; deployment artifacts are generated, immutable outputs rather than another editable source.
 
 ## Review checklist
 

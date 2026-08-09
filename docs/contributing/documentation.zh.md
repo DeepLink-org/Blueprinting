@@ -120,7 +120,7 @@ BUILD_ONLY_LOCALE=zh uv run mkdocs serve
 
 ## 持续交付
 
-`.github/workflows/docs.yml` 会在文档 pull request 与 `main` 上运行双语 contract check 和 strict site build。每次成功运行都会把精确的 `site/` output 上传为带版本的 build artifact。公共托管仍是 repository-level deployment decision；在托管路径启用前，不要增加第二份 source tree，也不要声称已有 public URL。
+`.github/workflows/docs.yml` 会在文档 pull request 与 `main` 上运行双语 contract check 和 strict site build。Pull request 会把精确的 `site/` output 保留为带版本的 preview artifact；`main` 成功运行后，则会把同一份 output 打包为 GitHub Pages artifact，并通过受保护的 `github-pages` environment 部署到 [deeplink-org.github.io/Blueprinting](https://deeplink-org.github.io/Blueprinting/)。`docs/` 下的 Markdown 始终是唯一的文档 source tree；部署 artifact 是生成且不可变的 output，不是另一份可编辑 source。
 
 ## Review Checklist
 

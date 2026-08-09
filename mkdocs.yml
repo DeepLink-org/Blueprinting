@@ -1,5 +1,6 @@
 site_name: Blueprinting — Hardware Architecture Exploration
 site_description: Evidence-driven hardware architecture exploration and simulation for distributed AI workloads
+site_url: https://deeplink-org.github.io/Blueprinting/
 repo_url: https://github.com/DeepLink-org/Blueprinting
 repo_name: DeepLink-org/Blueprinting
 edit_uri: edit/main/docs/
