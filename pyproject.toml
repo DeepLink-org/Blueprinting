@@ -85,11 +85,11 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/reiase/blueprinting"
-Documentation = "https://github.com/reiase/blueprinting#readme"
-Repository = "https://github.com/reiase/blueprinting.git"
-Issues = "https://github.com/reiase/blueprinting/issues"
-Changelog = "https://github.com/reiase/blueprinting/releases"
+Homepage = "https://github.com/DeepLink-org/Blueprinting"
+Documentation = "https://github.com/DeepLink-org/Blueprinting/tree/main/docs"
+Repository = "https://github.com/DeepLink-org/Blueprinting.git"
+Issues = "https://github.com/DeepLink-org/Blueprinting/issues"
+Changelog = "https://github.com/DeepLink-org/Blueprinting/releases"
 
 [project.scripts]
 blueprinting = "blueprinting:__main__"

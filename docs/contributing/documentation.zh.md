@@ -18,10 +18,19 @@ docs/
 ├── experiments/                     reproducible validation reports
 ├── project/                         status, roadmap, decisions
 ├── contributing/                    maintenance guides
-└── assets/architecture/             shared SVG diagrams
+├── overrides/home.html              双语产品首页
+└── assets/
+    ├── architecture/                共享技术图
+    └── stylesheets/site.css         站点外壳与首页视觉系统
 ```
 
 顶层 narrative 从 hardware question、candidate blueprint、model、simulation 与 decision output 开始；形式化分析 reference page 再解释使这些比较可复现的 model、derivation、verification obligation 与 automated analysis；experiment page 报告 evidence；project page 区分当前状态与已接受的未来设计。
+
+## 首页与站点外壳
+
+首页使用一份 locale-aware Material override，而不是分别维护大段中英文 HTML。`index.{en,zh}.md` 保留可搜索的 Markdown orientation，并通过 front matter 选择 `home.html`；override 根据 active locale 渲染产品导航。共享样式位于 `assets/stylesheets/site.css`，为 landing page 与普通 reference page 提供克制、统一的 Blueprinting 视觉系统。
+
+Landing page 从硬件决策、探索闭环、证据阶梯、能力状态与读者路径开始，不得把产品重新叙述成通用 compiler、simulator 或 dashboard。首页上的产品 claim 必须服从[实现状态](../project/status.md)中的 capability matrix。
 
 ## 双语 Source Contract
 
@@ -93,12 +102,12 @@ Compiler 不得被描述为系统组件或顶层产品定义。产品方法是�
 安装并验证：
 
 ```bash
-uv sync --extra dev --extra docs
-uv run python scripts/check_docs_i18n.py
-uv run mkdocs build --strict
+uv sync --locked --no-dev --extra docs
+uv run --no-dev --extra docs python scripts/check_docs_i18n.py
+uv run --no-dev --extra docs mkdocs build --strict
 ```
 
-只构建文档的 CI 可以使用 `uv sync --extra docs`；同时运行形式化分析 test suite 的 contributor 应保留 `dev` extra，因为现有 Calculon test 会使用其中的 process-inspection dependency。
+同时运行形式化分析 test suite 的 contributor 可以去掉 `--no-dev`；default development dependency group 包含测试与 legacy workbench 依赖。
 
 只预览单一语言时：
 
@@ -108,6 +117,10 @@ BUILD_ONLY_LOCALE=zh uv run mkdocs serve
 ```
 
 评审前检查两个 locale route、逐页 language switching、navigation、search、table、code block 与 SVG rendering。`navigation.instant` 保持关闭，因为 i18n plugin 明确记录它与 language reconfiguration 不兼容。
+
+## 持续交付
+
+`.github/workflows/docs.yml` 会在文档 pull request 与 `main` 上运行双语 contract check 和 strict site build。每次成功运行都会把精确的 `site/` output 上传为带版本的 build artifact。公共托管仍是 repository-level deployment decision；在托管路径启用前，不要增加第二份 source tree，也不要声称已有 public URL。
 
 ## Review Checklist
 
@@ -119,5 +132,6 @@ BUILD_ONLY_LOCALE=zh uv run mkdocs serve
 - 可复现结果标明 command、input、revision 与 claim boundary。
 - Design change 映射到 source/test，或明确声明尚无实现。
 - `check_docs_i18n.py` 与 `mkdocs build --strict` 通过。
+- 首页与普通文档页在两种 color scheme 和窄屏下均保持可用。
 
 文档债务应像工程债务一样处理：明确 ownership boundary，增加能发现 regression 的 gate，并删除被取代 source，而不是维护有歧义的 duplicate。

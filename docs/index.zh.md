@@ -1,3 +1,11 @@
+---
+template: home.html
+title: Blueprinting — 硬件架构探索与仿真
+description: 面向分布式 AI 工作负载的证据驱动硬件架构探索与仿真系统。
+hide:
+  - toc
+---
+
 # Blueprinting
 
 Blueprinting 是一个面向分布式 AI 工作负载的证据驱动硬件架构探索与仿真系统。它把候选计算、存储、互连和系统设计转换为可比较的 simulation blueprint，帮助架构师在投入硬件实现前理解瓶颈与权衡。

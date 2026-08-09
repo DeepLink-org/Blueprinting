@@ -1,0 +1,312 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+  {{ super() }}
+
+  <main class="bp-home">
+    <section class="bp-hero" aria-labelledby="bp-hero-title">
+      <div class="bp-shell bp-hero__grid">
+        <div class="bp-hero__copy">
+          <p class="bp-eyebrow">
+            <span class="bp-eyebrow__mark" aria-hidden="true"></span>
+            {% if config.theme.language == "zh" %}
+              证据驱动的硬件架构探索
+            {% else %}
+              Evidence-driven hardware architecture exploration
+            {% endif %}
+          </p>
+
+          {% if config.theme.language == "zh" %}
+            <h1 id="bp-hero-title">在硬件存在之前，<span>先验证它为什么值得存在。</span></h1>
+            <p class="bp-hero__lead">
+              Blueprinting 把候选计算、存储、互连与系统组织变成可检查、可仿真、可比较的架构蓝图，
+              让架构决策建立在 workload truth、版本化 evidence 与明确 claim boundary 上。
+            </p>
+          {% else %}
+            <h1 id="bp-hero-title">Design the hardware <span>before it exists.</span></h1>
+            <p class="bp-hero__lead">
+              Blueprinting turns candidate compute, memory, interconnect, and system organizations into
+              inspectable, simulatable, and comparable architecture blueprints—grounded in workload truth,
+              versioned evidence, and explicit claim boundaries.
+            </p>
+          {% endif %}
+
+          <div class="bp-actions">
+            <a class="bp-button bp-button--primary" href="exploration/">
+              {% if config.theme.language == "zh" %}开始探索{% else %}Start exploring{% endif %}
+              <span aria-hidden="true">→</span>
+            </a>
+            <a class="bp-button bp-button--quiet" href="project/status/">
+              {% if config.theme.language == "zh" %}查看实现边界{% else %}See implementation status{% endif %}
+            </a>
+          </div>
+
+          <dl class="bp-hero__principles">
+            <div>
+              <dt>{% if config.theme.language == "zh" %}共同事实{% else %}Shared truth{% endif %}</dt>
+              <dd>{% if config.theme.language == "zh" %}每个候选使用同一份 workload semantics{% else %}One workload semantics for every candidate{% endif %}</dd>
+            </div>
+            <div>
+              <dt>{% if config.theme.language == "zh" %}迟绑定{% else %}Late binding{% endif %}</dt>
+              <dd>{% if config.theme.language == "zh" %}GPU、LPU 与未来架构保持可比较{% else %}GPU, LPU, and future targets stay comparable{% endif %}</dd>
+            </div>
+            <div>
+              <dt>{% if config.theme.language == "zh" %}可追溯{% else %}Traceable{% endif %}</dt>
+              <dd>{% if config.theme.language == "zh" %}结论总能回到 evidence 与 assumption{% else %}Every claim leads back to evidence and assumptions{% endif %}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="bp-hero__visual" aria-label="Architecture exploration blueprint">
+          <div class="bp-blueprint-card">
+            <div class="bp-blueprint-card__header">
+              <span class="bp-signal" aria-hidden="true"></span>
+              <span>EXPERIMENT / BP-042</span>
+              <span class="bp-blueprint-card__state">REPRODUCIBLE</span>
+            </div>
+            <div class="bp-blueprint-card__question">
+              <span>{% if config.theme.language == "zh" %}架构问题{% else %}Architecture question{% endif %}</span>
+              <strong>{% if config.theme.language == "zh" %}哪种内存与互连组合真正移动瓶颈？{% else %}Which memory and fabric choice actually moves the bottleneck?{% endif %}</strong>
+            </div>
+            <div class="bp-candidates">
+              <article class="bp-candidate bp-candidate--selected">
+                <div><span>A</span><b>64 × MXU</b></div>
+                <p>HBM 8.0 TB/s · Scale-up mesh</p>
+                <div class="bp-meter"><i style="--meter: 78%"></i></div>
+                <footer><span>2.8×</span><em>{% if config.theme.language == "zh" %}可行{% else %}feasible{% endif %}</em></footer>
+              </article>
+              <article class="bp-candidate">
+                <div><span>B</span><b>96 × MXU</b></div>
+                <p>HBM 5.2 TB/s · Ring fabric</p>
+                <div class="bp-meter"><i style="--meter: 43%"></i></div>
+                <footer><span>1.7×</span><em>{% if config.theme.language == "zh" %}带宽受限{% else %}bandwidth-bound{% endif %}</em></footer>
+              </article>
+            </div>
+            <div class="bp-blueprint-card__footer">
+              <span><i class="bp-dot bp-dot--cyan"></i> workload facts</span>
+              <span><i class="bp-dot bp-dot--amber"></i> evidence r17</span>
+              <span><i class="bp-dot bp-dot--green"></i> verified plan</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bp-section bp-section--workflow" aria-labelledby="bp-workflow-title">
+      <div class="bp-shell">
+        <header class="bp-section__header">
+          <p class="bp-kicker">01 / {% if config.theme.language == "zh" %}探索闭环{% else %}Exploration loop{% endif %}</p>
+          {% if config.theme.language == "zh" %}
+            <h2 id="bp-workflow-title">从架构问题，到可以承担决策的证据。</h2>
+            <p>不是把参数塞进公式，而是让每一次比较共享语义、约束、证据与验证边界。</p>
+          {% else %}
+            <h2 id="bp-workflow-title">From an architecture question to evidence that can carry a decision.</h2>
+            <p>Not parameters poured into a formula—every comparison shares semantics, constraints, evidence, and verification boundaries.</p>
+          {% endif %}
+        </header>
+
+        <ol class="bp-workflow">
+          <li>
+            <span>01</span>
+            <h3>{% if config.theme.language == "zh" %}定义问题{% else %}Frame{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}固定 workload suite、objective、constraint 与 uncertainty。{% else %}Fix the workload suite, objectives, constraints, and uncertainty.{% endif %}</p>
+          </li>
+          <li>
+            <span>02</span>
+            <h3>{% if config.theme.language == "zh" %}生成蓝图{% else %}Blueprint{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}描述 compute、memory、fabric 与 system candidate。{% else %}Describe compute, memory, fabric, and system candidates.{% endif %}</p>
+          </li>
+          <li>
+            <span>03</span>
+            <h3>{% if config.theme.language == "zh" %}构造映射{% else %}Map{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}推导合法 parallelism、placement、schedule 与 buffer plan。{% else %}Derive legal parallelism, placement, schedules, and buffer plans.{% endif %}</p>
+          </li>
+          <li>
+            <span>04</span>
+            <h3>{% if config.theme.language == "zh" %}仿真与校准{% else %}Simulate{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}按需要接入 analytical、network、hardware 与 measurement evidence。{% else %}Resolve analytical, network, hardware, and measured evidence as needed.{% endif %}</p>
+          </li>
+          <li>
+            <span>05</span>
+            <h3>{% if config.theme.language == "zh" %}形成决策{% else %}Decide{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}比较 bottleneck、sensitivity、uncertainty 与 Pareto frontier。{% else %}Compare bottlenecks, sensitivity, uncertainty, and Pareto frontiers.{% endif %}</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="bp-section" aria-labelledby="bp-capabilities-title">
+      <div class="bp-shell">
+        <header class="bp-section__header bp-section__header--split">
+          <div>
+            <p class="bp-kicker">02 / {% if config.theme.language == "zh" %}系统能力{% else %}System capabilities{% endif %}</p>
+            <h2 id="bp-capabilities-title">{% if config.theme.language == "zh" %}围绕硬件决策，而不是围绕某一种模拟器。{% else %}Organized around hardware decisions—not one simulator.{% endif %}</h2>
+          </div>
+          <p>{% if config.theme.language == "zh" %}早期模型可以粗，语义和 provenance 不能含糊；随着设计成熟，再提高 fidelity，而不推翻上游事实。{% else %}Early models may be coarse; semantics and provenance may not. Increase fidelity as the design matures without rewriting upstream facts.{% endif %}</p>
+        </header>
+
+        <div class="bp-capability-grid">
+          <article>
+            <div class="bp-capability-meta"><span>ARCH</span><small>PLANNED</small></div>
+            <h3>{% if config.theme.language == "zh" %}候选架构蓝图{% else %}Candidate blueprints{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}表达 engine、memory hierarchy、NoC、package、node 与 cluster 组织。{% else %}Represent engines, memory hierarchy, NoC, package, node, and cluster organization.{% endif %}</p>
+            <a href="exploration/design-space/">{% if config.theme.language == "zh" %}查看设计空间{% else %}Explore the design space{% endif %} →</a>
+          </article>
+          <article>
+            <div class="bp-capability-meta"><span>MAP</span><small>IMPLEMENTED SLICE</small></div>
+            <h3>{% if config.theme.language == "zh" %}工作负载与映射{% else %}Workload and mapping{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}守恒 operation、byte、message 与 dependency，再比较 sharding、recomputation 和 scheduling。{% else %}Conserve operations, bytes, messages, and dependencies while comparing sharding, recomputation, and scheduling.{% endif %}</p>
+            <a href="modeling/workload/">{% if config.theme.language == "zh" %}理解 workload model{% else %}Understand the workload model{% endif %} →</a>
+          </article>
+          <article>
+            <div class="bp-capability-meta"><span>SIM</span><small>PLANNED</small></div>
+            <h3>{% if config.theme.language == "zh" %}多 Fidelity 仿真{% else %}Multi-fidelity simulation{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}统一 analytical estimate、network simulation、hardware simulation 与未来 runtime replay。{% else %}Unify analytical estimates, network simulation, hardware simulation, and future runtime replay.{% endif %}</p>
+            <a href="design/performance/simulation/">{% if config.theme.language == "zh" %}查看仿真架构{% else %}See the simulation architecture{% endif %} →</a>
+          </article>
+          <article>
+            <div class="bp-capability-meta"><span>EVD</span><small>IMPLEMENTED SLICE</small></div>
+            <h3>{% if config.theme.language == "zh" %}性能证据与校准{% else %}Evidence and calibration{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}让每个 cost claim 引用版本化 provider、适用域、置信度与 observation。{% else %}Tie every cost claim to a versioned provider, applicability domain, confidence, and observations.{% endif %}</p>
+            <a href="design/performance/">{% if config.theme.language == "zh" %}阅读 evidence model{% else %}Read the evidence model{% endif %} →</a>
+          </article>
+          <article>
+            <div class="bp-capability-meta"><span>DEC</span><small>PLANNED</small></div>
+            <h3>{% if config.theme.language == "zh" %}解释型决策{% else %}Explainable decisions{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}输出 feasibility、bottleneck、utilization、sensitivity、uncertainty 与 Pareto comparison。{% else %}Produce feasibility, bottleneck, utilization, sensitivity, uncertainty, and Pareto comparisons.{% endif %}</p>
+            <a href="exploration/workflow/">{% if config.theme.language == "zh" %}沿探索工作流继续{% else %}Follow the exploration workflow{% endif %} →</a>
+          </article>
+          <article>
+            <div class="bp-capability-meta"><span>API</span><small>FOUNDATION</small></div>
+            <h3>{% if config.theme.language == "zh" %}Agent-ready 分析表面{% else %}Agent-ready analysis surface{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}稳定 identity、结构化 diagnostic 与可复现实验，使 Agent 能提出、运行并审计探索。{% else %}Stable identity, structured diagnostics, and reproducible experiments let agents propose, run, and audit explorations.{% endif %}</p>
+            <a href="design/modules/">{% if config.theme.language == "zh" %}查看模块边界{% else %}Inspect module boundaries{% endif %} →</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="bp-section bp-section--dark" aria-labelledby="bp-spine-title">
+      <div class="bp-shell bp-spine-layout">
+        <div class="bp-spine-copy">
+          <p class="bp-kicker">03 / {% if config.theme.language == "zh" %}形式化主干{% else %}Formal spine{% endif %}</p>
+          {% if config.theme.language == "zh" %}
+            <h2 id="bp-spine-title">一份 workload truth，逐层消解新的设计决策。</h2>
+            <p>Blueprinting 借用 typed IR、staged lowering 与 verifier，但它们服务的是架构建模、推导与验证，而不是把产品定义成编译器。</p>
+          {% else %}
+            <h2 id="bp-spine-title">One workload truth, progressively resolving new design decisions.</h2>
+            <p>Blueprinting borrows typed IRs, staged lowering, and verifiers to serve architecture modeling, derivation, and validation—not to redefine the product as a compiler.</p>
+          {% endif %}
+          <a class="bp-text-link" href="design/">{% if config.theme.language == "zh" %}进入形式化分析基础{% else %}Enter the formal analysis foundations{% endif %} →</a>
+        </div>
+
+        <ol class="bp-spine" aria-label="Canonical representation stack">
+          <li class="bp-spine__implemented"><span>01</span><div><strong>ModelIR</strong><small>{% if config.theme.language == "zh" %}模型语义与 dataflow{% else %}model semantics and dataflow{% endif %}</small></div><em>{% if config.theme.language == "zh" %}已贯通{% else %}live{% endif %}</em></li>
+          <li class="bp-spine__implemented"><span>02</span><div><strong>DistributedTaskIR</strong><small>{% if config.theme.language == "zh" %}逻辑 mesh、shard 与 collective{% else %}logical mesh, shards, and collectives{% endif %}</small></div><em>{% if config.theme.language == "zh" %}已贯通{% else %}live{% endif %}</em></li>
+          <li class="bp-spine__implemented"><span>03</span><div><strong>PortablePlanIR</strong><small>{% if config.theme.language == "zh" %}精确 work 与 target-neutral plan{% else %}exact work and target-neutral plan{% endif %}</small></div><em>{% if config.theme.language == "zh" %}已贯通{% else %}live{% endif %}</em></li>
+          <li><span>04</span><div><strong>ConcretePlanIR</strong><small>{% if config.theme.language == "zh" %}架构绑定、资源与 schedule{% else %}architecture binding, resources, and schedule{% endif %}</small></div><em>{% if config.theme.language == "zh" %}实验契约{% else %}contract{% endif %}</em></li>
+          <li><span>05</span><div><strong>MachineIR</strong><small>{% if config.theme.language == "zh" %}可选 target program realization{% else %}optional target program realization{% endif %}</small></div><em>{% if config.theme.language == "zh" %}实验契约{% else %}contract{% endif %}</em></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="bp-section" aria-labelledby="bp-evidence-title">
+      <div class="bp-shell">
+        <header class="bp-section__header">
+          <p class="bp-kicker">04 / {% if config.theme.language == "zh" %}证据阶梯{% else %}Evidence ladder{% endif %}</p>
+          <h2 id="bp-evidence-title">{% if config.theme.language == "zh" %}设计越具体，证据越精细；历史结论仍可复现。{% else %}As the design sharpens, evidence gets richer—and old conclusions remain reproducible.{% endif %}</h2>
+        </header>
+
+        <div class="bp-evidence-ladder">
+          <article style="--level: 1">
+            <span>L1</span>
+            <h3>{% if config.theme.language == "zh" %}解析模型{% else %}Analytical model{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}Roofline、容量与可解释 envelope，适合早期筛选。{% else %}Roofline, capacity, and explainable envelopes for early pruning.{% endif %}</p>
+          </article>
+          <article style="--level: 2">
+            <span>L2</span>
+            <h3>{% if config.theme.language == "zh" %}网络仿真{% else %}Network simulation{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}Topology、route、collective、contention 与 scale-out effect。{% else %}Topology, routes, collectives, contention, and scale-out effects.{% endif %}</p>
+          </article>
+          <article style="--level: 3">
+            <span>L3</span>
+            <h3>{% if config.theme.language == "zh" %}硬件仿真{% else %}Hardware simulation{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}Queue、resource occupancy、memory lifetime 与 cycle-level detail。{% else %}Queues, resource occupancy, memory lifetimes, and cycle-level detail.{% endif %}</p>
+          </article>
+          <article style="--level: 4">
+            <span>L4</span>
+            <h3>{% if config.theme.language == "zh" %}测量与 Silicon{% else %}Measurement and silicon{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}Profiler、prototype、GPU、LPU 与 silicon observation 形成新 revision。{% else %}Profiler, prototype, GPU, LPU, and silicon observations create new revisions.{% endif %}</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="bp-section bp-section--status" aria-labelledby="bp-status-title">
+      <div class="bp-shell bp-status-grid">
+        <div>
+          <p class="bp-kicker">05 / {% if config.theme.language == "zh" %}诚实的状态{% else %}Honest status{% endif %}</p>
+          <h2 id="bp-status-title">{% if config.theme.language == "zh" %}设计愿景与已实现能力，必须分开陈述。{% else %}The target architecture and implemented capability are stated separately.{% endif %}</h2>
+          <p>{% if config.theme.language == "zh" %}本站把 Implemented、Experimental Contract 与 Planned 作为可审计状态，而不是营销修辞。{% else %}This site treats Implemented, Experimental Contract, and Planned as auditable states—not marketing language.{% endif %}</p>
+          <a class="bp-button bp-button--dark" href="project/status/">{% if config.theme.language == "zh" %}阅读能力矩阵{% else %}Read the capability matrix{% endif %} →</a>
+        </div>
+        <div class="bp-status-cards">
+          <article>
+            <span class="bp-status bp-status--live">IMPLEMENTED SLICE</span>
+            <h3>Transformer → PortablePlanIR</h3>
+            <p>{% if config.theme.language == "zh" %}Typed workload accounting、分布式映射、checkpoint、analytical estimate 与 Calculon calibration。{% else %}Typed workload accounting, distributed mapping, checkpoints, analytical estimates, and Calculon calibration.{% endif %}</p>
+          </article>
+          <article>
+            <span class="bp-status bp-status--next">NEXT MILESTONE</span>
+            <h3>Two-blueprint exploration</h3>
+            <p>{% if config.theme.language == "zh" %}比较两个 parameterized virtual architecture，产生 resource simulation、bottleneck 与 utilization result。{% else %}Compare two parameterized virtual architectures with resource simulation, bottleneck, and utilization results.{% endif %}</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="bp-section" aria-labelledby="bp-paths-title">
+      <div class="bp-shell">
+        <header class="bp-section__header">
+          <p class="bp-kicker">06 / {% if config.theme.language == "zh" %}阅读路径{% else %}Reading paths{% endif %}</p>
+          <h2 id="bp-paths-title">{% if config.theme.language == "zh" %}从你正在做的决策开始。{% else %}Start with the decision you are making.{% endif %}</h2>
+        </header>
+        <div class="bp-path-grid">
+          <a href="exploration/">
+            <span>01</span>
+            <h3>{% if config.theme.language == "zh" %}硬件架构师{% else %}Hardware architects{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}从产品判断、设计空间和探索闭环进入。{% else %}Begin with the product thesis, design space, and exploration loop.{% endif %}</p>
+            <b>{% if config.theme.language == "zh" %}开始阅读{% else %}Start here{% endif %} →</b>
+          </a>
+          <a href="modeling/hardware/">
+            <span>02</span>
+            <h3>{% if config.theme.language == "zh" %}建模与仿真工程师{% else %}Modeling engineers{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}进入 hardware model、workload mapping、evidence 与 simulator protocol。{% else %}Enter the hardware model, workload mapping, evidence, and simulator protocols.{% endif %}</p>
+            <b>{% if config.theme.language == "zh" %}查看模型{% else %}Inspect the models{% endif %} →</b>
+          </a>
+          <a href="design/">
+            <span>03</span>
+            <h3>{% if config.theme.language == "zh" %}系统与编译团队{% else %}Systems and compiler teams{% endif %}</h3>
+            <p>{% if config.theme.language == "zh" %}理解 formal representation、derivation、verifier 与 target-binding contract。{% else %}Understand formal representations, derivations, verifiers, and target-binding contracts.{% endif %}</p>
+            <b>{% if config.theme.language == "zh" %}进入设计基础{% else %}Enter the foundations{% endif %} →</b>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="bp-cta">
+      <div class="bp-shell bp-cta__inner">
+        <div>
+          <p class="bp-kicker">BLUEPRINT / SIMULATE / EXPLAIN</p>
+          <h2>{% if config.theme.language == "zh" %}先把架构变成可证伪的蓝图，再把它变成芯片。{% else %}Make the architecture falsifiable before making it silicon.{% endif %}</h2>
+        </div>
+        <div class="bp-actions">
+          <a class="bp-button bp-button--light" href="exploration/workflow/">{% if config.theme.language == "zh" %}查看完整工作流{% else %}Read the full workflow{% endif %} →</a>
+          <a class="bp-button bp-button--outline-light" href="https://github.com/DeepLink-org/Blueprinting" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+{% endblock %}
+
+{% block content %}{% endblock %}

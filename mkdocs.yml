@@ -1,33 +1,43 @@
 site_name: Blueprinting — Hardware Architecture Exploration
 site_description: Evidence-driven hardware architecture exploration and simulation for distributed AI workloads
-repo_url: https://github.com/reiase/blueprinting
-repo_name: reiase/blueprinting
+repo_url: https://github.com/DeepLink-org/Blueprinting
+repo_name: DeepLink-org/Blueprinting
+edit_uri: edit/main/docs/
 copyright: Copyright &copy; 2026 Blueprinting contributors
 
 theme:
   name: material
+  custom_dir: docs/overrides
   language: en
+  font: false
   features:
     - navigation.tabs
     - navigation.sections
     - navigation.indexes
+    - navigation.tracking
     - navigation.top
     - toc.follow
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    logo: material/vector-square
+    repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: deep purple
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: deep purple
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -121,6 +131,15 @@ plugins:
             Decisions and Terminology: 设计决策与术语
             Architecture Risk Register: 架构风险登记表
             Documentation Guide: 文档维护指南
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/DeepLink-org/Blueprinting
+
+extra_css:
+  - assets/stylesheets/site.css
 
 markdown_extensions:
   - admonition

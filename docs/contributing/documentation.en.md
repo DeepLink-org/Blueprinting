@@ -18,10 +18,19 @@ docs/
 ├── experiments/                     reproducible validation reports
 ├── project/                         status, roadmap, decisions
 ├── contributing/                    maintenance guides
-└── assets/architecture/             shared SVG diagrams
+├── overrides/home.html              bilingual product landing page
+└── assets/
+    ├── architecture/                shared technical diagrams
+    └── stylesheets/site.css         site shell and landing-page visual system
 ```
 
 Top-level narrative starts with the hardware question, candidate blueprints, models, simulation, and decision outputs. Formal-analysis reference pages then explain the models, derivations, verification obligations, and automated analyses that make those comparisons reproducible. Experiment pages report evidence, while project pages distinguish current state from accepted future design.
+
+## Homepage and site shell
+
+The homepage uses one locale-aware Material override rather than duplicating a large English and Chinese HTML surface. `index.{en,zh}.md` retains the searchable Markdown orientation and selects `home.html` through front matter; the override renders product-specific navigation for the active locale. Shared styling lives in `assets/stylesheets/site.css` and applies a restrained Blueprinting visual system to both the landing page and ordinary reference pages.
+
+The landing page starts with the hardware decision, exploration loop, evidence ladder, capability status, and reader paths. It must not turn the product into a generic compiler, simulator, or dashboard. Product claims on the landing page remain subordinate to the capability matrix in [implementation status](../project/status.md).
 
 ## Bilingual source contract
 
@@ -93,12 +102,12 @@ Changes to schema ownership, lowering gates, plugin protocols, evidence semantic
 Install and validate with:
 
 ```bash
-uv sync --extra dev --extra docs
-uv run python scripts/check_docs_i18n.py
-uv run mkdocs build --strict
+uv sync --locked --no-dev --extra docs
+uv run --no-dev --extra docs python scripts/check_docs_i18n.py
+uv run --no-dev --extra docs mkdocs build --strict
 ```
 
-A documentation-only CI job may use `uv sync --extra docs`; contributors who also run the formal-analysis test suite should keep the `dev` extra because the retained Calculon tests use its process-inspection dependency.
+Contributors who also run the formal-analysis test suite may omit `--no-dev`; the default development dependency group includes the test and legacy-workbench dependencies.
 
 For focused local preview:
 
@@ -108,6 +117,10 @@ BUILD_ONLY_LOCALE=zh uv run mkdocs serve
 ```
 
 Before review, inspect both locale routes, page-to-page language switching, navigation, search, tables, code blocks, and SVG rendering. `navigation.instant` remains disabled because the i18n plugin documents it as incompatible with language reconfiguration.
+
+## Continuous delivery
+
+`.github/workflows/docs.yml` runs the bilingual contract check and strict site build for documentation pull requests and `main`. Every successful run uploads the exact `site/` output as a versioned build artifact. Public hosting remains a repository-level deployment decision; do not add a second source tree or claim a public URL until that hosting path is enabled.
 
 ## Review checklist
 
@@ -119,5 +132,6 @@ Before review, inspect both locale routes, page-to-page language switching, navi
 - Reproducible results identify commands, inputs, revisions, and claim boundaries.
 - Design changes map to source/tests or explicitly state that no implementation exists.
 - `check_docs_i18n.py` and `mkdocs build --strict` pass.
+- The landing page and ordinary documentation pages remain usable in both color schemes and at narrow widths.
 
 Documentation debt is handled like engineering debt: make the ownership boundary explicit, add a gate that detects regression, and remove the superseded source instead of maintaining ambiguous duplicates.

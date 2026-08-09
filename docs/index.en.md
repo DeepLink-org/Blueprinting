@@ -1,3 +1,11 @@
+---
+template: home.html
+title: Blueprinting — Hardware Architecture Exploration
+description: Evidence-driven hardware architecture exploration and simulation for distributed AI workloads.
+hide:
+  - toc
+---
+
 # Blueprinting
 
 Blueprinting is an evidence-driven hardware architecture exploration and simulation system for distributed AI workloads. It turns candidate compute, memory, interconnect, and system designs into comparable simulation blueprints, helping architects understand bottlenecks and trade-offs before committing to hardware.

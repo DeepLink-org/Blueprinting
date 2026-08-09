@@ -3,6 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Documentation](https://github.com/DeepLink-org/Blueprinting/actions/workflows/docs.yml/badge.svg)](https://github.com/DeepLink-org/Blueprinting/actions/workflows/docs.yml)
 
 Blueprinting is an evidence-driven hardware architecture exploration and simulation system for distributed AI
 workloads. It maps representative workloads onto candidate compute, memory, interconnect, and system blueprints,
@@ -36,7 +37,7 @@ The implementation borrows IR, lowering, transactional passes, and verifiers fro
 encode staged refinement and executable verification obligations; they are not a standalone Compiler component or the project's
 identity.
 
-Read [Why Blueprinting](docs/exploration/index.en.md) or [为什么叫 Blueprinting](docs/exploration/index.zh.md), then
+Start with [Why Blueprinting](docs/exploration/index.en.md) / [为什么叫 Blueprinting](docs/exploration/index.zh.md), then
 continue with the [hardware design space](docs/exploration/design-space.en.md). The formal derivation, verification,
 representation, and transformation contracts live under Formal Analysis Foundations.
 
@@ -65,7 +66,7 @@ and the [architecture risk register](docs/project/risks.en.md).
 ## Installation
 
 ```bash
-git clone https://github.com/reiase/blueprinting.git
+git clone https://github.com/DeepLink-org/Blueprinting.git
 cd blueprinting
 pip install -e .
 ```
