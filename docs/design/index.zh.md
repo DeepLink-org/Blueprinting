@@ -132,6 +132,7 @@ First-class architecture blueprint、target/resource binding、concrete scheduli
 - [Timeline 阶段路径](timeline-path.md)区分 command plan、预测时间线、强制时序与 LPU backend 演进。
 - [完整推导示例](walkthrough.md)展示一个 Transformer fragment 穿过所有 representation。
 - [分析模块架构](modules.md)定义 Python ownership 与 extension boundary。
+- [浮点数数值分析](numerical-analysis.md)定义交互式数值格式分析视图及其边界。
 - [形式化表示 reference](ir/index.md)定义 semantic contract。
 - [分析与变换 reference](passes/index.md)定义 verified transaction。
 

@@ -101,4 +101,4 @@ Today the repository has a strong workload-accounting and formal-analysis founda
 
 It does not yet expose a first-class `ArchitectureBlueprint`, broad hardware design-space search, a connected discrete-event simulator, energy/area/cost models, or Pareto exploration. These are the next product-defining slices and are tracked in [implementation status](../project/status.md) and the [roadmap](../project/roadmap.md).
 
-Continue with the [hardware design space](design-space.md), then follow the [exploration workflow](workflow.md).
+Continue with the [hardware design space](design-space.md), then follow the [exploration workflow](workflow.md). The interactive entry point is the [exploration workspace](workspace.md).

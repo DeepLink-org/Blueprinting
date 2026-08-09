@@ -6,6 +6,9 @@
 
 未来 public facade 应暴露 architecture exploration，而不是一条 IR pipeline：
 
+!!! note "当前不可调用"
+    `ExplorationSession` 与 `blueprinting.explore()` 是设计目标，当前仓库尚未实现。以下代码是说明性伪代码。
+
 ```python
 experiment = ExplorationSession(
     workloads=WorkloadSuite(...),

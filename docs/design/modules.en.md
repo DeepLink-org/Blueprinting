@@ -6,6 +6,9 @@ Modules follow hardware-experiment ownership, not merely source-file convenience
 
 The future public facade should expose architecture exploration rather than an IR pipeline:
 
+!!! note "Not yet callable"
+    `ExplorationSession` and `blueprinting.explore()` are design targets, not implemented in the current repository. The code below is illustrative pseudocode.
+
 ```python
 experiment = ExplorationSession(
     workloads=WorkloadSuite(...),

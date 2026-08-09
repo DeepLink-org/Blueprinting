@@ -101,4 +101,4 @@ workload semantics
 
 当前还没有 first-class `ArchitectureBlueprint`、广泛 hardware design-space search、贯通的 discrete-event simulator、energy/area/cost model 或 Pareto exploration。这些是下一批定义产品的纵向切片，记录在[实现状态](../project/status.md)与[路线图](../project/roadmap.md)中。
 
-接下来阅读[硬件设计空间](design-space.md)，然后沿[探索工作流](workflow.md)继续。
+接下来阅读[硬件设计空间](design-space.md)，然后沿[探索工作流](workflow.md)继续。交互式探索入口见[探索工作空间](workspace.md)。
