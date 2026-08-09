@@ -92,7 +92,7 @@ model operation -> distributed task -> portable task
 下一条纵向切片应主动压低 target complexity：
 
 1. 实现一个 queue-centric 和一个 non-queue-centric `VirtualTargetPlugin`，共同验证 coordination core；
-2. 把现有 `HardwareProfile` 适配到 normalized estimate provider；
+2. 把现有 `SystemProfile` 适配到 normalized estimate provider；
 3. legalize 当前 Transformer `PortablePlanIR`；
 4. 构造具有显式 ordering/resource/buffer 与 typed extension 的单设备或简单 TP `ConcretePlanIR`；
 5. 派生 timing projection、discrete-event result 与 `TimelineBundle`；

@@ -24,7 +24,19 @@ result.bottlenecks
 result.sensitivity
 ```
 
-Internally, each candidate creates an immutable typed derivation context for workload mapping, architecture binding, and analysis addressing. The current implementation names this object `CompilationSession`; that class and its workload/strategy bindings are implemented, while `ExplorationSession` and the end-to-end product facade are planned. Global mutable configuration is forbidden because it would invalidate experiment reproducibility.
+Internally, each candidate creates an immutable typed derivation context for workload mapping, architecture binding, and analysis addressing. The current implementation names this object `SynthesisSession`; that class and its workload/strategy bindings are implemented, while `ExplorationSession` and the end-to-end product facade are planned. Global mutable configuration is forbidden because it would invalidate experiment reproducibility.
+
+## Workload, mapping, and system domain models
+
+`blueprinting.workload` owns target-neutral model semantics and request/training scenarios. A workload object cannot contain parallel placement, a chip name, peak rate, empirical latency, kernel identity, or physical placement. The current slice provides typed Transformer model, training-workload, and inference-request contracts.
+
+`blueprinting.mapping` owns target-neutral logical strategies such as TP/PP/DP, recomputation, and collective form. It also owns explicit deployment-side associations such as `NetworkTierBinding`; those associations are supplied to evaluation after portable planning and are never embedded in workload facts or a `PortablePlanIR`. This separation makes the same portable plan evaluable on materially different systems.
+
+Boundary importers still accept the retained Calculon-style field names, but aliases are not a second schema: if canonical and legacy spellings are both present they must agree, otherwise import fails before derivation. Newly constructed domain objects and reports use canonical ownership and typed fields.
+
+`blueprinting.system` owns immutable chip-local compute engines, memory capacity/bandwidth, interconnect tiers, collective volume rules, and their imported evidence revision. `SystemProfile` is the current limited compute/memory/network adapter; it is not yet the hierarchical `ArchitectureBlueprint`, physical deployment, or target binding described by the product design. Cost policy remains in `analysis`: the system contract exposes peak and evidence-bearing facts but does not choose calibration mode.
+
+These three packages are authoritative domain inputs, not alternative IR hierarchies. Canonical derivation starts only when a synthesizer frontend imports workload and logical-strategy contracts into `ModelIR` plus a typed `SynthesisSession`; a system profile and deployment-side network binding remain outside canonical workload state and are consumed by explicit analysis or later target binding.
 
 ## Frontends
 
@@ -32,11 +44,11 @@ Frontends parse model or framework input, validate target-independent types and 
 
 Frontends do not read peak throughput, kernel catalogs, physical topology, or runtime observations. Framework adapters expose canonical IR rather than a parallel public IR hierarchy.
 
-The current frontend covers typed decoder-only Transformer training. Additional training architectures, inference prefill/decode, KV-cache semantics, and framework importers are planned.
+The current frontend covers typed decoder-only Transformer training plus static inference prefill/decode with explicit KV-cache semantics. Additional model families, framework importers, and online serving scenarios are planned.
 
 ## Canonical formal-representation infrastructure
 
-The representation core—whose concrete types currently use the `*IR` suffix—provides immutable values, `NodeId` and `ValueId`, typed lineage, exact scalar expressions, canonical JSON, schema versions, feature sets, deterministic digests, and verifier diagnostics.
+`blueprinting.schema` provides the dependency-free canonical codec, frozen maps, and serialization errors shared by all typed contracts. The representation core in `blueprinting.synthesizer`—whose concrete types currently use the `*IR` suffix—provides `NodeId` and `ValueId`, typed lineage, exact scalar expressions, schema headers, feature sets, deterministic digests, and verifier diagnostics.
 
 It has no dependency on Transformer-specific derivation, target plugins, performance providers, or simulation. Typed extensions may carry namespaced semantics; free-form metadata has no compatibility meaning.
 
@@ -107,33 +119,37 @@ The same lineage supports forward and reverse queries from model operation to ru
 ## Dependency direction
 
 ```text
-frontend ───────► ir/common
-                    │
-lowering/passes ────┼────► planning
-bindings/session ───┘          │
-                               ▼
-                    architecture binding
-                               │
-              evidence ◄───────┼──────► scheduling
-                               │
-                               ▼
-                    simulation / emission
-                               │
-                               ▼
-                    observation / calibration
+schema ──► workload ──► mapping
+   │          │           │
+   ├──────────┴───────────┴──► synthesizer ──► PortablePlanIR
+   │                                      │             │
+   └──► system ───────────────────────────┼──► analysis ◄── evidence
+                         NetworkTierBinding             │
+                                                       ▼
+                                      application / validation
 ```
 
-The current code lives under the historical package path `src/blueprinting/compiler/`. The path describes the implementation technique and remains for compatibility; new frontends, targets, providers, and emitters extend this one semantic foundation rather than creating a parallel analysis stack.
+The dependency direction is explicit: workload contracts do not depend on mapping or system descriptions; logical mappings may validate against workload shapes but do not read systems; system descriptions do not depend on analysis policy; analysis does not construct canonical plans. The synthesizer materializes workload and plan facts, while analysis evaluates those facts against explicit system, deployment mapping, and external evidence. Validation may consume the whole supported stack but no production layer depends on validation or an external oracle.
 
 ## Current source map
 
 | Concern | Source | Status |
 |---|---|---|
-| IDs, expressions, codec, frozen values | `compiler/{ids,expr,codec,frozen}.py` | Implemented |
-| Canonical formal representations (`*IR`) | `compiler/ir/` | Implemented contracts |
-| Bindings and sessions | `compiler/{bindings,session}.py` | Implemented |
-| Analysis/transformation transactions | `compiler/passes/base.py` | Implemented |
-| Transformer frontend and workload analysis | `compiler/models/`, `compiler/analysis/` | Implemented slice |
-| Transformer derivation passes | `compiler/lowering/transformer.py` | Implemented through portable plan |
-| Current hardware evidence adapter | `compiler/analysis/cost_model.py` | Implemented slice |
+| Canonical codec and frozen schema values | `schema/` | Implemented |
+| Model and workload semantics | `workload/` | Implemented Transformer slice |
+| Logical strategies and explicit deployment mapping | `mapping/` | Implemented Transformer/network slice |
+| Chip, memory, interconnect, and aggregate system profile | `system/` | Implemented limited profile adapter |
+| IDs, expressions, lineage | `synthesizer/{ids,expr}.py` | Implemented |
+| Canonical formal representations (`*IR`) | `synthesizer/ir/` | Implemented contracts |
+| Bindings and sessions | `synthesizer/{bindings,session}.py` | Implemented |
+| Analysis/transformation transactions | `synthesizer/passes/base.py` | Implemented |
+| Workload-to-IR/session frontends | `synthesizer/frontend/` | Implemented Transformer slice |
+| Transformer exact-work dialect | `synthesizer/dialects/transformer/` | Implemented training/inference slice |
+| Transformer derivation passes | `synthesizer/lowering/` | Implemented through portable plan |
+| Current system cost adapters | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
+| Framework-neutral orchestration and reports | `application/` | Implemented static analysis slice |
+| Calculon/Vidur comparisons and regression gates | `validation/` | Implemented offline gates |
+| Optional external performance bundles | `data/evidence/` | Explicitly loaded; excluded from base package |
 | Architecture model/search, evidence service, simulation, emission | Accepted boundaries | Planned |
+
+`validation/legacy/` contains retained Calculon-only reproductions of historical SeqSel figures. They are compatibility checks, not evidence that the canonical Blueprinting derivation path is correct; the strict gates are `validation/calculon.py`, `validation/vidur.py`, and `validation/regression.py`.

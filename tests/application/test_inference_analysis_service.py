@@ -66,6 +66,28 @@ def test_single_generated_token_stops_after_prefill():
     assert outcome.report.model_execution_seconds == outcome.report.prefill_seconds
 
 
+def test_service_accepts_canonical_inference_mapping_names():
+    legacy = _draft(generated_tokens=1)
+    execution = dict(legacy.execution_data.items())
+    execution["tensor_parallel"] = execution.pop("tensor_par")
+    execution["pipeline_parallel"] = execution.pop("pipeline_par")
+    canonical = InferenceAnalysisDraft.from_mappings(
+        model_name=legacy.model_name,
+        model_data=dict(legacy.model_data.items()),
+        execution_name=legacy.execution_name,
+        execution_data=execution,
+        request_data=dict(legacy.request_data.items()),
+        hardware_name=legacy.hardware_name,
+        hardware_data=dict(legacy.hardware_data.items()),
+    )
+
+    outcome = BlueprintingService().analyze_inference(canonical)
+
+    assert outcome.ok
+    assert outcome.report is not None
+    assert outcome.report.world_size == 8
+
+
 def test_request_past_model_context_returns_a_structured_diagnostic():
     draft = _draft(generated_tokens=4)
     request = dict(draft.request_data.items())

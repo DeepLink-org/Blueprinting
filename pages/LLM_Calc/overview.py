@@ -13,7 +13,7 @@ from streamlit_extras.row import row
 
 from calculon.llm import Llm
 from calculon.system import System
-from blueprinting import Execution, Model
+from blueprinting.types import Execution, Model
 from blueprinting.ui import (
     human_readable_flops,
     human_readable_num,

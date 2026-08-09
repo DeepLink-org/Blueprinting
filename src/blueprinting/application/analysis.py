@@ -12,62 +12,33 @@ import logging
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from enum import Enum
 from itertools import product
 from typing import TYPE_CHECKING, Any
 
-from blueprinting.compiler.analysis import CalibrationMode, HardwareProfile, estimate_iteration
-from blueprinting.compiler.codec import content_digest
-from blueprinting.compiler.errors import (
-    CompilerError,
+from blueprinting.analysis import CalibrationMode, estimate_iteration
+from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.frozen import FrozenDict, freeze, thaw
+from blueprinting.synthesizer.errors import (
     IRVerificationError,
     PassExecutionError,
+    SynthesisError,
 )
-from blueprinting.compiler.frozen import FrozenDict, freeze, thaw
-from blueprinting.compiler.ir import DistributedTaskIR, ModelIR, PortablePlanIR
-from blueprinting.compiler.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from blueprinting.compiler.models import (
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_model_ir,
-    compilation_session_for,
-)
-from blueprinting.compiler.passes import AnalysisStore, PassManager, PassPipeline
+from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
+from blueprinting.synthesizer.ir import PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
+from blueprinting.synthesizer.passes import AnalysisStore, PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+
+from .reporting import AnalysisDiagnostic, DiagnosticLevel, IRStageReport, TaskReport, stage_report
 
 LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from blueprinting.compiler.analysis import InferenceCostProvider
+    from blueprinting.analysis import InferenceCostProvider
 
     from .inference import InferenceAnalysisDraft, InferenceAnalysisOutcome, InferenceAnalysisService
-
-
-class DiagnosticLevel(Enum):
-    """Presentation-neutral diagnostic severity."""
-
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-
-
-@dataclass(frozen=True)
-class AnalysisDiagnostic:
-    """A stable diagnostic that can be rendered by any client."""
-
-    code: str
-    message: str
-    level: DiagnosticLevel = DiagnosticLevel.ERROR
-    path: tuple[str, ...] = ()
-    hint: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "code": self.code,
-            "message": self.message,
-            "level": self.level.value,
-            "path": list(self.path),
-            "hint": self.hint,
-        }
 
 
 @dataclass(frozen=True)
@@ -143,67 +114,29 @@ class AnalysisDraft:
         """Make world size a derived fact instead of a second source of truth."""
 
         data = thaw(self.execution_data)
-        data["num_procs"] = data["tensor_par"] * data["pipeline_par"] * data["data_par"]
+        data.pop("num_procs", None)
+        mapping = TransformerTrainingMappingSpec.from_mapping(data)
+        data["num_procs"] = mapping.world_size
         return data
 
     def with_parallelism(self, tensor_parallel: int, pipeline_parallel: int, data_parallel: int) -> AnalysisDraft:
         execution = thaw(self.execution_data)
         execution.update(
             {
-                "tensor_par": tensor_parallel,
-                "pipeline_par": pipeline_parallel,
-                "data_par": data_parallel,
+                "tensor_parallel": tensor_parallel,
+                "pipeline_parallel": pipeline_parallel,
+                "data_parallel": data_parallel,
                 "num_procs": tensor_parallel * pipeline_parallel * data_parallel,
             }
         )
+        for canonical, legacy in (
+            ("tensor_parallel", "tensor_par"),
+            ("pipeline_parallel", "pipeline_par"),
+            ("data_parallel", "data_par"),
+        ):
+            if legacy in execution:
+                execution[legacy] = execution[canonical]
         return replace(self, execution_data=FrozenDict(execution))
-
-
-@dataclass(frozen=True)
-class IRStageReport:
-    """One inspectable boundary in the formal derivation."""
-
-    stage: str
-    label: str
-    pass_name: str
-    schema: str
-    digest: str
-    parent_digests: tuple[str, ...]
-    node_count: int
-    value_count: int
-    duration_ns: int
-    diagnostics: tuple[AnalysisDiagnostic, ...]
-    snapshot_json: str
-
-    @property
-    def valid(self) -> bool:
-        return not any(item.level is DiagnosticLevel.ERROR for item in self.diagnostics)
-
-
-@dataclass(frozen=True)
-class TaskReport:
-    """UI-safe work and timing facts for one portable-plan task."""
-
-    task_id: str
-    operation: str
-    kind: str
-    phase: str
-    engine: str
-    source_layer: str
-    dependencies: tuple[str, ...]
-    concurrency_group: str
-    operations: int
-    read_bytes: int
-    write_bytes: int
-    message_bytes: int
-    compute_seconds: float
-    memory_seconds: float
-    network_seconds: float
-    total_seconds: float
-    analytical_seconds: float = 0.0
-    evidence_provider: str = ""
-    evidence_revision: str = ""
-    evidence_match: str = ""
 
 
 @dataclass(frozen=True)
@@ -322,47 +255,6 @@ class SweepReport:
         return sum(case.feasible for case in self.cases)
 
 
-def _diagnostics_from_verification(ir: ModelIR | DistributedTaskIR | PortablePlanIR) -> tuple[AnalysisDiagnostic, ...]:
-    return tuple(
-        AnalysisDiagnostic(
-            code=item.code,
-            message=item.message,
-            level=DiagnosticLevel(item.severity.value),
-            path=item.path,
-            hint=item.hint,
-        )
-        for item in ir.verify().diagnostics
-    )
-
-
-def _stage_report(
-    stage: str,
-    label: str,
-    pass_name: str,
-    ir: ModelIR | DistributedTaskIR | PortablePlanIR,
-    duration_ns: int,
-) -> IRStageReport:
-    if isinstance(ir, ModelIR):
-        node_count, value_count = len(ir.operations), len(ir.values)
-    elif isinstance(ir, DistributedTaskIR):
-        node_count, value_count = len(ir.tasks), len(ir.values)
-    else:
-        node_count, value_count = len(ir.tasks), len(ir.buffers)
-    return IRStageReport(
-        stage=stage,
-        label=label,
-        pass_name=pass_name,
-        schema=f"{ir.header.schema_name}@{ir.header.schema_version}",
-        digest=ir.digest,
-        parent_digests=ir.header.parent_digests,
-        node_count=node_count,
-        value_count=value_count,
-        duration_ns=duration_ns,
-        diagnostics=_diagnostics_from_verification(ir),
-        snapshot_json=ir.to_json(),
-    )
-
-
 class BlueprintingService:
     """Single supported orchestration entry point for Blueprinting clients."""
 
@@ -427,9 +319,9 @@ class BlueprintingService:
                 hint="检查模型维度、批量整除关系、并行度和网络层级。",
             )
             return AnalysisOutcome(draft.fingerprint, (diagnostic,))
-        except CompilerError as error:
+        except SynthesisError as error:
             diagnostic = AnalysisDiagnostic(
-                code="analysis.compiler_failure",
+                code="analysis.synthesis_failure",
                 message=str(error),
                 hint="查看 IR 推导页中的阶段信息和 digest。",
             )
@@ -449,31 +341,38 @@ class BlueprintingService:
         hardware_data = thaw(draft.hardware_data)
 
         model = TransformerModelSpec.from_mapping(draft.model_name, model_data)
-        execution = TransformerExecutionSpec.from_mapping(execution_data)
-        hardware = HardwareProfile.from_mapping(
+        workload_spec = TransformerTrainingWorkloadSpec.from_mapping(execution_data)
+        mapping = TransformerTrainingMappingSpec.from_mapping(execution_data)
+        network_binding = NetworkTierBinding.from_mapping(execution_data)
+        hardware = SystemProfile.from_mapping(
             draft.hardware_name,
             hardware_data,
-            datatype=execution.datatype,
+            datatype=workload_spec.datatype,
         )
 
         frontend_started = time.perf_counter_ns()
-        source = build_transformer_model_ir(model, datatype=execution.datatype)
+        source = build_transformer_model_ir(model, datatype=workload_spec.datatype)
         frontend_duration = time.perf_counter_ns() - frontend_started
-        session = replace(compilation_session_for(model, execution), seed=draft.seed)
+        session = replace(synthesis_session_for(model, workload_spec, mapping), seed=draft.seed)
         pipeline = self._manager.run(self._pipeline, source, session=session)
         plan = pipeline.ir
         if not isinstance(plan, PortablePlanIR):
             raise TypeError(f"analysis pipeline returned {type(plan).__name__}, expected PortablePlanIR")
-        estimate = estimate_iteration(plan, hardware, draft.calibration_mode)
+        estimate = estimate_iteration(
+            plan,
+            hardware,
+            draft.calibration_mode,
+            network_binding=network_binding,
+        )
 
-        stages = [_stage_report("model", "模型语义", "frontend-import", source, frontend_duration)]
+        stages = [stage_report("model", "模型语义", "frontend-import", source, frontend_duration)]
         stage_metadata = (
             ("distributed", "分布式任务", pipeline.checkpoints[0]),
             ("portable", "可移植计划", pipeline.checkpoints[1]),
         )
         for stage, label, checkpoint in stage_metadata:
             stages.append(
-                _stage_report(
+                stage_report(
                     stage,
                     label,
                     checkpoint.record.pass_name,
@@ -540,7 +439,7 @@ class BlueprintingService:
             }
         )
         bottleneck = max(latency.items(), key=lambda item: item[1])[0]
-        total_tokens = model.sequence_length * execution.global_batch_size
+        total_tokens = model.sequence_length * workload_spec.global_batch_size
         feasible = estimate.memory.total <= hardware.memory.capacity_bytes
         diagnostics: tuple[AnalysisDiagnostic, ...] = ()
         if not feasible:
@@ -589,11 +488,11 @@ class BlueprintingService:
             execution_name=draft.execution_name,
             hardware_name=draft.hardware_name,
             calibration_mode=draft.calibration_mode.value,
-            world_size=execution.world_size,
+            world_size=mapping.world_size,
             feasible=feasible,
             total_seconds=estimate.total,
             total_tokens_per_second=total_tokens / estimate.total,
-            tokens_per_second_per_device=total_tokens / estimate.total / execution.world_size,
+            tokens_per_second_per_device=total_tokens / estimate.total / mapping.world_size,
             bottleneck=bottleneck,
             latency=latency,
             memory=memory,

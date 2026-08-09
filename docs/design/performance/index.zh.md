@@ -76,9 +76,9 @@ Planner 可以优化 expected latency、conservative bound 或 risk-adjusted obj
 
 ## 当前实现边界
 
-仓库当前提供强类型 `HardwareProfile`、peak-only 与 system-evidence efficiency curve、block/iteration estimate，以及可审计的 Calculon experiment。Static inference 进一步区分可参与估算的 `InferenceCostProvider.resolve()` 与只读的 `InferenceBaseline.lookup()`；Vidur 只实现后者，并在 Blueprinting lowering 和 costing 全部完成后由 post-hoc experiment 使用。这些是已实现的 validation slice，但尚不是通用 architecture-exploration evidence service。
+仓库现在已经提供 normalized `CostQuery`/`CostEstimate` contract、ordered `CostResolver` policy、analytical `RooflineCostProvider`、immutable exact-selector `PerformanceDatabase`、通用 simulator table ingestion，以及显式 Vidur/AIConfigurator importer。Static inference 从 portable task facts 推导 query，并解析 task 与 pipeline communication cost；同时仍严格区分 admissible cost provider 与只读 `InferenceBaseline.lookup()` comparison contract。
 
-通用 normalized request/result protocol、resolver/registry、evidence store、uncertainty model、discrete-event simulator、observation ingestion 与 calibration service 仍属于目标架构。Inference protocol 是迁移 seam，不是最终 universal schema。通用 contract 应先包裹、再替代对 `HardwareProfile` 的直接耦合，而不改变 `PortablePlanIR`，也不允许 comparison oracle 进入推导。
+这仍是 implemented slice，而不是完整 architecture-exploration evidence service。Database 支持 exact declared selector 与 repeated-sample uncertainty，但还没有 calibrated interpolation、durable append-only raw-evidence service、environment manifest、discrete-event simulation、observation ingestion 或 calibration。Training 在 Calculon equivalence test 能保护 resolver migration 之前，仍直接使用 `SystemProfile` costing。可运行边界见 [Cost Provider 与性能数据导入](providers.md)。
 
 ## 设计不变量
 
@@ -90,4 +90,4 @@ Planner 可以优化 expected latency、conservative bound 或 risk-adjusted obj
 6. Simulation 与 runtime 使用同一 concrete command identity。
 7. 只有完整 semantic context 一致时 cache hit 才合法。
 
-[性能数据库](database.md)定义 evidence storage 与 resolution；[仿真与校准](simulation.md)定义 plan-level composition 和反馈闭环。
+[Cost Provider 实现](providers.md)说明可运行 API；[性能数据库](database.md)定义更完整的 evidence storage 与 resolution 设计；[仿真与校准](simulation.md)定义 plan-level composition 和反馈闭环。

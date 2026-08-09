@@ -122,13 +122,13 @@ Search 可以昂贵，但必须有界且可复现。Runtime 或 simulation execu
 
 ## 当前系统与目标系统
 
-当前贯通路径结束在 `PortablePlanIR`，随后通过 analytical `HardwareProfile` estimate 做验证。五层 typed representation schema、verified transformation transaction、workload derivation 与 Calculon experiment 已经实现，是后续产品的基础。Schema 的内部版本号只标识 serialization contract；在 production producer、独立 consumer 与 migration policy 到位前，不构成 public compatibility 承诺。
+当前贯通路径结束在 `PortablePlanIR`，随后通过 analytical `SystemProfile` estimate 做验证。五层 typed representation schema、verified transformation transaction、workload derivation 与 Calculon experiment 已经实现，是后续产品的基础。Schema 的内部版本号只标识 serialization contract；在 production producer、独立 consumer 与 migration policy 到位前，不构成 public compatibility 承诺。
 
 First-class architecture blueprint、target/resource binding、concrete scheduling、event simulation、simulator provider、design-space search 与可选 GPU/LPU program emission 仍为 planned 或 contract-only。以[状态页](../project/status.md)为准。
 
 ## 如何阅读形式化分析基础
 
-- [推导与验证模型](compilation-model.md)形式化 state、binding、proof obligation、automated analysis 与 concrete abstract machine。
+- [推导与验证模型](synthesis-model.md)形式化 state、binding、proof obligation、automated analysis 与 concrete abstract machine。
 - [Timeline 阶段路径](timeline-path.md)区分 command plan、预测时间线、强制时序与 LPU backend 演进。
 - [完整推导示例](walkthrough.md)展示一个 Transformer fragment 穿过所有 representation。
 - [分析模块架构](modules.md)定义 Python ownership 与 extension boundary。

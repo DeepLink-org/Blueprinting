@@ -50,10 +50,10 @@ Landing page 从硬件决策、探索闭环、证据阶梯、能力状态与读�
 `mkdocs.yml` 和所有站内 Markdown link 都使用 language-neutral canonical path：
 
 ```markdown
-[推导与验证模型](../design/compilation-model.md)
+[推导与验证模型](../design/synthesis-model.md)
 ```
 
-禁止链接到 `compilation-model.en.md`、`compilation-model.zh.md` 或 generated `/zh/` URL。i18n plugin 会为 active locale 解析 canonical path，并保持 language selector 对齐。
+禁止链接到 `synthesis-model.en.md`、`synthesis-model.zh.md` 或 generated `/zh/` URL。i18n plugin 会为 active locale 解析 canonical path，并保持 language selector 对齐。
 
 外部链接使用普通 absolute HTTPS URL。共享 SVG 使用相对路径。Language-specific asset 应使用相同 `.en`/`.zh` pairing convention 并说明必要性；在可行时，diagram 应偏好 language-neutral label。
 

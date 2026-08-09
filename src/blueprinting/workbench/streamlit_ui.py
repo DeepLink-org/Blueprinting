@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from blueprinting.analysis import CalibrationMode
 from blueprinting.application import (
     AnalysisDiagnostic,
     AnalysisDraft,
@@ -19,7 +20,6 @@ from blueprinting.application import (
     SweepReport,
     SweepRequest,
 )
-from blueprinting.compiler.analysis import CalibrationMode
 
 from .catalog import ConfigCatalog, default_catalog
 

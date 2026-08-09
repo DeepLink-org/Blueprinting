@@ -54,6 +54,7 @@ nav:
       - Workload and Mapping Model: modeling/workload.md
       - Inference Planning and Serving Simulation: modeling/inference.md
       - Performance Evidence and Cost Models: design/performance/index.md
+      - Cost Providers and Data Imports: design/performance/providers.md
       - Performance Database: design/performance/database.md
       - Simulation and Calibration: design/performance/simulation.md
   - Experiments:
@@ -61,7 +62,7 @@ nav:
       - Vidur Raw Component-Profile Alignment: experiments/vidur-baseline.md
   - Formal Analysis Foundations:
       - Formal Analysis Architecture: design/index.md
-      - Derivation and Verification Model: design/compilation-model.md
+      - Derivation and Verification Model: design/synthesis-model.md
       - Timeline Staging Path: design/timeline-path.md
       - Golden Derivation Walkthrough: design/walkthrough.md
       - Analysis Module Architecture: design/modules.md
@@ -77,6 +78,8 @@ nav:
       - Implementation Status: project/status.md
       - Roadmap: project/roadmap.md
       - Decisions and Terminology: project/decisions.md
+      - ADR-0001 — Synthesizer Package: project/adr/0001-synthesizer-package.md
+      - ADR-0002 — Workload and System Domains: project/adr/0002-workload-system-domains.md
       - Architecture Risk Register: project/risks.md
       - Documentation Guide: contributing/documentation.md
 
@@ -111,6 +114,7 @@ plugins:
             Workload and Mapping Model: 工作负载与映射模型
             Inference Planning and Serving Simulation: 推理规划与 Serving 仿真
             Performance Evidence and Cost Models: 性能证据与 Cost Model
+            Cost Providers and Data Imports: Cost Provider 与数据导入
             Performance Database: 性能数据库
             Simulation and Calibration: 仿真与校准
             Experiments: 实验
@@ -134,6 +138,8 @@ plugins:
             Implementation Status: 实现状态
             Roadmap: 路线图
             Decisions and Terminology: 设计决策与术语
+            ADR-0001 — Synthesizer Package: ADR-0001 — Synthesizer 包命名
+            ADR-0002 — Workload and System Domains: ADR-0002 — Workload 与 System 领域
             Architecture Risk Register: 架构风险登记表
             Documentation Guide: 文档维护指南
 

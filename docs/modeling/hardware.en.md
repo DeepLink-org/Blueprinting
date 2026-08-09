@@ -3,7 +3,7 @@
 The hardware model is the semantic description of a candidate architecture. It defines what resources and capabilities exist and how they connect. Performance evidence estimates how those resources behave; deployment identifies concrete instances. These concerns must remain separate for design-space exploration to be meaningful.
 
 !!! note "Design status"
-    The current `HardwareProfile` implements a limited evidence profile for compute, memory, and networks. The hierarchical architecture schema described here is the target design and is not yet connected end to end.
+    The current `SystemProfile` implements a limited evidence profile for compute, memory, and networks. The hierarchical architecture schema described here is the target design and is not yet connected end to end.
 
 ## Architecture, deployment, and evidence
 
@@ -94,6 +94,6 @@ Schema migration is explicit. Published experiments retain the original blueprin
 
 ## Current implementation gap
 
-`HardwareProfile` currently supplies matrix/vector throughput curves, memory capacity/bandwidth curves, network tiers, and collective models used by the Calculon calibration. It does not yet model component hierarchy, NoC, queues, power/area/cost, architecture variables, or a general target capability graph.
+`SystemProfile` currently supplies matrix/vector throughput curves, memory capacity/bandwidth curves, network tiers, and collective models used by the Calculon calibration. It does not yet model component hierarchy, NoC, queues, power/area/cost, architecture variables, or a general target capability graph.
 
-The first migration step is to wrap `HardwareProfile` as evidence for a minimal virtual `ArchitectureBlueprint`, preserving existing results while introducing the separation above. See the [roadmap](../project/roadmap.md).
+The first migration step is to wrap `SystemProfile` as evidence for a minimal virtual `ArchitectureBlueprint`, preserving existing results while introducing the separation above. See the [roadmap](../project/roadmap.md).

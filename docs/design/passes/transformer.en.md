@@ -2,14 +2,14 @@
 
 The implemented Transformer slice is deliberately narrow and auditable: it imports one typed decoder-training workload, formally derives one local tensor-parallel block, and preserves exact work in a target-neutral portable plan. It validates the first half of the analysis architecture without pretending that target scheduling already exists.
 
-![Implemented Transformer workload-derivation path](../../assets/architecture/implemented-compile-path.svg)
+![Implemented Transformer workload-derivation path](../../assets/architecture/implemented-derivation-path.svg)
 
 ## Scope and boundary
 
 The production path is:
 
 ```text
-TransformerModelSpec + TransformerExecutionSpec
+TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMappingSpec
   -> ModelIR
   -> DistributeTransformerTrainingPass
   -> DistributedTaskIR
@@ -17,19 +17,21 @@ TransformerModelSpec + TransformerExecutionSpec
   -> PortablePlanIR
 ```
 
-The red boundary in the figure is intentional. `HardwareProfile` is consumed only by a derived estimate after `PortablePlanIR`; it is not an implicit target binding and it does not make `ConcretePlanIR` available.
+The red boundary in the figure is intentional. `SystemProfile` is consumed only by a derived estimate after `PortablePlanIR`; it is not an implicit target binding and it does not make `ConcretePlanIR` available.
 
 This slice currently models decoder-only training at block scope. Full-model PP/DP task graphs, inference prefill/decode, intermediate-buffer lifetimes, target legalization, and physical scheduling remain subsequent work.
 
 ## Typed semantic import
 
-`TransformerModelSpec` owns dimensions and model semantics. `TransformerExecutionSpec` owns micro-batching, TP/PP/DP, recomputation, datatype, and tensor-parallel communication mode. `compilation_session_for()` turns those execution choices into explicit workload and strategy bindings.
+`TransformerModelSpec` owns dimensions and model semantics. `TransformerTrainingWorkloadSpec` owns global/micro batch size and datatype. `TransformerTrainingMappingSpec` owns TP/PP/DP, recomputation, pipeline interleaving, optimizer sharding, and tensor-parallel communication mode. `synthesis_session_for()` converts these independent contracts into explicit workload and strategy bindings.
+
+Physical network-tier selection is deliberately absent. `NetworkTierBinding` is supplied only when a portable plan is evaluated against a `SystemProfile`; changing it cannot change the model, distributed, or portable-plan digest.
 
 The importer rejects invalid dimensions, head divisibility, parallel topology, and inconsistent workload facts before a pass runs. `build_transformer_model_ir()` then creates a coarse, target-neutral `transformer.decoder_training` operation. No target name, peak rate, kernel ID, or latency enters this snapshot.
 
 ## Static workload derivation
 
-`compile_transformer_block()` decomposes a block into typed `PrimitiveInvocation` records. Each invocation has a phase, engine class, exact operations, exact read/write bytes, and—when applicable—collective kind and logical message bytes.
+`derive_transformer_block()` decomposes a block into typed `PrimitiveInvocation` records. Each invocation has a phase, engine class, exact operations, exact read/write bytes, and—when applicable—collective kind and logical message bytes.
 
 The analysis follows data dependencies rather than fitted ratios. For a linear layer `Y[M,K] = X[M,N] x W[N,K]`, forward, activation-gradient, and weight-gradient work are three explicit matrix multiplications. Attention, normalization, activation, dropout, residual, and optimizer work are represented separately.
 
@@ -86,10 +88,13 @@ The derivation does not compensate for a discrepancy by reading a reference late
 
 | Concern | Source | Tests |
 |---|---|---|
-| Typed Transformer specifications | `src/blueprinting/compiler/models/transformer.py` | binding and calibration tests |
-| Workload algebra | `src/blueprinting/compiler/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
-| Two derivation passes | `src/blueprinting/compiler/lowering/transformer.py` | canonical representation and calibration tests |
-| Transaction/checkpoints | `src/blueprinting/compiler/passes/base.py` | `tests/compiler/test_pass_manager.py` |
-| Evidence-derived estimates | `src/blueprinting/compiler/analysis/cost_model.py` | calibration tests |
+| Model and training-workload contracts | `src/blueprinting/workload/transformer.py` | binding and validation tests |
+| Logical mapping contract | `src/blueprinting/mapping/transformer.py` | boundary and validation tests |
+| Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation and calibration tests |
+| Workload algebra | `src/blueprinting/synthesizer/dialects/transformer/training.py` | `tests/validation/test_calculon.py` |
+| Two derivation passes | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation and calibration tests |
+| Transaction/checkpoints | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
+| Evidence-derived estimates | `src/blueprinting/analysis/cost_model.py` | validation tests |
+| Calculon/SeqSel oracle gate | `src/blueprinting/validation/calculon.py` | `tests/validation/test_calculon.py` |
 
 The [Calculon calibration experiment](../../experiments/calculon-calibration.md) is the end-to-end audit of this implemented slice.

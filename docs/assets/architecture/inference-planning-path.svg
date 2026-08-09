@@ -45,7 +45,7 @@
 
   <rect x="724" y="224" width="250" height="116" rx="15" class="evidence"/>
   <text x="849" y="258" text-anchor="middle" class="box-title">Blueprinting Cost Model</text>
-  <text x="849" y="284" text-anchor="middle" class="body">HardwareProfile · internal cost provider</text>
+  <text x="849" y="284" text-anchor="middle" class="body">SystemProfile · internal cost provider</text>
   <text x="849" y="307" text-anchor="middle" class="micro">no comparison-oracle input</text>
   <rect x="724" y="424" width="250" height="116" rx="15" class="evidence"/>
   <text x="849" y="458" text-anchor="middle" class="box-title">Phase Cost View</text>

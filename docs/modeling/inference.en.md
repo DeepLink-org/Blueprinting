@@ -6,7 +6,7 @@ Blueprinting now has a runnable decoder-inference slice, but its boundary is int
 
 ## What we adopt from related work
 
-[LLMCompass](https://arxiv.org/abs/2312.03134) demonstrates why LLM inference hardware evaluation needs separate software, hardware, mapping, and cost concerns, plus an explicit mapping search rather than a single closed-form model. Blueprinting adopts that separation. Its canonical representations preserve workload and mapping facts before a hardware profile or measured latency is consulted. LLMCompass's area/cost and architecture design-space machinery remains future provider and exploration work; its artifact code is not copied into the canonical IR.
+[LLMCompass](https://arxiv.org/abs/2312.03134) demonstrates why LLM inference hardware evaluation needs separate software, hardware, mapping, and cost concerns, plus an explicit mapping search rather than a single closed-form model. Blueprinting adopts that separation. Its canonical representations preserve workload and mapping facts before a system profile or measured latency is consulted. LLMCompass's area/cost and architecture design-space machinery remains future provider and exploration work; its artifact code is not copied into the canonical IR.
 
 [Vidur](https://github.com/microsoft/vidur) demonstrates a complementary boundary: request arrivals, replica scheduling, batching, and event progression are a discrete-event layer, while execution time is supplied by component predictors trained from profiling data. Blueprinting adopts that split. Phase plans are the stable cost subjects; a future serving simulator will schedule requests and batches against them rather than redefining Transformer work inside scheduler code.
 
@@ -17,7 +17,7 @@ The resulting boundary is deliberate:
 | Transformer operation/byte/collective derivation | canonical inference analysis | Implemented slice |
 | Prefill and decode specialization | workload binding + lowering passes | Implemented slice |
 | KV-cache state and capacity | ModelIR effect + portable state buffer + memory view | Implemented slice |
-| Analytical component cost | `HardwareProfile` fallback | Implemented slice |
+| Analytical component cost | `SystemProfile` fallback | Implemented slice |
 | Vidur profiling CSV reuse | post-hoc exact-match baseline | Implemented experiment |
 | Static decoder-block phase composition | inference application service | Implemented slice |
 | Arrivals, queues, continuous batching, scheduling | serving discrete-event simulator | Planned |
@@ -29,20 +29,22 @@ The model frontend emits one phase-neutral `transformer.decoder_inference` opera
 
 ```text
 TransformerModelSpec
-  + TransformerInferenceExecutionSpec(TP, PP, replicas, dtype, network tiers)
-  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context)
+  + TransformerInferenceRequestSpec(batch, prompt, generated, dtype)
+  + TransformerInferenceMappingSpec(TP, PP, replicas)
+  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context, dtype)
   -> ModelIR
   -> DistributeTransformerInferencePass
   -> DistributedTaskIR
   -> PlanTransformerInferencePass
   -> PortablePlanIR
+  -> [SystemProfile + NetworkTierBinding]
   -> estimate_inference_phase(Blueprinting cost provider | analytical model)
   -> optional post-hoc Vidur comparison
 ```
 
 The component tasks are input norm, QKV projection, RoPE, KV save, attention core, output projection, TP all-reduce, residual, post-attention norm, MLP up/activation/down, a second all-reduce, and the final residual. This boundary is fine enough to inspect work conservation and broad enough to match observable kernel families in profiling systems.
 
-Prefill binds `query_tokens = context_tokens = prompt_tokens`. Decode binds `query_tokens = 1` and treats `context_tokens` as the number of keys visible after the current token is appended. Every phase plan carries exact operations, read/write bytes, collective volume, phase, primitive, source layer, query length, context length, block weight capacity, KV capacity, and a conservative workspace buffer. It carries no duration. Costing reconstructs its task view from `PlanTask.workload` and explicit buffers; a hidden lowering object is not allowed to become a second workload truth.
+Prefill binds `query_tokens = context_tokens = prompt_tokens`. Decode binds `query_tokens = 1` and treats `context_tokens` as the number of keys visible after the current token is appended. Every phase plan carries exact operations, read/write bytes, logical collective volume, phase, primitive, source layer, query length, context length, datatype, block weight capacity, KV capacity, and a conservative workspace buffer. It carries no duration or physical network tier. Costing reconstructs its task view from `PlanTask.workload` and explicit buffers, then applies an explicit `NetworkTierBinding`; neither a hidden lowering object nor deployment placement may become a second workload truth.
 
 ## Request composition semantics
 
@@ -70,10 +72,12 @@ It is multiplied by the number of blocks in one pipeline stage. Weight storage i
 `VidurProfileBaseline.from_csv(...)` consumes user-supplied Vidur `attention.csv` and compute/MLP CSV files. The caller must pin an upstream revision, hardware identity, attention backend, and cache block size. The adapter hashes the inputs and identity into a baseline revision, converts Vidur's millisecond medians to seconds, and only returns a reference when model dimensions, maximum sequence length, TP, batch/token shape, phase, backend, block size, and context match exactly. Vidur records decode `kv_cache_size` before the current token is appended; Blueprinting records the visible context after append, so the adapter makes the explicit relation `vidur_kv_cache_size = context_tokens - 1`.
 
 ```python
-from blueprinting.compiler.analysis import HardwareProfile, VidurProfileBaseline
-from blueprinting.compiler.bindings import InferencePhase
-from blueprinting.compiler.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.compiler.models import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.system import SystemProfile
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.validation import VidurExperimentCase, run_vidur_experiment
+from blueprinting.workload import TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -87,8 +91,10 @@ baseline = VidurProfileBaseline.from_csv(
 case = VidurExperimentCase(
     name="decode/context-128",
     model=TransformerModelSpec(...),
-    execution=TransformerInferenceExecutionSpec(...),
-    hardware=HardwareProfile(...),
+    mapping=TransformerInferenceMappingSpec(...),
+    network_binding=NetworkTierBinding(...),
+    datatype="float16",
+    hardware=SystemProfile(...),
     phase=InferencePhase.DECODE,
     batch_size=1,
     context_tokens=128,
@@ -96,13 +102,13 @@ case = VidurExperimentCase(
 report = run_vidur_experiment((case,), baseline)
 ```
 
-The API boundary is intentional: an admissible internal `InferenceCostProvider` exposes `resolve()`, while an external `InferenceBaseline` exposes `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the compiled latency.
+The API boundary is intentional: an admissible internal `InferenceCostProvider` exposes `resolve()`, while an external `InferenceBaseline` exposes `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the estimated latency.
 
 Comparison is over an explicit semantic intersection. The report contains matched component count, coverage, Blueprinting's comparable subtotal, Vidur's comparable subtotal, excluded Blueprinting work, signed comparable-subtotal error, and non-cancelling component MAPE/max error. Missing records remain `not-covered`; they are never converted to zero. This matters because Vidur's public block aggregation has one `add_time`, whereas Blueprinting deliberately keeps both residual additions explicit, and the current CSV adapter does not yet ingest collective profiles.
 
 There is no nearest-neighbor or hidden interpolation. An MHA workload requires equal query/KV head counts in both compute and attention records. Matching raw component-profile keys does not establish full decoder-topology equivalence: the current model spec does not yet encode norm placement, residual topology, or gated-MLP choice. The current production inference estimate remains entirely Blueprinting-owned; Vidur is an oracle for measuring where that estimate must improve.
 
-Blueprinting does not vendor the full upstream profiling corpus. A minimal MIT-licensed Phi-2/A100 validation slice is retained for offline CI, with a pinned upstream commit, source blob IDs, an explicit projection rule, and local file digests. Larger experiments keep Vidur data external. A future ingestion command should add environment manifests, units, runtime/kernel versions, and raw-record IDs before profiles enter the general performance database.
+Blueprinting does not vendor the full upstream profiling corpus. A minimal MIT-licensed Phi-2/A100 validation slice is retained for offline CI, with a pinned upstream commit, source blob IDs, an explicit projection rule, and local file digests. Larger experiments keep Vidur data external. The implemented `VidurProfileImporter` now normalizes units, creates raw-record IDs, and preserves the source revision/file digest when explicitly promoting profiles into a performance database. Full environment manifests and runtime/kernel identity remain required future evidence work where the upstream schema does not supply them.
 
 ## What the serving layer must add
 
@@ -119,4 +125,4 @@ The scheduler produces a concrete batch context and asks the cost resolver for t
 
 ## Current limitations
 
-The implemented dialect covers one dense-MHA, non-gated-MLP decoder template. Embedding, LM head, sampler, explicit norm/residual topology, GQA/MQA, gated MLP, MoE, prefix caching, paged allocation, chunked prefill, speculative decoding, disaggregated prefill/decode, scheduler overhead, and resource contention are not modeled yet. PP and replica structure are not fully materialized in `DistributedTaskIR`; PP latency/memory composition is currently analytical after the local-TP block plan. Each decode context is recompiled rather than algebraically specialized from a parametric plan. `replicas` currently participates only in mapping validation and world-size accounting; reported latency and static model token rate remain single-replica views, not multi-replica serving capacity. Consequently, the current output is suitable for inspecting derivation, analytical memory fit, and first-order hardware sensitivity—not for claiming production serving SLO accuracy.
+The implemented dialect covers one dense-MHA, non-gated-MLP decoder template. Embedding, LM head, sampler, explicit norm/residual topology, GQA/MQA, gated MLP, MoE, prefix caching, paged allocation, chunked prefill, speculative decoding, disaggregated prefill/decode, scheduler overhead, and resource contention are not modeled yet. PP and replica structure are not fully materialized in `DistributedTaskIR`; PP latency/memory composition is currently analytical after the local-TP block plan. Each decode context is derived independently rather than algebraically specialized from a parametric plan. `replicas` currently participates only in mapping validation and world-size accounting; reported latency and static model token rate remain single-replica views, not multi-replica serving capacity. Consequently, the current output is suitable for inspecting derivation, analytical memory fit, and first-order hardware sensitivity—not for claiming production serving SLO accuracy.

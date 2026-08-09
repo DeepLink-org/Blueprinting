@@ -94,7 +94,7 @@ Pass pipeline 依据声明式 contract 编排，不得依赖具体 Python pass �
 
 Binding 分为独立维度：workload、strategy、target、deployment、calibration。
 
-- workload/strategy 可以逐步特化，但必须显式记录在 typed derivation context；当前代码名为 `CompilationSession`；
+- workload/strategy 可以逐步特化，但必须显式记录在 typed derivation context；当前代码名为 `SynthesisSession`；
 - target/deployment 只能在 portable plan 之后进入；
 - 同一个 `PortablePlanIR` 必须能绑定到多个实质不同的硬件目标；
 - target 变化不得改变 `ModelIR`、`DistributedTaskIR` 或 `PortablePlanIR` digest；
@@ -142,12 +142,18 @@ handling。若 LPU 的 issue cycle/slot 具有 correctness 含义，它在 targe
 
 ## 9. 当前实现边界
 
-当前形式化分析实现仍位于历史 package path `src/blueprinting/compiler/`。该路径为兼容性保留，不定义产品架构。已经实现：
+无领域依赖的 codec 与 immutable schema primitive 位于 `src/blueprinting/schema/`；target-neutral workload contract
+位于 `src/blueprinting/workload/`，逻辑策略与显式 deployment mapping 位于 `src/blueprinting/mapping/`，芯片、memory、
+interconnect 与 system profile 位于 `src/blueprinting/system/`；canonical 表示与形式化推导机制位于
+`src/blueprinting/synthesizer/`，分析与证据评估位于同级 `src/blueprinting/analysis/`，外部 baseline 与回归 gate
+位于 `src/blueprinting/validation/`。Synthesizer 表示 formal plan synthesis 的实现边界，不是产品身份、RTL 综合器
+或独立 Compiler 组件。已经实现：
 
 - 五层 canonical IR 的 immutable schema、serialization 和 structural verifier；其中后两层仍是 experimental contract；
 - stable ID、lineage、typed scalar expression、binding/session；
 - pass contract、analysis cache/invalidation 和 derivation checkpoint；
-- decoder-only Transformer training frontend；
+- decoder-only Transformer workload contract 与 training/inference frontend adapter；
+- compute、memory、interconnect 和聚合 `SystemProfile` contract；
 - `ModelIR -> DistributedTaskIR -> PortablePlanIR` 的 TP、recompute、workload 与 buffer derivation；
 - peak-only / system-evidence cost view 和 Calculon/SeqSel 校准实验。
 
@@ -162,7 +168,13 @@ handling。若 LPU 的 issue cycle/slot 具有 correctness 含义，它在 targe
 
 ## 10. 代码与仓库规则
 
-- 新形式化表示、推导与分析代码在 package 重命名 ADR 通过前进入 `src/blueprinting/compiler/` 对应边界；不得新建平行表示栈。
+- 无领域依赖的 canonical codec、frozen value 与 schema error 进入 `src/blueprinting/schema/`；workload semantic/request contract 进入 `src/blueprinting/workload/`；逻辑 strategy 与 deployment mapping 进入
+  `src/blueprinting/mapping/`；芯片、memory、interconnect 与 system contract 进入 `src/blueprinting/system/`；workload-to-IR adapter、canonical 表示与推导进入
+  `src/blueprinting/synthesizer/`；cost/evidence analysis 进入 `src/blueprinting/analysis/`。不得新建平行表示栈。
+- `SystemProfile` 是当前有限的 compute/memory/network evidence-bearing adapter，不得被描述成已经实现的完整
+  `ArchitectureBlueprint`；`src/blueprinting/types/system/` 只服务 legacy calculator，新代码不得依赖它。
+- `blueprinting.compiler` Python path 已硬切删除；历史 `compiler.*` canonical codec tag 作为 wire identity 保留，
+  未经迁移 ADR 不得改写。
 - IR 对象默认 frozen；语义字段使用 typed dataclass/enum/ID，不使用自由字典代替 contract。
 - 所有公共 derivation/transformation 和 verifier 必须有 positive、negative、round-trip 与 lineage 测试。
 - Python 最低版本为 3.10；不得使用只在更高版本解析的语法，除非先更新 packaging contract。

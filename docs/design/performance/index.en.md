@@ -76,9 +76,9 @@ This does not mean every stage is assigned a wall-clock duration. Early stages a
 
 ## Current implementation boundary
 
-The repository currently provides a typed `HardwareProfile`, peak-only and system-evidence efficiency curves, block/iteration estimates, and an auditable Calculon experiment. Static inference additionally separates an admissible `InferenceCostProvider.resolve()` contract from a read-only `InferenceBaseline.lookup()` contract. Vidur implements only the latter and is consumed by a post-hoc experiment after Blueprinting lowering and costing. These are implemented validation slices, not yet a general architecture-exploration evidence service.
+The repository now provides normalized `CostQuery`/`CostEstimate` contracts, ordered `CostResolver` policy, analytical `RooflineCostProvider`, an immutable exact-selector `PerformanceDatabase`, generic simulator table ingestion, and explicit Vidur and AIConfigurator importers. Static inference derives queries from portable task facts and resolves both task and pipeline communication costs. It still separates admissible cost providers from the read-only `InferenceBaseline.lookup()` comparison contract.
 
-The general normalized request/result protocol, resolver/registry, evidence store, uncertainty model, discrete-event simulator, observation ingestion, and calibration service remain target architecture. The inference protocols are migration seams, not the final universal schema. Those general contracts should wrap and then replace direct `HardwareProfile` coupling without changing `PortablePlanIR` or allowing a comparison oracle into derivation.
+This remains an implemented slice, not a complete architecture-exploration evidence service. The database supports exact declared selectors and repeated-sample uncertainty, but not calibrated interpolation, a durable append-only raw-evidence service, environment manifests, discrete-event simulation, observation ingestion, or calibration. Training still uses direct `SystemProfile` costing until Calculon equivalence tests protect its resolver migration. See [Cost Providers and Performance-Data Imports](providers.md) for the executable boundary.
 
 ## Design invariants
 
@@ -90,4 +90,4 @@ The general normalized request/result protocol, resolver/registry, evidence stor
 6. Simulation and runtime use the same concrete command identities.
 7. A cache hit is legal only when the complete semantic context matches.
 
-The [performance database](database.md) specifies evidence storage and resolution. [Simulation and calibration](simulation.md) specify plan-level composition and the feedback loop.
+The [cost-provider implementation](providers.md) documents the executable APIs. The [performance database](database.md) specifies the broader storage and resolution design. [Simulation and calibration](simulation.md) specify plan-level composition and the feedback loop.
