@@ -1,6 +1,6 @@
 """Application service for static decoder inference planning.
 
-This layer composes independently compiled prefill and decode phase points
+This layer composes independently derived prefill and decode phase points
 into one homogeneous request-cohort report.  It deliberately excludes request
 arrival, queueing, continuous batching and scheduler policy; those belong to
 the future serving-simulation layer.
@@ -21,20 +21,20 @@ from blueprinting.analysis import (
     InferencePhaseEstimate,
     estimate_inference_phase,
 )
-from blueprinting.compiler.bindings import InferencePhase
-from blueprinting.compiler.codec import content_digest
-from blueprinting.compiler.errors import CompilerError, IRVerificationError, PassExecutionError
-from blueprinting.compiler.frozen import FrozenDict, freeze, thaw
-from blueprinting.compiler.ir import ModelIR, PortablePlanIR
-from blueprinting.compiler.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.compiler.models import (
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.codec import content_digest
+from blueprinting.synthesizer.errors import IRVerificationError, PassExecutionError, SynthesisError
+from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
+from blueprinting.synthesizer.ir import ModelIR, PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
+from blueprinting.synthesizer.models import (
     TransformerInferenceExecutionSpec,
     TransformerInferenceRequestSpec,
     TransformerModelSpec,
     build_transformer_inference_model_ir,
-    inference_compilation_session_for,
+    inference_synthesis_session_for,
 )
-from blueprinting.compiler.passes import AnalysisStore, PassCheckpoint, PassManager, PassPipeline
+from blueprinting.synthesizer.passes import AnalysisStore, PassCheckpoint, PassManager, PassPipeline
 
 from .analysis import (
     AnalysisDiagnostic,
@@ -179,7 +179,7 @@ class InferenceAnalysisOutcome:
 
 
 @dataclass(frozen=True)
-class _CompiledPhase:
+class _DerivedPhase:
     session_fingerprint: str
     plan: PortablePlanIR
     estimate: InferencePhaseEstimate
@@ -215,7 +215,7 @@ def _task_reports(plan: PortablePlanIR, estimate: InferencePhaseEstimate) -> tup
 
 
 class InferenceAnalysisService:
-    """Compile and compose static inference phase points."""
+    """Derive and compose static inference phase points."""
 
     def __init__(
         self,
@@ -279,12 +279,12 @@ class InferenceAnalysisService:
                     ),
                 ),
             )
-        except CompilerError as error:
+        except SynthesisError as error:
             return InferenceAnalysisOutcome(
                 draft.fingerprint,
                 (
                     AnalysisDiagnostic(
-                        code="inference.analysis.compiler_failure",
+                        code="inference.analysis.synthesis_failure",
                         message=str(error),
                     ),
                 ),
@@ -301,7 +301,7 @@ class InferenceAnalysisService:
                 ),
             )
 
-    def _compile_phase(
+    def _derive_phase(
         self,
         source: ModelIR,
         model: TransformerModelSpec,
@@ -312,9 +312,9 @@ class InferenceAnalysisService:
         phase: InferencePhase,
         batch_size: int,
         context_tokens: int,
-    ) -> _CompiledPhase:
+    ) -> _DerivedPhase:
         session = replace(
-            inference_compilation_session_for(
+            inference_synthesis_session_for(
                 model,
                 execution,
                 phase=phase,
@@ -333,7 +333,7 @@ class InferenceAnalysisService:
             draft.calibration_mode,
             cost_provider=self._cost_provider,
         )
-        return _CompiledPhase(session.fingerprint, plan, estimate, pipeline.checkpoints)
+        return _DerivedPhase(session.fingerprint, plan, estimate, pipeline.checkpoints)
 
     def _analyze(self, draft: InferenceAnalysisDraft) -> InferenceAnalysisOutcome:
         model_data = thaw(draft.model_data)
@@ -354,7 +354,7 @@ class InferenceAnalysisService:
         frontend_started = time.perf_counter_ns()
         source = build_transformer_inference_model_ir(model, datatype=execution.datatype)
         frontend_duration = time.perf_counter_ns() - frontend_started
-        prefill = self._compile_phase(
+        prefill = self._derive_phase(
             source,
             model,
             execution,
@@ -365,7 +365,7 @@ class InferenceAnalysisService:
             context_tokens=request.prompt_tokens,
         )
         decode = tuple(
-            self._compile_phase(
+            self._derive_phase(
                 source,
                 model,
                 execution,

@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1060" viewBox="0 0 1440 1060" role="img" aria-labelledby="title desc">
+  <title id="title">Currently implemented Blueprinting workload-derivation path</title>
+  <desc id="desc">The typed Transformer model is derived through ModelIR, DistributedTaskIR, and PortablePlanIR with verified checkpoints. Hardware evidence enters only through derived cost views after portable planning.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#172033" flood-opacity="0.10"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#526075"/></marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2D7FF9"/></marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill:#172033; }
+      .title { font-size:34px; font-weight:760; letter-spacing:-0.5px; }
+      .subtitle { font-size:16px; fill:#667085; }
+      .section { font-size:15px; font-weight:760; letter-spacing:0.8px; }
+      .box-title { font-size:18px; font-weight:730; }
+      .box-sub { font-size:13px; fill:#5D687A; }
+      .pass-name { font-size:17px; font-weight:750; fill:#FFFFFF; }
+      .pass-sub { font-size:13px; fill:#EAE7FF; }
+      .small { font-size:12px; fill:#667085; }
+      .pill { font-size:11px; font-weight:720; }
+      .arrow { fill:none; stroke:#526075; stroke-width:2.3; marker-end:url(#arrow); }
+      .arrow-blue { fill:none; stroke:#2D7FF9; stroke-width:2.4; marker-end:url(#arrowBlue); }
+      .dash { fill:none; stroke:#98A2B3; stroke-width:1.8; stroke-dasharray:6 5; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="1060" fill="#F7F9FC"/>
+  <text x="52" y="58" class="title">Implemented Workload Derivation Path</text>
+  <text x="52" y="86" class="subtitle">当前已实现路径 · Verified derivation ends at PortablePlanIR; hardware cost is a derived validation branch</text>
+
+  <rect x="42" y="118" width="808" height="876" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+  <rect x="884" y="118" width="514" height="876" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+  <text x="70" y="153" class="section" fill="#5B46D6">FORMAL DERIVATION / 形式化推导</text>
+  <text x="912" y="153" class="section" fill="#2D7FF9">DERIVED VALIDATION / 派生验证</text>
+
+  <g filter="url(#shadow)">
+    <rect x="78" y="184" width="334" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <text x="102" y="214" class="box-title">TransformerModelSpec</text>
+    <text x="102" y="238" class="box-sub">hidden · FFN · heads · sequence · blocks</text>
+    <rect x="448" y="184" width="366" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <text x="472" y="214" class="box-title">TransformerExecutionSpec</text>
+    <text x="472" y="238" class="box-sub">TP/PP/DP · microbatch · recompute · comm mode</text>
+
+    <rect x="166" y="298" width="560" height="58" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="446" y="323" text-anchor="middle" class="box-title">Typed validation / 类型校验</text>
+    <text x="446" y="344" text-anchor="middle" class="box-sub">topology · divisibility · dtype · unsupported overlap/offload</text>
+
+    <rect x="78" y="394" width="334" height="88" rx="14" fill="#EEEBFF" stroke="#8274E8"/>
+    <text x="102" y="425" class="box-title">ModelIR</text>
+    <text x="102" y="448" class="box-sub">build_transformer_model_ir()</text>
+    <text x="102" y="468" class="box-sub">one target-neutral decoder_training op</text>
+    <rect x="448" y="394" width="366" height="88" rx="14" fill="#F4F0FF" stroke="#A79BEA"/>
+    <text x="472" y="425" class="box-title">SynthesisSession</text>
+    <text x="472" y="448" class="box-sub">WorkloadBinding + StrategyBinding</text>
+    <text x="472" y="468" class="box-sub">NO target · deployment · calibration binding</text>
+  </g>
+
+  <path d="M245 262 L245 298" class="arrow"/>
+  <path d="M631 262 L631 298" class="arrow"/>
+  <path d="M338 356 L245 394" class="arrow"/>
+  <path d="M554 356 L631 394" class="arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="78" y="526" width="736" height="82" rx="16" fill="#6C5CE7"/>
+    <text x="104" y="557" class="pass-name">transformer-distribute-v1</text>
+    <text x="104" y="582" class="pass-sub">ModelIR → primitive phases + local TP mesh + explicit collectives + structural recomputation</text>
+    <rect x="78" y="638" width="736" height="86" rx="14" fill="#EAF0FF" stroke="#5B78E8"/>
+    <text x="104" y="670" class="box-title">DistributedTaskIR</text>
+    <text x="104" y="694" class="box-sub">logical ranks · serial block DAG · collective payload · BlockMemoryFacts</text>
+    <rect x="650" y="654" width="136" height="30" rx="15" fill="#FFFFFF" stroke="#5B78E8"/>
+    <text x="718" y="674" text-anchor="middle" class="pill" fill="#3E5FCB">PassCheckpoint #1</text>
+
+    <rect x="78" y="760" width="736" height="82" rx="16" fill="#1E9FB5"/>
+    <text x="104" y="791" class="pass-name">transformer-plan-work-v1</text>
+    <text x="104" y="816" class="pass-sub">DistributedTaskIR → exact workload facts + abstract resources/buffers + capability alternatives</text>
+    <rect x="78" y="872" width="736" height="98" rx="14" fill="#E6F8FB" stroke="#1E9FB5"/>
+    <text x="104" y="904" class="box-title">PortablePlanIR</text>
+    <text x="104" y="928" class="box-sub">operations · read/write/message bytes · resource requirements · latency/memory objectives</text>
+    <text x="104" y="950" class="box-sub">No kernel selection · No physical placement · No duration</text>
+    <rect x="650" y="889" width="136" height="30" rx="15" fill="#FFFFFF" stroke="#1E9FB5"/>
+    <text x="718" y="909" text-anchor="middle" class="pill" fill="#147F91">PassCheckpoint #2</text>
+  </g>
+
+  <path d="M245 482 L245 526" class="arrow"/>
+  <path d="M631 482 L631 510 L446 510 L446 526" class="dash"/>
+  <path d="M446 608 L446 638" class="arrow"/>
+  <path d="M446 724 L446 760" class="arrow"/>
+  <path d="M446 842 L446 872" class="arrow"/>
+
+  <line x1="64" y1="985" x2="828" y2="985" stroke="#D64D5F" stroke-width="2.4" stroke-dasharray="9 6"/>
+  <rect x="252" y="972" width="386" height="28" rx="14" fill="#FFF0F2" stroke="#D64D5F"/>
+  <text x="445" y="991" text-anchor="middle" class="pill" fill="#B63849">CURRENT PRODUCTION DERIVATION BOUNDARY / 当前实现边界</text>
+
+  <rect x="912" y="184" width="458" height="72" rx="14" fill="#FFF0F2" stroke="#D64D5F" stroke-dasharray="6 4"/>
+  <text x="1141" y="213" text-anchor="middle" class="box-title" fill="#B63849">Not target binding / 不是目标绑定</text>
+  <text x="1141" y="237" text-anchor="middle" class="box-sub">No ConcretePlanIR, queue, placement, buffer schedule, or MachineIR</text>
+
+  <g filter="url(#shadow)">
+    <rect x="912" y="314" width="458" height="88" rx="14" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="936" y="346" class="box-title">HardwareProfile</text>
+    <text x="936" y="369" class="box-sub">peak throughput/bandwidth + versioned efficiency curves</text>
+    <text x="936" y="389" class="box-sub">same evidence revision shared across every case</text>
+
+    <rect x="912" y="466" width="214" height="98" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="1019" y="497" text-anchor="middle" class="box-title">Peak-only view</text>
+    <text x="1019" y="521" text-anchor="middle" class="box-sub">peak FLOP/s</text>
+    <text x="1019" y="542" text-anchor="middle" class="box-sub">peak BW + latency</text>
+    <rect x="1156" y="466" width="214" height="98" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="1263" y="497" text-anchor="middle" class="box-title">System-evidence view</text>
+    <text x="1263" y="521" text-anchor="middle" class="box-sub">operation/transfer curves</text>
+    <text x="1263" y="542" text-anchor="middle" class="box-sub">network efficiency</text>
+
+    <rect x="968" y="660" width="346" height="92" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="1141" y="692" text-anchor="middle" class="box-title">IterationEstimate</text>
+    <text x="1141" y="716" text-anchor="middle" class="box-sub">1F1B/interleaved · bubble · TP/PP/DP comm</text>
+    <text x="1141" y="737" text-anchor="middle" class="box-sub">canonical PortablePlanIR remains unchanged</text>
+
+    <rect x="968" y="842" width="346" height="88" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1141" y="875" text-anchor="middle" class="box-title">Calculon / SeqSel comparison</text>
+    <text x="1141" y="899" text-anchor="middle" class="box-sub">oracle visible only after derive + estimate</text>
+    <text x="1141" y="919" text-anchor="middle" class="box-sub">never a correction-factor input</text>
+  </g>
+
+  <path d="M1141 402 L1019 466" class="arrow-blue"/>
+  <path d="M1141 402 L1263 466" class="arrow-blue"/>
+  <path d="M1019 564 L1090 660" class="arrow-blue"/>
+  <path d="M1263 564 L1192 660" class="arrow-blue"/>
+  <path d="M1141 752 L1141 842" class="arrow-blue"/>
+  <path d="M814 921 C866 921 868 515 912 515" class="arrow-blue"/>
+  <text x="866" y="887" text-anchor="middle" class="small">derived from</text>
+
+  <rect x="912" y="960" width="458" height="34" rx="17" fill="#F4F0FF" stroke="#A79BEA"/>
+  <text x="1141" y="982" text-anchor="middle" class="pill" fill="#5B46D6">Profiler/validator consumes both verified PassCheckpoint snapshots</text>
+</svg>

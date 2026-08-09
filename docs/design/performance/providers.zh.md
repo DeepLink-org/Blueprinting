@@ -75,7 +75,7 @@ from blueprinting.analysis import (
     SimulatorPerformanceImporter,
     TabularImportSpec,
 )
-from blueprinting.compiler.frozen import FrozenDict
+from blueprinting.synthesizer.frozen import FrozenDict
 
 spec = TabularImportSpec(
     name="noc-sim-r7",

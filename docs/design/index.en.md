@@ -128,7 +128,7 @@ First-class architecture blueprints, target/resource binding, concrete schedulin
 
 ## Reading the formal analysis foundations
 
-- [Derivation and verification model](compilation-model.md) formalizes state, binding, proof obligations, automated analyses, and the concrete abstract machine.
+- [Derivation and verification model](synthesis-model.md) formalizes state, binding, proof obligations, automated analyses, and the concrete abstract machine.
 - [Timeline staging path](timeline-path.md) separates command plans, predictive timelines, prescriptive timing, and LPU backend evolution.
 - [Golden derivation walkthrough](walkthrough.md) follows one Transformer fragment through every representation.
 - [Analysis module architecture](modules.md) assigns Python ownership and extension boundaries.

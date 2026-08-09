@@ -105,7 +105,7 @@
 
   <rect x="850" y="546" width="472" height="146" rx="16" fill="#F1F3F7" stroke="#AAB4C3"/>
   <text x="874" y="578" class="box-title">Content-addressed AnalysisStore</text>
-  <text x="874" y="604" class="box-sub">Address = (IR digest, AnalysisKey, CompilationSession fingerprint)</text>
+  <text x="874" y="604" class="box-sub">Address = (IR digest, AnalysisKey, SynthesisSession fingerprint)</text>
   <line x1="874" y1="620" x2="1298" y2="620" stroke="#D1D7E0"/>
   <text x="874" y="646" class="box-sub">• preserved analyses are copied only to the verified output digest</text>
   <text x="874" y="668" class="box-sub">• non-canonical, duplicate, or undeclared products reject the pass</text>

@@ -2,7 +2,7 @@
 
 当前已经实现的 Transformer 纵向切片刻意保持窄而可审计：它导入一个强类型 decoder training 工作负载，形式化推导一个本地 tensor-parallel block，并把精确工作量保存在 target-neutral portable plan 中。这条路径验证了分析架构的前半段，但不会把尚未完成的 target scheduling 描述成已实现能力。
 
-![已经实现的 Transformer 工作负载推导路径](../../assets/architecture/implemented-compile-path.svg)
+![已经实现的 Transformer 工作负载推导路径](../../assets/architecture/implemented-derivation-path.svg)
 
 ## 范围与边界
 
@@ -23,13 +23,13 @@ TransformerModelSpec + TransformerExecutionSpec
 
 ## 强类型语义导入
 
-`TransformerModelSpec` 拥有模型维度与语义，`TransformerExecutionSpec` 拥有 micro-batching、TP/PP/DP、重计算、数据类型和 tensor-parallel 通信模式。`compilation_session_for()` 把这些执行选择转换成显式 workload 与 strategy binding。
+`TransformerModelSpec` 拥有模型维度与语义，`TransformerExecutionSpec` 拥有 micro-batching、TP/PP/DP、重计算、数据类型和 tensor-parallel 通信模式。`synthesis_session_for()` 把这些执行选择转换成显式 workload 与 strategy binding。
 
 Importer 会在 pass 运行前拒绝非法维度、head 不可整除、错误并行拓扑以及互相矛盾的 workload facts。随后 `build_transformer_model_ir()` 创建一个粗粒度、target-neutral 的 `transformer.decoder_training` operation。这个 snapshot 中不存在 target 名称、峰值性能、kernel ID 或 latency。
 
 ## 静态工作量推导
 
-`compile_transformer_block()` 把一个 block 分解为强类型 `PrimitiveInvocation`。每个 invocation 都带有 phase、engine class、精确 operations、精确 read/write bytes；如果它是 collective，还会带有 collective kind 和逻辑 message bytes。
+`derive_transformer_block()` 把一个 block 分解为强类型 `PrimitiveInvocation`。每个 invocation 都带有 phase、engine class、精确 operations、精确 read/write bytes；如果它是 collective，还会带有 collective kind 和逻辑 message bytes。
 
 分析遵循数据依赖，而不是拟合比例。对于线性层 `Y[M,K] = X[M,N] x W[N,K]`，forward、activation-gradient 和 weight-gradient 是三个显式矩阵乘。Attention、normalization、activation、dropout、residual 与 optimizer work 也分别表示。
 
@@ -86,10 +86,10 @@ Observer 可以把这些 facts 与 framework trace 或 reference model 对比并
 
 | 关注点 | 源码 | 测试 |
 |---|---|---|
-| 强类型 Transformer specification | `src/blueprinting/compiler/models/transformer.py` | binding 与 calibration tests |
-| 工作量代数 | `src/blueprinting/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
-| 两个 derivation pass | `src/blueprinting/compiler/lowering/transformer.py` | canonical representation 与 calibration tests |
-| 事务与 checkpoint | `src/blueprinting/compiler/passes/base.py` | `tests/compiler/test_pass_manager.py` |
+| 强类型 Transformer specification | `src/blueprinting/synthesizer/models/transformer.py` | binding 与 calibration tests |
+| 工作量代数 | `src/blueprinting/analysis/transformer_workload.py` | `tests/synthesizer/test_calculon_calibration.py` |
+| 两个 derivation pass | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation 与 calibration tests |
+| 事务与 checkpoint | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
 | Evidence-derived estimate | `src/blueprinting/analysis/cost_model.py` | calibration tests |
 
 [Calculon 校准实验](../../experiments/calculon-calibration.md)是这条已实现纵向切片的端到端审计。

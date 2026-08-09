@@ -19,6 +19,7 @@ This page is the compact index of architecture commitments, rejected alternative
 | Runtime | Honor a verified plan while retaining bounded mechanism decisions allowed by the contract | Runtime does not repeat unbounded global search or pretend backpressure and failure do not exist |
 | Schema maturity | Internal schema versions are not automatically public compatibility promises | A contract graduates only after producer, independent consumer, migration, and conformance gates pass |
 | Documentation | Colocated suffix-based bilingual sources | Navigation and language switching remain page-aligned |
+| Formal derivation package | Hard-cut Python rename to `blueprinting.synthesizer`; preserve historical codec tags | Source ownership matches formal plan synthesis without invalidating unchanged canonical snapshots; see [ADR-0001](adr/0001-synthesizer-package.md) |
 
 ## Rejected alternatives
 
@@ -74,7 +75,7 @@ Accepted ADRs are immutable except for status links and typo fixes. A supersedin
 | Formal representation | An authoritative typed model with a versioned contract and verifier; current canonical types use the `*IR` suffix |
 | Derived view | A rebuildable projection that cannot change source representation semantics |
 | Artifact | A published report, trace, executable, or replayable package |
-| Binding | An explicit specialization fact supplied through a typed derivation context; current code calls it `CompilationSession` |
+| Binding | An explicit specialization fact supplied through a typed derivation context; current code calls it `SynthesisSession` |
 | Derivation | A verified rule that resolves decisions, discharges obligations, and preserves required semantics |
 | Lowering | A compiler-engineering implementation technique used for a staged derivation |
 | Revision | An immutable identity for evidence, schema, analysis engine, plugin, or product state |

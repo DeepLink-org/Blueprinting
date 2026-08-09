@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..compiler.bindings import InferencePhase
-from ..compiler.frozen import FrozenDict
-from ..compiler.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
-from ..compiler.models.transformer import TransformerModelSpec
-from ..compiler.models.transformer_inference import TransformerInferenceExecutionSpec
+from ..synthesizer.bindings import InferencePhase
+from ..synthesizer.frozen import FrozenDict
+from ..synthesizer.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
+from ..synthesizer.models.transformer import TransformerModelSpec
+from ..synthesizer.models.transformer_inference import TransformerInferenceExecutionSpec
 from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject
 from .cost_model import CalibrationMode, HardwareProfile
 from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery

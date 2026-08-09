@@ -49,7 +49,7 @@ from .inference_evidence import (
 from .transformer_inference import (
     InferenceBlockMemoryFacts,
     InferenceInvocation,
-    compile_transformer_inference_block,
+    derive_transformer_inference_block,
 )
 from .transformer_workload import (
     BlockMemoryFacts,
@@ -57,7 +57,7 @@ from .transformer_workload import (
     PhaseWork,
     PrimitiveInvocation,
     TrainingPhase,
-    compile_transformer_block,
+    derive_transformer_block,
 )
 from .vidur import VidurProfileBaseline, VidurProfileImporter
 
@@ -102,8 +102,8 @@ __all__ = [
     "TabularImportSpec",
     "TabularPerformanceImporter",
     "TrainingPhase",
-    "compile_transformer_block",
-    "compile_transformer_inference_block",
+    "derive_transformer_block",
+    "derive_transformer_inference_block",
     "cost_query_for_inference_task",
     "estimate_block",
     "estimate_inference_phase",

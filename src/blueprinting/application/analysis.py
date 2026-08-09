@@ -17,22 +17,22 @@ from itertools import product
 from typing import TYPE_CHECKING, Any
 
 from blueprinting.analysis import CalibrationMode, HardwareProfile, estimate_iteration
-from blueprinting.compiler.codec import content_digest
-from blueprinting.compiler.errors import (
-    CompilerError,
+from blueprinting.synthesizer.codec import content_digest
+from blueprinting.synthesizer.errors import (
     IRVerificationError,
     PassExecutionError,
+    SynthesisError,
 )
-from blueprinting.compiler.frozen import FrozenDict, freeze, thaw
-from blueprinting.compiler.ir import DistributedTaskIR, ModelIR, PortablePlanIR
-from blueprinting.compiler.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from blueprinting.compiler.models import (
+from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
+from blueprinting.synthesizer.ir import DistributedTaskIR, ModelIR, PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
+from blueprinting.synthesizer.models import (
     TransformerExecutionSpec,
     TransformerModelSpec,
     build_transformer_model_ir,
-    compilation_session_for,
+    synthesis_session_for,
 )
-from blueprinting.compiler.passes import AnalysisStore, PassManager, PassPipeline
+from blueprinting.synthesizer.passes import AnalysisStore, PassManager, PassPipeline
 
 LOGGER = logging.getLogger(__name__)
 
@@ -427,9 +427,9 @@ class BlueprintingService:
                 hint="检查模型维度、批量整除关系、并行度和网络层级。",
             )
             return AnalysisOutcome(draft.fingerprint, (diagnostic,))
-        except CompilerError as error:
+        except SynthesisError as error:
             diagnostic = AnalysisDiagnostic(
-                code="analysis.compiler_failure",
+                code="analysis.synthesis_failure",
                 message=str(error),
                 hint="查看 IR 推导页中的阶段信息和 digest。",
             )
@@ -459,7 +459,7 @@ class BlueprintingService:
         frontend_started = time.perf_counter_ns()
         source = build_transformer_model_ir(model, datatype=execution.datatype)
         frontend_duration = time.perf_counter_ns() - frontend_started
-        session = replace(compilation_session_for(model, execution), seed=draft.seed)
+        session = replace(synthesis_session_for(model, execution), seed=draft.seed)
         pipeline = self._manager.run(self._pipeline, source, session=session)
         plan = pipeline.ir
         if not isinstance(plan, PortablePlanIR):

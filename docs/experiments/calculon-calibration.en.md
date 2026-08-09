@@ -144,15 +144,15 @@ uv run python examples/calculon_calibration.py \
 uv run pytest -m baseline_regression tests/regression
 ```
 
-The original eight parametrized training regressions remain in `tests/compiler/test_calculon_calibration.py`. The repository-level gate additionally runs all eight cases as one experiment and evaluates `data/validation/baseline_regression_contract.json`: workload and Calculon equivalence, memory, paper-error budgets, evidence revision, case identity, aggregate goldens, and every `PortablePlanIR` digest are frozen together. Updating a golden is a reviewed contract change; the gate has no automatic accept-current-output mode.
+The original eight parametrized training regressions remain in `tests/synthesizer/test_calculon_calibration.py`. The repository-level gate additionally runs all eight cases as one experiment and evaluates `data/validation/baseline_regression_contract.json`: workload and Calculon equivalence, memory, paper-error budgets, evidence revision, case identity, aggregate goldens, and every `PortablePlanIR` digest are frozen together. Updating a golden is a reviewed contract change; the gate has no automatic accept-current-output mode.
 
 Implementation map:
 
-- `compiler/models/transformer.py`: typed frontend and execution facts;
+- `synthesizer/models/transformer.py`: typed frontend and execution facts;
 - `analysis/transformer_workload.py`: static operation/byte analysis;
-- `compiler/lowering/transformer.py`: the two canonical derivation passes;
+- `synthesizer/lowering/transformer.py`: the two canonical derivation passes;
 - `analysis/cost_model.py`: peak-only and evidence-backed views;
-- `compiler/experiments/calculon.py`: oracle adapter, audit, and report.
-- `compiler/experiments/regression.py`: strict cross-domain baseline gate and diagnostics.
+- `synthesizer/experiments/calculon.py`: oracle adapter, audit, and report.
+- `synthesizer/experiments/regression.py`: strict cross-domain baseline gate and diagnostics.
 
 This is the repository's single Blueprinting/Calculon calibration path. Future comparisons must keep oracle data unavailable until workload construction and estimation complete. See [Transformer workload derivation](../design/passes/transformer.md) for the internal transformation contracts and [performance evidence](../design/performance/index.md) for the intended provider migration.

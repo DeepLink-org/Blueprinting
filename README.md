@@ -80,17 +80,17 @@ pip install -e ".[dev,docs]"
 ## Build the current Transformer workload blueprint
 
 ```python
-from blueprinting.compiler.lowering import (
+from blueprinting.synthesizer.lowering import (
     DistributeTransformerTrainingPass,
     PlanTransformerTrainingPass,
 )
-from blueprinting.compiler.models import (
+from blueprinting.synthesizer.models import (
     TransformerExecutionSpec,
     TransformerModelSpec,
     build_transformer_model_ir,
-    compilation_session_for,
+    synthesis_session_for,
 )
-from blueprinting.compiler.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.passes import PassManager, PassPipeline
 
 model = TransformerModelSpec.from_mapping("gpt3-175B", model_config)
 execution = TransformerExecutionSpec.from_mapping(execution_config)
@@ -102,7 +102,7 @@ result = PassManager().run(
         PlanTransformerTrainingPass(),
     ),
     source,
-    session=compilation_session_for(model, execution),
+    session=synthesis_session_for(model, execution),
 )
 
 portable_plan = result.ir
@@ -152,24 +152,24 @@ Calculon remains an adjacent calibration utility and does not participate in the
 ## Repository layout
 
 ```text
-src/blueprinting/compiler/
+src/blueprinting/synthesizer/
 ├── ir/              # five canonical IR contracts
 ├── models/          # typed semantic frontends
 ├── lowering/        # staged derivation passes
-├── analysis/        # exact workload and derived cost analyses
 ├── experiments/     # reproducible validation experiments
 ├── passes/          # transformation contracts and manager
 └── session.py       # explicit bindings and typed derivation context
 
+src/blueprinting/analysis/      # exact workload and evidence-backed cost analyses
 src/blueprinting/application/  # framework-neutral analysis service
 src/blueprinting/workbench/    # NiceGUI workbench and legacy presentation adapters
 
-tests/compiler/      # current formal-representation and calibration tests
+tests/synthesizer/      # current formal-representation and calibration tests
 docs/                # bilingual MkDocs design, reference, experiment, and project documentation
 ```
 
-The `compiler` package path and names such as `CompilationSession` are current implementation identifiers retained
-for compatibility; they do not define the product architecture.
+The `synthesizer` package owns canonical representations and verified derivation mechanics. The name describes
+formal plan synthesis—not RTL synthesis, a standalone Compiler product, or Blueprinting's top-level identity.
 
 ## Development
 

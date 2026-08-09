@@ -71,7 +71,7 @@ TransformerModelSpec + inference mapping + request cohort
 
 ## 当前结果可以声称什么
 
-仓库可以声称：选定 Transformer training workload 被分解为可审计 target-neutral work，并在不使用 case-specific timing coefficient 的前提下与一个版本化 system evidence profile 比较；系统也可以编译 dense-MHA inference 的 prefill/decode phase point、推导 KV 容量，并以显式 evidence provenance 组合 homogeneous request cohort。系统提供了后续 simulation correlation 所需的 stable identity、verifier gate 与 pass-level checkpoint hook。
+仓库可以声称：选定 Transformer training workload 被分解为可审计 target-neutral work，并在不使用 case-specific timing coefficient 的前提下与一个版本化 system evidence profile 比较；系统也可以推导 dense-MHA inference 的 prefill/decode phase point、推导 KV 容量，并以显式 evidence provenance 组合 homogeneous request cohort。系统提供了后续 simulation correlation 所需的 stable identity、verifier gate 与 pass-level checkpoint hook。
 
 当前还不能声称 serving-system SLO accuracy：arrival、queueing、continuous batching、scheduler overhead、contention 与 tail distribution 均未实现。也不能声称 Blueprinting 已经探索 compute/memory/interconnect parameter、预测 NoC 行为、建模 energy/area/cost、构造合法 concrete hardware schedule、产生 sensitivity/Pareto result，或用真实 GPU/LPU observation 闭合 calibration loop。
 
@@ -79,8 +79,8 @@ TransformerModelSpec + inference mapping + request cohort
 
 | 基础 | 状态 | Source of truth |
 |---|---|---|
-| Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/compiler/{frozen,ids,codec}.py` |
-| 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/compiler/ir/`；只有前三层存在 production derivation slice |
+| Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
+| 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`；只有前三层存在 production derivation slice |
 | Typed workload/strategy/target/deployment binding | **Implemented** | `bindings.py`、`session.py` |
 | Transactional analysis/transformation、checkpoint、observer | **Implemented** | `passes/base.py` |
 | Transformer semantic frontend 与 workload algebra | **Implemented slice** | `models/transformer.py`、`analysis/transformer_workload.py` |

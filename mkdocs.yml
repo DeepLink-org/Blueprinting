@@ -62,7 +62,7 @@ nav:
       - Vidur Raw Component-Profile Alignment: experiments/vidur-baseline.md
   - Formal Analysis Foundations:
       - Formal Analysis Architecture: design/index.md
-      - Derivation and Verification Model: design/compilation-model.md
+      - Derivation and Verification Model: design/synthesis-model.md
       - Timeline Staging Path: design/timeline-path.md
       - Golden Derivation Walkthrough: design/walkthrough.md
       - Analysis Module Architecture: design/modules.md
@@ -78,6 +78,7 @@ nav:
       - Implementation Status: project/status.md
       - Roadmap: project/roadmap.md
       - Decisions and Terminology: project/decisions.md
+      - ADR-0001 — Synthesizer Package: project/adr/0001-synthesizer-package.md
       - Architecture Risk Register: project/risks.md
       - Documentation Guide: contributing/documentation.md
 
@@ -136,6 +137,7 @@ plugins:
             Implementation Status: 实现状态
             Roadmap: 路线图
             Decisions and Terminology: 设计决策与术语
+            ADR-0001 — Synthesizer Package: ADR-0001 — Synthesizer 包命名
             Architecture Risk Register: 架构风险登记表
             Documentation Guide: 文档维护指南
 

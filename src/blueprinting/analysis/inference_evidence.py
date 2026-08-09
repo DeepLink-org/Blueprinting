@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from ..compiler.bindings import InferencePhase
+from ..synthesizer.bindings import InferencePhase
 
 
 @dataclass(frozen=True)

@@ -47,7 +47,7 @@ An exception, verifier failure, observer rejection, or undeclared analysis produ
 Analyses are addressed by:
 
 ```text
-(IR digest, AnalysisKey, CompilationSession fingerprint)
+(IR digest, AnalysisKey, SynthesisSession fingerprint)
 ```
 
 A pass lists every required, preserved, and produced analysis. Preserved products are copied only to the verified output digest. Undeclared products and noncanonical addresses fail the transaction.
@@ -86,4 +86,4 @@ Every production analysis or transformation design must include:
 
 ## Current implementation
 
-The repository implements `SchemaRange`, `PassContract`, `PassPipeline`, `PassManager`, content-addressed `AnalysisStore`, pass records, checkpoints, and observers in `src/blueprinting/compiler/passes/base.py`. Contract and failure behavior are covered by `tests/compiler/test_pass_manager.py`.
+The repository implements `SchemaRange`, `PassContract`, `PassPipeline`, `PassManager`, content-addressed `AnalysisStore`, pass records, checkpoints, and observers in `src/blueprinting/synthesizer/passes/base.py`. Contract and failure behavior are covered by `tests/synthesizer/test_pass_manager.py`.

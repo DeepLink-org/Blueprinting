@@ -47,7 +47,7 @@ Exception、verifier failure、observer rejection 或 undeclared analysis produc
 Analysis 地址为：
 
 ```text
-(IR digest, AnalysisKey, CompilationSession fingerprint)
+(IR digest, AnalysisKey, SynthesisSession fingerprint)
 ```
 
 Pass 列出所有 required、preserved 和 produced analysis。Preserved product 只复制到 verified output digest。Undeclared product 和 noncanonical address 会使 transaction 失败。
@@ -86,4 +86,4 @@ Search pass 可以具有 seed 和 budget。Candidate order、pruning 和 rejecti
 
 ## 当前实现
 
-仓库在 `src/blueprinting/compiler/passes/base.py` 中实现了 `SchemaRange`、`PassContract`、`PassPipeline`、`PassManager`、content-addressed `AnalysisStore`、pass record、checkpoint 和 observer。Contract 与 failure behavior 由 `tests/compiler/test_pass_manager.py` 覆盖。
+仓库在 `src/blueprinting/synthesizer/passes/base.py` 中实现了 `SchemaRange`、`PassContract`、`PassPipeline`、`PassManager`、content-addressed `AnalysisStore`、pass record、checkpoint 和 observer。Contract 与 failure behavior 由 `tests/synthesizer/test_pass_manager.py` 覆盖。

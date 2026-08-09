@@ -50,10 +50,10 @@ This follows the plugin's [suffix-structure guidance](https://ultrabug.github.io
 `mkdocs.yml` and all internal Markdown links use the language-neutral canonical path:
 
 ```markdown
-[Derivation and verification model](../design/compilation-model.md)
+[Derivation and verification model](../design/synthesis-model.md)
 ```
 
-Never link to `compilation-model.en.md`, `compilation-model.zh.md`, or a generated `/zh/` URL. The i18n plugin resolves the canonical path for the active locale and keeps the language selector aligned.
+Never link to `synthesis-model.en.md`, `synthesis-model.zh.md`, or a generated `/zh/` URL. The i18n plugin resolves the canonical path for the active locale and keeps the language selector aligned.
 
 External links use ordinary absolute HTTPS URLs. Shared SVGs use relative paths. A language-specific asset should use the same `.en`/`.zh` pairing convention and be justified; diagrams should prefer language-neutral labels where practical.
 

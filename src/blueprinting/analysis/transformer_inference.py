@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..compiler.bindings import InferencePhase
-from ..compiler.codec import record_type
-from ..compiler.ir import CollectiveKind
-from ..compiler.models.transformer import TransformerModelSpec
-from ..compiler.models.transformer_inference import TransformerInferenceExecutionSpec
+from ..synthesizer.bindings import InferencePhase
+from ..synthesizer.codec import record_type
+from ..synthesizer.ir import CollectiveKind
+from ..synthesizer.models.transformer import TransformerModelSpec
+from ..synthesizer.models.transformer_inference import TransformerInferenceExecutionSpec
 from .transformer_workload import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
@@ -73,7 +73,7 @@ def _work(*, operations: int = 0, read: int = 0, write: int = 0, message: int = 
     return PhaseWork(operations=operations, read_bytes=read, write_bytes=write, message_bytes=message)
 
 
-def compile_transformer_inference_block(
+def derive_transformer_inference_block(
     model: TransformerModelSpec,
     execution: TransformerInferenceExecutionSpec,
     *,

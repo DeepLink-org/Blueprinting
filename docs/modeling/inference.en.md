@@ -71,9 +71,9 @@ It is multiplied by the number of blocks in one pipeline stage. Weight storage i
 
 ```python
 from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
-from blueprinting.compiler.bindings import InferencePhase
-from blueprinting.compiler.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.compiler.models import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
+from blueprinting.synthesizer.models import TransformerInferenceExecutionSpec, TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -96,7 +96,7 @@ case = VidurExperimentCase(
 report = run_vidur_experiment((case,), baseline)
 ```
 
-The API boundary is intentional: an admissible internal `InferenceCostProvider` exposes `resolve()`, while an external `InferenceBaseline` exposes `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the compiled latency.
+The API boundary is intentional: an admissible internal `InferenceCostProvider` exposes `resolve()`, while an external `InferenceBaseline` exposes `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the estimated latency.
 
 Comparison is over an explicit semantic intersection. The report contains matched component count, coverage, Blueprinting's comparable subtotal, Vidur's comparable subtotal, excluded Blueprinting work, signed comparable-subtotal error, and non-cancelling component MAPE/max error. Missing records remain `not-covered`; they are never converted to zero. This matters because Vidur's public block aggregation has one `add_time`, whereas Blueprinting deliberately keeps both residual additions explicit, and the current CSV adapter does not yet ingest collective profiles.
 
@@ -119,4 +119,4 @@ The scheduler produces a concrete batch context and asks the cost resolver for t
 
 ## Current limitations
 
-The implemented dialect covers one dense-MHA, non-gated-MLP decoder template. Embedding, LM head, sampler, explicit norm/residual topology, GQA/MQA, gated MLP, MoE, prefix caching, paged allocation, chunked prefill, speculative decoding, disaggregated prefill/decode, scheduler overhead, and resource contention are not modeled yet. PP and replica structure are not fully materialized in `DistributedTaskIR`; PP latency/memory composition is currently analytical after the local-TP block plan. Each decode context is recompiled rather than algebraically specialized from a parametric plan. `replicas` currently participates only in mapping validation and world-size accounting; reported latency and static model token rate remain single-replica views, not multi-replica serving capacity. Consequently, the current output is suitable for inspecting derivation, analytical memory fit, and first-order hardware sensitivity—not for claiming production serving SLO accuracy.
+The implemented dialect covers one dense-MHA, non-gated-MLP decoder template. Embedding, LM head, sampler, explicit norm/residual topology, GQA/MQA, gated MLP, MoE, prefix caching, paged allocation, chunked prefill, speculative decoding, disaggregated prefill/decode, scheduler overhead, and resource contention are not modeled yet. PP and replica structure are not fully materialized in `DistributedTaskIR`; PP latency/memory composition is currently analytical after the local-TP block plan. Each decode context is derived independently rather than algebraically specialized from a parametric plan. `replicas` currently participates only in mapping validation and world-size accounting; reported latency and static model token rate remain single-replica views, not multi-replica serving capacity. Consequently, the current output is suitable for inspecting derivation, analytical memory fit, and first-order hardware sensitivity—not for claiming production serving SLO accuracy.

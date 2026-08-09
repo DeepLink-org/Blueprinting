@@ -12,7 +12,7 @@ Transformer semantics + mapping + phase context
   -> Blueprinting DistributedTaskIR
   -> Blueprinting PortablePlanIR
   -> Blueprinting peak-only and system-evidence costs
-  -> freeze plan digests and compiled estimates
+  -> freeze plan digests and Blueprinting estimates
   -> exact Vidur baseline lookup
   -> coverage and error report
 ```
@@ -43,7 +43,7 @@ vidur.kv_cache_size = blueprinting.context_tokens - 1
 - Blueprinting 完整 block cost；
 - Blueprinting 在 matched component 上的 subtotal；
 - Vidur 在相同 component intersection 上的 subtotal；
-- 未进入比较的 compiled cost；
+- 未进入比较的 Blueprinting estimated cost；
 - component 与 comparable-subtotal 层的 signed absolute/relative error；
 - 不可相互抵消的 component MAPE 与最大 component error；
 - model、distributed plan、portable plan、hardware evidence 与 baseline revision。
@@ -73,7 +73,7 @@ uv run pytest -m baseline_regression tests/regression
 
 固定的 Phi-2 数据是 raw component profile，并不能证明 Blueprinting 已复现 Phi-2 的完整 decoder topology。当前 model schema 还没有表达 norm placement、parallel-residual structure、fusion/layout choice 与 embedding/LM-head work。因此 experiment policy 显式记录 `topology_equivalence = not-claimed-by-raw-component-profile-alignment`。
 
-Vidur 公开的 block aggregation 只贡献一个 `add_time`，而 Blueprinting 将 attention residual 与 MLP residual 保留为两个显式 operation。只有最终 MLP residual 拥有直接的 Vidur component peer；另一个仍作为 excluded compiled work 可见。系统把它报告为 semantic coverage gap，而不会通过重复使用同一个 baseline value 来掩盖差异。
+Vidur 公开的 block aggregation 只贡献一个 `add_time`，而 Blueprinting 将 attention residual 与 MLP residual 保留为两个显式 operation。只有最终 MLP residual 拥有直接的 Vidur component peer；另一个仍作为 excluded estimated work 可见。系统把它报告为 semantic coverage gap，而不会通过重复使用同一个 baseline value 来掩盖差异。
 
 ## 如何改进对齐
 

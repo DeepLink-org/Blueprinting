@@ -20,10 +20,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from ..compiler.codec import content_digest, enum_type, record_type
-from ..compiler.frozen import FrozenDict
-from ..compiler.ir import CollectiveKind, PortablePlanIR
-from ..compiler.models.transformer import (
+from ..synthesizer.codec import content_digest, enum_type, record_type
+from ..synthesizer.frozen import FrozenDict
+from ..synthesizer.ir import CollectiveKind, PortablePlanIR
+from ..synthesizer.models.transformer import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,
@@ -398,7 +398,7 @@ def estimate_iteration(
     hardware: HardwareProfile,
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
 ) -> IterationEstimate:
-    """Apply an explicit 1F1B/interleaved schedule to a compiled block plan."""
+    """Apply an explicit 1F1B/interleaved schedule to a derived block plan."""
 
     model = plan.attributes.get("model_spec")
     execution = plan.attributes.get("execution_spec")

@@ -128,7 +128,7 @@ First-class architecture blueprint、target/resource binding、concrete scheduli
 
 ## 如何阅读形式化分析基础
 
-- [推导与验证模型](compilation-model.md)形式化 state、binding、proof obligation、automated analysis 与 concrete abstract machine。
+- [推导与验证模型](synthesis-model.md)形式化 state、binding、proof obligation、automated analysis 与 concrete abstract machine。
 - [Timeline 阶段路径](timeline-path.md)区分 command plan、预测时间线、强制时序与 LPU backend 演进。
 - [完整推导示例](walkthrough.md)展示一个 Transformer fragment 穿过所有 representation。
 - [分析模块架构](modules.md)定义 Python ownership 与 extension boundary。

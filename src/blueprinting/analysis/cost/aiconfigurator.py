@@ -13,8 +13,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ...compiler.codec import content_digest
-from ...compiler.frozen import FrozenDict
+from ...synthesizer.codec import content_digest
+from ...synthesizer.frozen import FrozenDict
 from .database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .importers import read_tabular_rows
 from .protocol import CostSubject, EstimateMethod

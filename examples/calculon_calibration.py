@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the canonical compiler/Calculon calibration experiment.
+"""Run the canonical Blueprinting/Calculon calibration experiment.
 
 Examples:
     uv run python examples/calculon_calibration.py
@@ -15,14 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from blueprinting.compiler.experiments import (  # noqa: E402
+from blueprinting.synthesizer.experiments import (  # noqa: E402
     discover_seqsel_tab5_cases,
     run_calculon_experiment,
 )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compile and calibrate the SeqSel/Calculon comparison cases")
+    parser = argparse.ArgumentParser(description="Derive and calibrate the SeqSel/Calculon comparison cases")
     parser.add_argument("--output", type=Path, help="optional JSON report path")
     arguments = parser.parse_args()
 
@@ -32,7 +32,7 @@ def main() -> int:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(payload, encoding="utf-8")
 
-    print("Blueprinting compiler ↔ Calculon calibration")
+    print("Blueprinting synthesis ↔ Calculon calibration")
     print(f"hardware evidence: {report.hardware_name} / {report.evidence_revision}")
     print(
         "mean absolute error: "

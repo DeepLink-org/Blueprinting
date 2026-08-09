@@ -27,16 +27,16 @@ from blueprinting.analysis import (
     estimate_inference_phase,
 )
 from blueprinting.analysis.cost import InvalidCostEvidenceError
-from blueprinting.compiler.bindings import InferencePhase
-from blueprinting.compiler.frozen import FrozenDict
-from blueprinting.compiler.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.compiler.models import (
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.frozen import FrozenDict
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
+from blueprinting.synthesizer.models import (
     TransformerInferenceExecutionSpec,
     TransformerModelSpec,
     build_transformer_inference_model_ir,
-    inference_compilation_session_for,
+    inference_synthesis_session_for,
 )
-from blueprinting.compiler.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.passes import PassManager, PassPipeline
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -410,7 +410,7 @@ def _inference_fixture():
         .run(
             PassPipeline.of(DistributeTransformerInferencePass(), PlanTransformerInferencePass()),
             build_transformer_inference_model_ir(model),
-            session=inference_compilation_session_for(
+            session=inference_synthesis_session_for(
                 model,
                 execution,
                 phase=InferencePhase.DECODE,

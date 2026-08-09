@@ -24,7 +24,7 @@ result.bottlenecks
 result.sensitivity
 ```
 
-内部会为每个 candidate 创建 immutable typed derivation context，用于 workload mapping、architecture binding 与 analysis addressing。当前实现把这个对象命名为 `CompilationSession`；该 class 及其 workload/strategy binding 已实现，而 `ExplorationSession` 与 end-to-end product facade 仍为 planned。Global mutable configuration 被禁止，因为它会破坏 experiment reproducibility。
+内部会为每个 candidate 创建 immutable typed derivation context，用于 workload mapping、architecture binding 与 analysis addressing。当前实现把这个对象命名为 `SynthesisSession`；该 class 及其 workload/strategy binding 已实现，而 `ExplorationSession` 与 end-to-end product facade 仍为 planned。Global mutable configuration 被禁止，因为它会破坏 experiment reproducibility。
 
 ## Frontend
 
@@ -123,18 +123,18 @@ bindings/session ───┘          │
                     observation / calibration
 ```
 
-Canonical IR、binding、pass 与 lowering 基础设施位于 `src/blueprinting/compiler/`。分析子系统则是同级的 `src/blueprinting/analysis/`：compiler 产出显式 workload 与 plan facts，analysis 再用解析模型和外部证据评估这些事实。Analysis 可以依赖 canonical compiler contract，但调用方不能把 cost evidence 当作隐式 lowering 决策。
+Canonical IR、binding、pass 与 lowering 基础设施位于 `src/blueprinting/synthesizer/`。分析子系统则是同级的 `src/blueprinting/analysis/`：synthesizer 产出显式 workload 与 plan facts，analysis 再用解析模型和外部证据评估这些事实。Analysis 可以依赖 canonical synthesis contract，但调用方不能把 cost evidence 当作隐式 lowering 决策。
 
 ## 当前源码映射
 
 | 关注点 | 源码 | 状态 |
 |---|---|---|
-| ID、expression、codec、frozen value | `compiler/{ids,expr,codec,frozen}.py` | Implemented |
-| Canonical 形式化表示（`*IR`） | `compiler/ir/` | Implemented contracts |
-| Binding 与 session | `compiler/{bindings,session}.py` | Implemented |
-| Analysis/transformation transaction | `compiler/passes/base.py` | Implemented |
-| Transformer frontend | `compiler/models/` | Implemented slice |
+| ID、expression、codec、frozen value | `synthesizer/{ids,expr,codec,frozen}.py` | Implemented |
+| Canonical 形式化表示（`*IR`） | `synthesizer/ir/` | Implemented contracts |
+| Binding 与 session | `synthesizer/{bindings,session}.py` | Implemented |
+| Analysis/transformation transaction | `synthesizer/passes/base.py` | Implemented |
+| Transformer frontend | `synthesizer/models/` | Implemented slice |
 | Workload 与 cost analysis | `analysis/` | Implemented slice |
-| Transformer derivation pass | `compiler/lowering/transformer.py` | Implemented through portable plan |
+| Transformer derivation pass | `synthesizer/lowering/transformer.py` | Implemented through portable plan |
 | 当前 hardware evidence adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
 | Architecture model/search、evidence service、simulation、emission | Accepted boundary | Planned |

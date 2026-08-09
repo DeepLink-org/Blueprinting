@@ -71,7 +71,7 @@ TransformerModelSpec + inference mapping + request cohort
 
 ## What the current result can claim
 
-The repository can claim that selected Transformer training workloads are decomposed into auditable target-neutral work and compared against one versioned system evidence profile without case-specific timing coefficients. It can also compile dense-MHA inference prefill and decode phase points, derive KV capacity, and compose a homogeneous request cohort with explicit evidence provenance. It provides the stable identities, verifier gates, and pass-level checkpoint hooks needed for later simulation correlation.
+The repository can claim that selected Transformer training workloads are decomposed into auditable target-neutral work and compared against one versioned system evidence profile without case-specific timing coefficients. It can also derive dense-MHA inference prefill and decode phase points, derive KV capacity, and compose a homogeneous request cohort with explicit evidence provenance. It provides the stable identities, verifier gates, and pass-level checkpoint hooks needed for later simulation correlation.
 
 It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous batching, scheduler overhead, contention, and tail distributions are absent. Nor can it yet claim that Blueprinting explores compute/memory/interconnect parameters, predicts NoC behavior, models energy/area/cost, constructs a legal concrete hardware schedule, produces sensitivity/Pareto results, or closes a calibration loop on real GPU/LPU observations.
 
@@ -79,8 +79,8 @@ It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous 
 
 | Foundation | Status | Source of truth |
 |---|---|---|
-| Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/compiler/{frozen,ids,codec}.py` |
-| Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/compiler/ir/`; only the first three have a production derivation slice |
+| Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
+| Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`; only the first three have a production derivation slice |
 | Typed workload/strategy/target/deployment bindings | **Implemented** | `bindings.py`, `session.py` |
 | Transactional analyses/transformations, checkpoints, observers | **Implemented** | `passes/base.py` |
 | Transformer semantic frontend and workload algebra | **Implemented slice** | `models/transformer.py`, `analysis/transformer_workload.py` |

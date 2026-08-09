@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 
-from ..compiler.codec import enum_type, record_type
-from ..compiler.ir import CollectiveKind
-from ..compiler.models.transformer import (
+from ..synthesizer.codec import enum_type, record_type
+from ..synthesizer.ir import CollectiveKind
+from ..synthesizer.models.transformer import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,
@@ -739,7 +739,7 @@ def _communication_invocation(
     )
 
 
-def compile_transformer_block(
+def derive_transformer_block(
     model: TransformerModelSpec,
     execution: TransformerExecutionSpec,
 ) -> tuple[tuple[PrimitiveInvocation, ...], BlockMemoryFacts]:

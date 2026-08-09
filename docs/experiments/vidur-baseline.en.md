@@ -12,7 +12,7 @@ Transformer semantics + mapping + phase context
   -> Blueprinting DistributedTaskIR
   -> Blueprinting PortablePlanIR
   -> Blueprinting peak-only and system-evidence costs
-  -> freeze plan digests and compiled estimates
+  -> freeze plan digests and Blueprinting estimates
   -> exact Vidur baseline lookup
   -> coverage and error report
 ```
@@ -43,7 +43,7 @@ Each phase report exposes:
 - Blueprinting's complete block cost;
 - Blueprinting's subtotal over only matched components;
 - Vidur's subtotal over the same component intersection;
-- compiled cost excluded from comparison;
+- Blueprinting-estimated cost excluded from comparison;
 - signed absolute and relative errors at component and comparable-subtotal levels;
 - non-cancelling component MAPE and maximum component error;
 - model, distributed-plan, portable-plan, hardware-evidence, and baseline revisions.
@@ -73,7 +73,7 @@ The current inference dialect models one dense-MHA, non-gated-MLP decoder templa
 
 The pinned Phi-2 rows are raw component profiles, not proof that Blueprinting reproduces Phi-2's full decoder topology. Norm placement, parallel-residual structure, fusion/layout choices, and embedding/LM-head work are not represented in the current model schema. The experiment policy therefore records `topology_equivalence = not-claimed-by-raw-component-profile-alignment`.
 
-Vidur's public block aggregation contributes one `add_time`, while Blueprinting retains the attention residual and MLP residual as two explicit operations. Only the final MLP residual has a direct Vidur component peer; the other remains visible as excluded compiled work. This is reported as a semantic coverage gap instead of being hidden by double-counting the same baseline value.
+Vidur's public block aggregation contributes one `add_time`, while Blueprinting retains the attention residual and MLP residual as two explicit operations. Only the final MLP residual has a direct Vidur component peer; the other remains visible as excluded estimated work. This is reported as a semantic coverage gap instead of being hidden by double-counting the same baseline value.
 
 ## How alignment should improve
 

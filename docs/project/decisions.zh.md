@@ -19,6 +19,7 @@
 | Runtime | 遵守 verified plan，并保留 contract 允许的 bounded mechanism decision | Runtime 不重复无界 global search，也不假装 backpressure/failure 不存在 |
 | Schema maturity | Internal schema version 不自动构成 public compatibility promise | Producer、独立 consumer、migration 与 conformance Gate 通过后才毕业为 stable contract |
 | Documentation | 同目录 suffix-based 双语 source | Navigation 与 language switching 始终按页面对齐 |
+| 形式化推导 package | Python path 硬切为 `blueprinting.synthesizer`；保留历史 codec tag | Source ownership 对齐 formal plan synthesis，同时不破坏未变化的 canonical snapshot；见 [ADR-0001](adr/0001-synthesizer-package.md) |
 
 ## 被拒绝方案
 
@@ -74,7 +75,7 @@ Accepted ADR 除 status link 和 typo 外保持不可变。取代旧决策时创
 | Formal representation | 具有版本化 contract 与 verifier 的权威 typed model；当前 canonical type 使用 `*IR` 后缀 |
 | Derived view | 不改变 source representation semantic 的可重建 projection |
 | Artifact | 已发布 report、trace、executable 或 replayable package |
-| Binding | 通过 typed derivation context 显式提供的 specialization fact；当前代码名为 `CompilationSession` |
+| Binding | 通过 typed derivation context 显式提供的 specialization fact；当前代码名为 `SynthesisSession` |
 | Derivation | 解析决策、消解 obligation 并保持所需语义的 verified rule |
 | Lowering | 用于实现 staged derivation 的编译工程技术 |
 | Revision | Evidence、schema、analysis engine、plugin 或 product state 的 immutable identity |

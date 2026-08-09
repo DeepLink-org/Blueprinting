@@ -24,7 +24,7 @@ result.bottlenecks
 result.sensitivity
 ```
 
-Internally, each candidate creates an immutable typed derivation context for workload mapping, architecture binding, and analysis addressing. The current implementation names this object `CompilationSession`; that class and its workload/strategy bindings are implemented, while `ExplorationSession` and the end-to-end product facade are planned. Global mutable configuration is forbidden because it would invalidate experiment reproducibility.
+Internally, each candidate creates an immutable typed derivation context for workload mapping, architecture binding, and analysis addressing. The current implementation names this object `SynthesisSession`; that class and its workload/strategy bindings are implemented, while `ExplorationSession` and the end-to-end product facade are planned. Global mutable configuration is forbidden because it would invalidate experiment reproducibility.
 
 ## Frontends
 
@@ -123,18 +123,18 @@ bindings/session ───┘          │
                     observation / calibration
 ```
 
-The canonical IR, binding, pass, and lowering infrastructure lives under `src/blueprinting/compiler/`. The analytical subsystem is a sibling package at `src/blueprinting/analysis/`: the compiler materializes explicit workload and plan facts, while analysis evaluates those facts against analytical models and external evidence. Analysis may depend on canonical compiler contracts; callers must not treat cost evidence as an implicit lowering decision.
+The canonical IR, binding, pass, and lowering infrastructure lives under `src/blueprinting/synthesizer/`. The analytical subsystem is a sibling package at `src/blueprinting/analysis/`: the synthesizer materializes explicit workload and plan facts, while analysis evaluates those facts against analytical models and external evidence. Analysis may depend on canonical synthesis contracts; callers must not treat cost evidence as an implicit lowering decision.
 
 ## Current source map
 
 | Concern | Source | Status |
 |---|---|---|
-| IDs, expressions, codec, frozen values | `compiler/{ids,expr,codec,frozen}.py` | Implemented |
-| Canonical formal representations (`*IR`) | `compiler/ir/` | Implemented contracts |
-| Bindings and sessions | `compiler/{bindings,session}.py` | Implemented |
-| Analysis/transformation transactions | `compiler/passes/base.py` | Implemented |
-| Transformer frontend | `compiler/models/` | Implemented slice |
+| IDs, expressions, codec, frozen values | `synthesizer/{ids,expr,codec,frozen}.py` | Implemented |
+| Canonical formal representations (`*IR`) | `synthesizer/ir/` | Implemented contracts |
+| Bindings and sessions | `synthesizer/{bindings,session}.py` | Implemented |
+| Analysis/transformation transactions | `synthesizer/passes/base.py` | Implemented |
+| Transformer frontend | `synthesizer/models/` | Implemented slice |
 | Workload and cost analysis | `analysis/` | Implemented slice |
-| Transformer derivation passes | `compiler/lowering/transformer.py` | Implemented through portable plan |
+| Transformer derivation passes | `synthesizer/lowering/transformer.py` | Implemented through portable plan |
 | Current hardware evidence adapter | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
 | Architecture model/search, evidence service, simulation, emission | Accepted boundaries | Planned |

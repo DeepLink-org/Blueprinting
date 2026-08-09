@@ -71,9 +71,9 @@ mean decode-step model time = decode total / (O-1), when O > 1
 
 ```python
 from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
-from blueprinting.compiler.bindings import InferencePhase
-from blueprinting.compiler.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.compiler.models import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
+from blueprinting.synthesizer.models import TransformerInferenceExecutionSpec, TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -96,7 +96,7 @@ case = VidurExperimentCase(
 report = run_vidur_experiment((case,), baseline)
 ```
 
-这个 API 边界是刻意设计的：Blueprinting 内部可接受的 `InferenceCostProvider` 暴露 `resolve()`，外部 `InferenceBaseline` 只暴露 `lookup()`。`run_vidur_experiment()` 会先完成 lowering 和两种 Blueprinting cost mode，再调用 `lookup()`；因此 Vidur 无法改变 operations、bytes、dependency、plan digest 或 compiled latency。
+这个 API 边界是刻意设计的：Blueprinting 内部可接受的 `InferenceCostProvider` 暴露 `resolve()`，外部 `InferenceBaseline` 只暴露 `lookup()`。`run_vidur_experiment()` 会先完成 lowering 和两种 Blueprinting cost mode，再调用 `lookup()`；因此 Vidur 无法改变 operations、bytes、dependency、plan digest 或 estimated latency。
 
 Comparison 只发生在显式 semantic intersection 上。Report 给出 matched component count、coverage、Blueprinting comparable subtotal、Vidur comparable subtotal、被排除的 Blueprinting work、signed comparable-subtotal error，以及不可相互抵消的 component MAPE/max error。缺失 record 保持 `not-covered`，绝不会被当作零。这个区别很重要：Vidur 公开的 block aggregation 只有一个 `add_time`，而 Blueprinting 刻意保留两个 residual addition；当前 CSV adapter 也尚未读取 collective profile。
 
@@ -119,4 +119,4 @@ Scheduler 产生 concrete batch context，再使用该 context 查询 cost resol
 
 ## 当前限制
 
-已实现 dialect 覆盖一个 dense-MHA、non-gated-MLP decoder template。Embedding、LM head、sampler、显式 norm/residual topology、GQA/MQA、gated MLP、MoE、prefix caching、paged allocation、chunked prefill、speculative decoding、prefill/decode disaggregation、scheduler overhead 与 resource contention 尚未建模。PP 与 replica structure 还没有完整物化到 `DistributedTaskIR`；PP latency/memory 当前是在 local-TP block plan 之后做解析式组合。每个 decode context 仍会重新编译，而不是从 parametric plan 做代数特化。`replicas` 当前只参与 mapping 合法性与 world-size 记账；报告的 latency 与 static model token rate 仍是单 replica 视角，不代表多 replica serving capacity。因此当前输出适合检查推导、解析显存 fit 和一阶硬件敏感性，不能作为 production serving SLO accuracy 的声明。
+已实现 dialect 覆盖一个 dense-MHA、non-gated-MLP decoder template。Embedding、LM head、sampler、显式 norm/residual topology、GQA/MQA、gated MLP、MoE、prefix caching、paged allocation、chunked prefill、speculative decoding、prefill/decode disaggregation、scheduler overhead 与 resource contention 尚未建模。PP 与 replica structure 还没有完整物化到 `DistributedTaskIR`；PP latency/memory 当前是在 local-TP block plan 之后做解析式组合。每个 decode context 仍会独立推导，而不是从 parametric plan 做代数特化。`replicas` 当前只参与 mapping 合法性与 world-size 记账；报告的 latency 与 static model token rate 仍是单 replica 视角，不代表多 replica serving capacity。因此当前输出适合检查推导、解析显存 fit 和一阶硬件敏感性，不能作为 production serving SLO accuracy 的声明。
