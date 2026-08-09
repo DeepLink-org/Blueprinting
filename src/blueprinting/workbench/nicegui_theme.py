@@ -936,6 +936,191 @@ body {
   border-top: 1px solid var(--bp-line);
 }
 
+.bp-numeric-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 13px 16px;
+}
+
+.bp-numeric-heading {
+  min-width: 220px;
+}
+
+.bp-numeric-controls {
+  display: grid;
+  grid-template-columns: 92px 92px 100px 116px;
+  gap: 10px;
+  align-items: end;
+}
+
+.bp-numeric-control {
+  min-width: 0;
+}
+
+.bp-numeric-control .q-field__control {
+  min-height: 38px;
+}
+
+.bp-numeric-control--sign {
+  justify-content: end;
+  min-height: 58px;
+}
+
+.bp-numeric-control--sign .q-toggle {
+  min-height: 38px;
+}
+
+.bp-numeric-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.bp-numeric-chart-panel {
+  min-width: 0;
+}
+
+.bp-format-chart {
+  height: 248px;
+}
+
+.bp-numeric-spec-panel {
+  padding: 16px;
+  border-left: 1px solid var(--bp-line);
+  background: #f8fafc;
+}
+
+.bp-numeric-fact {
+  min-height: 34px;
+  border-bottom: 1px solid var(--bp-line);
+}
+
+.bp-numeric-fact:first-of-type {
+  margin-top: 10px;
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-bit-editor {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--bp-line);
+  background: #f8fafc;
+}
+
+.bp-bit-group {
+  min-width: 0;
+}
+
+.bp-bit-row {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.bp-bit-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 48px;
+  margin: 0;
+  padding: 3px;
+  appearance: none;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.bp-bit-cell:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.bp-bit-index {
+  color: #64748b;
+  font: 650 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bp-bit-value {
+  margin-top: 3px;
+  font: 700 17px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bp-bit-group--sign .bp-bit-cell--on {
+  color: #991b1b;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.bp-bit-group--exponent .bp-bit-cell--on {
+  color: #166534;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.bp-bit-group--mantissa .bp-bit-cell--on {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.bp-numeric-decode-grid,
+.bp-numeric-range-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-numeric-decode-grid > *,
+.bp-numeric-range-metrics > * {
+  min-width: 0;
+  padding: 11px 16px;
+  border-left: 1px solid var(--bp-line);
+}
+
+.bp-numeric-decode-grid > *:first-child,
+.bp-numeric-range-metrics > *:first-child {
+  border-left: 0;
+}
+
+.bp-numeric-decode-value {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--bp-text);
+  font-size: 17px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-numeric-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-numeric-chart {
+  min-width: 0;
+  padding: 12px 14px 4px;
+  border-left: 1px solid var(--bp-line);
+}
+
+.bp-numeric-chart:first-child {
+  border-left: 0;
+}
+
+.bp-numeric-chart-canvas {
+  height: 238px;
+}
+
 .bp-metric-grid {
   width: 100%;
   display: grid;
@@ -1399,6 +1584,24 @@ body {
     border-top: 1px solid var(--bp-line);
     border-left: 0;
   }
+
+  .bp-numeric-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bp-numeric-controls {
+    grid-template-columns: repeat(4, minmax(90px, 1fr));
+  }
+
+  .bp-numeric-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .bp-numeric-spec-panel {
+    border-top: 1px solid var(--bp-line);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 980px) {
@@ -1583,6 +1786,25 @@ body {
 
   .bp-evidence-catalog-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .bp-numeric-controls,
+  .bp-numeric-decode-grid,
+  .bp-numeric-range-metrics,
+  .bp-numeric-chart-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bp-bit-editor {
+    align-items: flex-start;
+    flex-direction: column;
+    overflow-x: auto;
+  }
+
+  .bp-numeric-chart:nth-child(odd),
+  .bp-numeric-decode-grid > *:nth-child(odd),
+  .bp-numeric-range-metrics > *:nth-child(odd) {
+    border-left: 0;
   }
 
   .bp-derivation-details .bp-card {
