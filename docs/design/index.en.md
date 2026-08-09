@@ -132,6 +132,7 @@ First-class architecture blueprints, target/resource binding, concrete schedulin
 - [Timeline staging path](timeline-path.md) separates command plans, predictive timelines, prescriptive timing, and LPU backend evolution.
 - [Golden derivation walkthrough](walkthrough.md) follows one Transformer fragment through every representation.
 - [Analysis module architecture](modules.md) assigns Python ownership and extension boundaries.
+- [Floating-point numerical analysis](numerical-analysis.md) defines the interactive numerical format analysis view and its boundary.
 - [Formal representation reference](ir/index.md) defines semantic contracts.
 - [Analysis and transformation reference](passes/index.md) defines verified transactions.
 

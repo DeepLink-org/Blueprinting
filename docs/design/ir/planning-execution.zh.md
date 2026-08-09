@@ -26,6 +26,16 @@ PortablePlanIR
 
 Portable plan 不能包含 physical implementation ID、vendor library、physical device、route、queue、engine、memory bank、address、target-derived latency 或 execution timestamp。
 
+### 抽象工作空间与保守上界
+
+`WORKSPACE` buffer role 表达 portable 层的抽象工作内存（transient scratch）。它是容量与 legality 约束，不是 timing fact：
+
+- 未选定实现时，workspace 只能携带可辩护的保守上界（例如 attention 未融合 score materialization 的容量上界），并记录该 bound 的 semantic；
+- Target binding 必须用 implementation-specific workspace（fused-attention scratch、kernel workspace、paged intermediate 等）替换保守上界，且替换后的分配在任意合法执行下都不得超出 target memory 容量；
+- 保守 bound 不是精确需求：它的推导必须可追溯到语义原因，替换必须保持 workload facts 不变。
+
+当前 inference slice 已实现该角色：`PlanTransformerInferencePass` 发出 `workspace-upper-bound` buffer（role=`WORKSPACE`、storage=`TRANSIENT`、semantic=`block_working_upper_bound`）。Implementation-specific workspace 替换属于 portable-to-concrete gate 的 obligation。推理侧的 phase-plan 语义见[推理规划与 Serving 仿真](../../modeling/inference.md)。
+
 ### Verification
 
 Verifier 检查 task reference integrity、DAG closure、buffer lifecycle consistency、resource-requirement validity、exact nonnegative work fact、objective/constraint identity、source lineage，以及 target-bound field absence。

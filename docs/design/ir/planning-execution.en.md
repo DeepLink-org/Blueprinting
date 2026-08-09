@@ -26,6 +26,16 @@ Exact operations, read/write bytes, message bytes, reuse, and arithmetic intensi
 
 Portable plans cannot contain physical implementation IDs, vendor libraries, physical devices, routes, queues, engines, memory banks, addresses, target-derived latency, or execution timestamps.
 
+### Abstract workspace and conservative bounds
+
+The `WORKSPACE` buffer role expresses abstract working memory (transient scratch) at the portable layer. It is a capacity and legality constraint, not a timing fact:
+
+- before an implementation is selected, a workspace carries only a defensible conservative upper bound (for example, the unfused score-materialization bound of attention), and the bound's semantic must be recorded;
+- target binding must replace the conservative bound with implementation-specific workspace (fused-attention scratch, kernel workspace, paged intermediates), and the resulting allocation must never exceed target memory capacity under any legal execution;
+- a conservative bound is not a precise demand: its derivation must be traceable to a semantic reason, and replacement must preserve workload facts unchanged.
+
+The current inference slice already implements this role: `PlanTransformerInferencePass` emits a `workspace-upper-bound` buffer with role `WORKSPACE`, storage `TRANSIENT`, and semantic `block_working_upper_bound`. Implementation-specific workspace replacement is an obligation of the portable-to-concrete gate. The phase-plan semantics on the inference side are described in [Inference Planning and Serving Simulation](../../modeling/inference.md).
+
 ### Verification
 
 The verifier checks task-reference integrity, DAG closure, buffer lifecycle consistency, resource-requirement validity, exact nonnegative work facts, objective and constraint identity, source lineage, and the absence of target-bound fields.

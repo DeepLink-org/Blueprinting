@@ -49,6 +49,7 @@ nav:
       - Why Blueprinting: exploration/index.md
       - Hardware Design Space: exploration/design-space.md
       - Exploration Workflow: exploration/workflow.md
+      - Exploration Workspace: exploration/workspace.md
   - Models and Simulation:
       - Hardware Architecture Model: modeling/hardware.md
       - Workload and Mapping Model: modeling/workload.md
@@ -66,6 +67,7 @@ nav:
       - Timeline Staging Path: design/timeline-path.md
       - Golden Derivation Walkthrough: design/walkthrough.md
       - Analysis Module Architecture: design/modules.md
+      - Floating-Point Numerical Analysis: design/numerical-analysis.md
       - Formal Representations:
           - Representation Stack: design/ir/index.md
           - Workload and Distribution Models: design/ir/model-distributed.md
@@ -109,6 +111,7 @@ plugins:
             Why Blueprinting: 为什么叫 Blueprinting
             Hardware Design Space: 硬件设计空间
             Exploration Workflow: 探索工作流
+            Exploration Workspace: 探索工作空间
             Models and Simulation: 模型与仿真
             Hardware Architecture Model: 硬件架构模型
             Workload and Mapping Model: 工作负载与映射模型
@@ -126,6 +129,7 @@ plugins:
             Timeline Staging Path: Timeline 阶段路径
             Golden Derivation Walkthrough: 完整推导示例
             Analysis Module Architecture: 分析模块架构
+            Floating-Point Numerical Analysis: 浮点数数值分析
             Formal Representations: 形式化表示
             Representation Stack: 表示体系
             Workload and Distribution Models: 工作负载与分布模型
