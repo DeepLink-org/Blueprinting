@@ -618,7 +618,6 @@ class BlueprintingWorkbench:
         ui.colors(primary="#2563eb", secondary="#2563eb", positive="#15803d", warning="#b45309", negative="#b91c1c")
         ui.dark_mode(False)
         ui.page_title("Blueprinting · 硬件架构工作台")
-        self._build_legacy_dialog()
 
         with ui.left_drawer(value=True, bordered=False) as self.sidebar:
             self.sidebar.props("width=288 breakpoint=980").classes("bp-sidebar")
@@ -672,9 +671,6 @@ class BlueprintingWorkbench:
                         ui.element("span").classes("bp-service-dot")
                         ui.label("本地服务可用").classes("bp-sidebar-meta")
                     ui.label("Formal plan · Numerical evidence").classes("bp-sidebar-meta bp-mono")
-                    ui.button("Legacy 工具", icon="history", on_click=self.legacy_dialog.open).props(
-                        "flat no-caps align=left"
-                    ).classes("bp-sidebar-legacy w-full")
 
         with (
             ui.dialog() as self.config_dialog,
@@ -707,20 +703,6 @@ class BlueprintingWorkbench:
     def _toggle_sidebar(self) -> None:
         if hasattr(self, "sidebar"):
             self.sidebar.toggle()
-
-    def _build_legacy_dialog(self) -> None:
-        with ui.dialog() as self.legacy_dialog, ui.card().classes("bp-card").style("width: 560px; max-width: 92vw"):
-            with ui.row().classes("items-center gap-3"):
-                ui.icon("inventory_2", size="26px", color="secondary")
-                with ui.column().classes("gap-0"):
-                    ui.label("Calculon / Streamlit Legacy").classes("bp-card-title")
-                    ui.label("旧工具保持隔离，不参与 Blueprinting 主分析路径。 ").classes("bp-card-copy")
-            ui.separator().classes("my-2")
-            ui.label("需要旧 Calculon 工具时，请单独启动：").classes("text-sm")
-            ui.code("uv run streamlit run streamlit_app.py", language="bash").classes("bp-code")
-            with ui.row().classes("w-full justify-end gap-2"):
-                ui.link("打开 localhost:8501", "http://127.0.0.1:8501", new_tab=True).classes("text-secondary")
-                ui.button("关闭", on_click=self.legacy_dialog.close).props("flat no-caps")
 
     def _select_mode(self, mode: WorkbenchMode) -> None:
         if self.busy or mode is self.mode:

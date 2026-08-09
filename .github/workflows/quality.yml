@@ -56,7 +56,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install locked dependencies
-        run: uv sync --locked --extra legacy-ui
+        run: uv sync --locked
 
       - name: Lint supported architecture boundary
         run: >-
