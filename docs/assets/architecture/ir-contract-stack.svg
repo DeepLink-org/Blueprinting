@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" role="img" aria-labelledby="title desc">
+  <title id="title">Blueprinting canonical IR contract stack</title>
+  <desc id="desc">The current five canonical IR layers with semantic ownership, forbidden concerns, the late target binding gate, lineage, verification, derived views, and product artifacts.</desc>
+  <defs>
+    <filter id="shadow" x="-15%" y="-20%" width="130%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#172033" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526075"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D67B14"/>
+    </marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .title { font-size: 34px; font-weight: 760; letter-spacing: -0.5px; }
+      .subtitle { font-size: 16px; fill: #667085; }
+      .layer { font-size: 23px; font-weight: 760; }
+      .role { font-size: 12px; font-weight: 760; letter-spacing: 0.8px; fill: #667085; }
+      .body { font-size: 15px; fill: #344054; }
+      .small { font-size: 12px; fill: #667085; }
+      .pill { font-size: 12px; font-weight: 700; }
+      .arrow { fill: none; stroke: #526075; stroke-width: 2.2; marker-end: url(#arrow); }
+      .gate { fill: none; stroke: #D67B14; stroke-width: 2.6; stroke-dasharray: 8 5; marker-end: url(#arrowOrange); }
+    </style>
+  </defs>
+
+  <rect width="1440" height="920" fill="#F7F9FC"/>
+  <text x="52" y="58" class="title">Canonical IR Contract Stack</text>
+  <text x="52" y="86" class="subtitle">当前五层 IR 契约 · Stable boundaries require ownership, migration evidence, and downstream exclusion</text>
+
+  <g transform="translate(1030,43)">
+    <rect x="0" y="0" width="160" height="28" rx="14" fill="#FFFFFF" stroke="#D5DCE6"/>
+    <text x="80" y="19" text-anchor="middle" class="pill">immutable snapshot</text>
+    <rect x="172" y="0" width="150" height="28" rx="14" fill="#FFFFFF" stroke="#D5DCE6"/>
+    <text x="247" y="19" text-anchor="middle" class="pill">verify + digest</text>
+  </g>
+
+  <rect x="42" y="122" width="1356" height="650" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="154" width="1256" height="102" rx="16" fill="#EEEBFF" stroke="#8274E8"/>
+    <rect x="92" y="276" width="1256" height="102" rx="16" fill="#EAF0FF" stroke="#5B78E8"/>
+    <rect x="92" y="398" width="1256" height="112" rx="16" fill="#E6F8FB" stroke="#1E9FB5"/>
+    <rect x="92" y="550" width="1256" height="102" rx="16" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <rect x="92" y="672" width="1256" height="72" rx="16" fill="#EDF1F7" stroke="#51627A"/>
+  </g>
+
+  <line x1="386" y1="154" x2="386" y2="744" stroke="#FFFFFF" stroke-width="2"/>
+  <line x1="922" y1="154" x2="922" y2="744" stroke="#FFFFFF" stroke-width="2"/>
+
+  <text x="122" y="183" class="layer">ModelIR</text>
+  <text x="122" y="208" class="small">模型语义 · target &amp; distribution independent</text>
+  <rect x="122" y="222" width="102" height="22" rx="11" fill="#DCD6FF"/>
+  <text x="173" y="237" text-anchor="middle" class="pill" fill="#5944C9">SEMANTIC</text>
+  <text x="416" y="179" class="role">OWNS / 负责</text>
+  <text x="416" y="207" class="body">values · operations · tensor types · dataflow · effects</text>
+  <text x="416" y="231" class="body">training/inference regions · symbolic dimensions · state roles</text>
+  <text x="952" y="179" class="role">MUST NOT OWN / 禁止</text>
+  <text x="952" y="207" class="body">TP/PP/DP · device placement · kernel IDs</text>
+  <text x="952" y="231" class="body">target duration · memory address · queue</text>
+
+  <text x="122" y="305" class="layer">DistributedTaskIR</text>
+  <text x="122" y="330" class="small">逻辑分布式程序 · virtual resources</text>
+  <rect x="122" y="344" width="118" height="22" rx="11" fill="#DCE5FF"/>
+  <text x="181" y="359" text-anchor="middle" class="pill" fill="#3E5FCB">DISTRIBUTED</text>
+  <text x="416" y="301" class="role">OWNS / 负责</text>
+  <text x="416" y="329" class="body">logical mesh · sharding/replication · collective/P2P</text>
+  <text x="416" y="353" class="body">rank dependencies · reshard · logical ownership</text>
+  <text x="952" y="301" class="role">MUST NOT OWN / 禁止</text>
+  <text x="952" y="329" class="body">physical devices/routes · vendor operations</text>
+  <text x="952" y="353" class="body">absolute timestamps · target-specific latency</text>
+
+  <text x="122" y="430" class="layer">PortablePlanIR</text>
+  <text x="122" y="455" class="small">可移植部署计划 · late-binding boundary</text>
+  <rect x="122" y="471" width="104" height="22" rx="11" fill="#CFF1F5"/>
+  <text x="174" y="486" text-anchor="middle" class="pill" fill="#147F91">PORTABLE</text>
+  <text x="416" y="425" class="role">OWNS / 负责</text>
+  <text x="416" y="453" class="body">task DAG · exact FLOPs/bytes/messages · abstract buffers</text>
+  <text x="416" y="477" class="body">resource classes · capability requirements · objectives</text>
+  <text x="952" y="425" class="role">MUST NOT OWN / 禁止</text>
+  <text x="952" y="453" class="body">physical kernel/queue/bank/address assignment</text>
+  <text x="952" y="477" class="body">target latency as truth · execution timestamps</text>
+
+  <text x="122" y="579" class="layer">ConcretePlanIR</text>
+  <text x="122" y="604" class="small">目标绑定后的权威 execution-plan envelope</text>
+  <rect x="122" y="618" width="104" height="22" rx="11" fill="#D2F0E5"/>
+  <text x="174" y="633" text-anchor="middle" class="pill" fill="#137A57">CONCRETE</text>
+  <text x="416" y="575" class="role">OWNS / 负责</text>
+  <text x="416" y="603" class="body">common coordination · placement · ordering · memory regions</text>
+  <text x="416" y="627" class="body">typed target extension · synchronization · buffer reuse · ABI revisions</text>
+  <text x="952" y="575" class="role">MUST NOT OWN / 禁止</text>
+  <text x="952" y="603" class="body">predicted wall-clock time as correctness</text>
+  <text x="952" y="627" class="body">target instruction encoding that belongs to MachineIR</text>
+
+  <text x="122" y="701" class="layer">MachineIR</text>
+  <text x="122" y="726" class="small">Target-specific dialect / program representation</text>
+  <text x="416" y="697" class="role">OWNS / 负责</text>
+  <text x="416" y="725" class="body">commands/instructions · sections · entry points · target ABI · artifact references</text>
+  <text x="952" y="697" class="role">BOUNDARY / 边界</text>
+  <text x="952" y="725" class="body">Target semantics stay here; portable semantics remain upstream</text>
+
+  <path d="M68 205 L68 327" class="arrow"/>
+  <path d="M68 327 L68 454" class="arrow"/>
+  <path d="M68 454 L68 601" class="gate"/>
+  <path d="M68 601 L68 708" class="arrow"/>
+  <text x="42" y="469" transform="rotate(-90 42 469)" text-anchor="middle" class="small">stable IDs · lineage · parent digests · schema verification</text>
+
+  <rect x="345" y="516" width="750" height="28" rx="14" fill="#FFF3E1" stroke="#E58A20" stroke-dasharray="7 4"/>
+  <text x="720" y="535" text-anchor="middle" class="pill" fill="#A85E0C">LATE TARGET + DEPLOYMENT BINDING GATE / 迟绑定边界</text>
+
+  <rect x="92" y="804" width="1256" height="72" rx="16" fill="#FFFFFF" stroke="#B8C8DC" stroke-dasharray="7 5"/>
+  <text x="122" y="833" class="role" fill="#2D7FF9">DERIVED VIEWS &amp; ARTIFACTS, NOT CANONICAL IR / 派生视图与产品包</text>
+  <text x="122" y="858" class="body">CostedTaskView · TimingProjection · SimulationTraceIR · TimelineBundle · EvaluationReport · ObservationSet</text>
+  <text x="1045" y="844" text-anchor="middle" class="small">evidence changes views</text>
+  <text x="1045" y="861" text-anchor="middle" class="small">never semantic digests</text>
+</svg>

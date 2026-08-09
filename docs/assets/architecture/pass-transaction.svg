@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="880" viewBox="0 0 1440 880" role="img" aria-labelledby="title desc">
+  <title id="title">PassManager verified transformation transaction and profiler checkpoint</title>
+  <desc id="desc">The verified pass transaction validates contracts and lineage, exposes an immutable checkpoint to observers before atomic analysis publication, and aborts without cache pollution on failure.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#172033" flood-opacity="0.10"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#526075"/></marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#168A61"/></marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#D64D5F"/></marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill:#172033; }
+      .title { font-size:34px; font-weight:760; letter-spacing:-0.5px; }
+      .subtitle { font-size:16px; fill:#667085; }
+      .phase { font-size:13px; font-weight:760; letter-spacing:0.8px; }
+      .box-title { font-size:17px; font-weight:730; }
+      .box-sub { font-size:12px; fill:#5D687A; }
+      .small { font-size:12px; fill:#667085; }
+      .pill { font-size:11px; font-weight:720; }
+      .arrow { fill:none; stroke:#526075; stroke-width:2.3; marker-end:url(#arrow); }
+      .commit { fill:none; stroke:#168A61; stroke-width:2.5; marker-end:url(#arrowGreen); }
+      .abort { fill:none; stroke:#D64D5F; stroke-width:2.5; stroke-dasharray:7 5; marker-end:url(#arrowRed); }
+    </style>
+  </defs>
+
+  <rect width="1440" height="880" fill="#F7F9FC"/>
+  <text x="52" y="58" class="title">Pass Boundary Transaction</text>
+  <text x="52" y="86" class="subtitle">Pass 边界事务 · Verify first, expose checkpoint, then publish analyses atomically</text>
+
+  <rect x="42" y="122" width="1356" height="676" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+  <text x="70" y="158" class="phase" fill="#5B46D6">PRECONDITIONS / 前置条件</text>
+  <text x="532" y="158" class="phase" fill="#B56B10">EXECUTION / 执行</text>
+  <text x="938" y="158" class="phase" fill="#137A57">VERIFIED COMMIT / 验证后提交</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="190" width="228" height="92" rx="14" fill="#EEEBFF" stroke="#8274E8"/>
+    <text x="94" y="222" class="box-title">1 · Input contract</text>
+    <text x="94" y="246" class="box-sub">exact IR type + schema range</text>
+    <text x="94" y="266" class="box-sub">deterministic pipeline link</text>
+
+    <rect x="326" y="190" width="228" height="92" rx="14" fill="#EEEBFF" stroke="#8274E8"/>
+    <text x="350" y="222" class="box-title">2 · Context gate</text>
+    <text x="350" y="246" class="box-sub">required bindings present</text>
+    <text x="350" y="266" class="box-sub">required analyses addressable</text>
+
+    <rect x="582" y="190" width="228" height="92" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="606" y="222" class="box-title">3 · Verify input</text>
+    <text x="606" y="246" class="box-sub">IR verifier + digest snapshot</text>
+    <text x="606" y="266" class="box-sub">capture input_digest</text>
+
+    <rect x="838" y="190" width="228" height="92" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="862" y="222" class="box-title">4 · Execute pass</text>
+    <text x="862" y="246" class="box-sub">immutable input or isolated copy</text>
+    <text x="862" y="266" class="box-sub">measure host transform duration_ns</text>
+
+    <rect x="1094" y="190" width="228" height="92" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1118" y="222" class="box-title">5 · Output contract</text>
+    <text x="1118" y="246" class="box-sub">type/schema + no input mutation</text>
+    <text x="1118" y="266" class="box-sub">declared analysis products only</text>
+  </g>
+
+  <path d="M298 236 L326 236" class="arrow"/>
+  <path d="M554 236 L582 236" class="arrow"/>
+  <path d="M810 236 L838 236" class="arrow"/>
+  <path d="M1066 236 L1094 236" class="arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1094" y="370" width="228" height="98" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1118" y="402" class="box-title">6 · Verify output</text>
+    <text x="1118" y="426" class="box-sub">IR verifier + canonical digest</text>
+    <text x="1118" y="446" class="box-sub">parent input digest in lineage</text>
+
+    <rect x="838" y="370" width="228" height="98" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="862" y="402" class="box-title">7 · Build checkpoint</text>
+    <text x="862" y="426" class="box-sub">PassRecord + immutable output IR</text>
+    <text x="862" y="446" class="box-sub">analysis products, not yet published</text>
+
+    <rect x="582" y="360" width="228" height="118" rx="16" fill="#F4F0FF" stroke="#6C5CE7" stroke-width="2"/>
+    <text x="606" y="394" class="box-title">8 · Observer gate</text>
+    <text x="606" y="420" class="box-sub">profiler · validator · differential check</text>
+    <text x="606" y="442" class="box-sub">synchronous, read-only inspection</text>
+    <rect x="619" y="452" width="154" height="24" rx="12" fill="#FFFFFF" stroke="#8274E8"/>
+    <text x="696" y="468" text-anchor="middle" class="pill" fill="#5B46D6">BEFORE ANALYSIS COMMIT</text>
+
+    <rect x="326" y="370" width="228" height="98" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="350" y="402" class="box-title">9 · Atomic publish</text>
+    <text x="350" y="426" class="box-sub">carry preserved analyses</text>
+    <text x="350" y="446" class="box-sub">publish produced analyses together</text>
+
+    <rect x="70" y="370" width="228" height="98" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="94" y="402" class="box-title">10 · Next snapshot</text>
+    <text x="94" y="426" class="box-sub">output becomes current IR</text>
+    <text x="94" y="446" class="box-sub">record + checkpoint retained</text>
+  </g>
+
+  <path d="M1208 282 L1208 370" class="commit"/>
+  <path d="M1094 419 L1066 419" class="commit"/>
+  <path d="M838 419 L810 419" class="commit"/>
+  <path d="M582 419 L554 419" class="commit"/>
+  <path d="M326 419 L298 419" class="commit"/>
+
+  <rect x="326" y="546" width="484" height="94" rx="16" fill="#FFF0F2" stroke="#D64D5F"/>
+  <text x="350" y="579" class="box-title" fill="#B63849">Observer or contract failure → abort transition</text>
+  <text x="350" y="604" class="box-sub">No new analysis entry · no next IR snapshot · caller input remains unchanged</text>
+  <text x="350" y="625" class="box-sub">失败不会污染 cache，也不会留下半提交推导结果</text>
+  <path d="M696 478 L696 518 L568 518 L568 546" class="abort"/>
+
+  <rect x="850" y="546" width="472" height="146" rx="16" fill="#F1F3F7" stroke="#AAB4C3"/>
+  <text x="874" y="578" class="box-title">Content-addressed AnalysisStore</text>
+  <text x="874" y="604" class="box-sub">Address = (IR digest, AnalysisKey, CompilationSession fingerprint)</text>
+  <line x1="874" y1="620" x2="1298" y2="620" stroke="#D1D7E0"/>
+  <text x="874" y="646" class="box-sub">• preserved analyses are copied only to the verified output digest</text>
+  <text x="874" y="668" class="box-sub">• non-canonical, duplicate, or undeclared products reject the pass</text>
+  <path d="M440 468 C440 510 880 500 880 546" class="commit"/>
+
+  <rect x="70" y="732" width="1252" height="42" rx="21" fill="#EAF3FF" stroke="#8DB8F7"/>
+  <text x="696" y="758" text-anchor="middle" class="box-title" fill="#225EAF">Profiler integration is an inspectable derivation gate—not a mutation channel / Profiler 只检查，不改写表示</text>
+</svg>

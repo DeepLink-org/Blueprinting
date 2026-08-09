@@ -1,0 +1,1316 @@
+{
+  "calibration_policy": {
+    "evidence": [
+      "matrix operation-size efficiency curve",
+      "vector operation-size efficiency curve",
+      "memory transfer-size efficiency curve",
+      "network bandwidth efficiency and collective volume model"
+    ],
+    "fit_against_case_outputs": false,
+    "forbidden_inputs": [
+      "model name",
+      "Calculon duration",
+      "paper duration",
+      "per-case correction factor",
+      "agrad/wgrad reference ratio"
+    ],
+    "scope": "target-and-datatype",
+    "shared_across_cases": true
+  },
+  "cases": [
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 0.5154692240714278,
+        "data_parallel": 0,
+        "forward": 0.2861413155860729,
+        "optimizer": 0.022732020184615384,
+        "pipeline_bubble": 0.0,
+        "pipeline_parallel": 0.0,
+        "recommunication": 0.08768530116923076,
+        "recompute": 0.2861413155860729,
+        "tensor_parallel": 0.1974261886030769
+      },
+      "case": "seqsel-tab5/megatron-22B/full",
+      "compiled_breakdown_seconds": {
+        "backward": 0.5154692240714278,
+        "data_parallel": 0.0,
+        "forward": 0.2861413155860729,
+        "optimizer": 0.022732020184615384,
+        "pipeline_bubble": 0.0,
+        "pipeline_parallel": 0.0,
+        "recommunication": 0.08768530116923076,
+        "recompute": 0.2861413155860729,
+        "tensor_parallel": 0.19742618860307692
+      },
+      "ir": {
+        "distributed_digest": "3bcb5e87b8efac3cd21caf0d3eeb7c4a1e17a4af",
+        "model_digest": "6ca20f14d69e2a0eea633ac6339f498a0a50a563",
+        "pass_checkpoints": [
+          {
+            "digest": "3bcb5e87b8efac3cd21caf0d3eeb7c4a1e17a4af",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "9ce66dd1c115a1efbb0cad1cc3921c3f28ffc58f",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "9ce66dd1c115a1efbb0cad1cc3921c3f28ffc58f"
+      },
+      "memory_bytes": {
+        "calculon": 51705331712.0,
+        "compiled": 51705331712,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 7626047881216.0,
+        "compiled_explicit_operations": 981366472704,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -16.232262003201477,
+        "system_evidence_vs_calculon": 0.0,
+        "system_evidence_vs_paper": -1.7186362534861621
+      },
+      "timing_seconds": {
+        "calculon": 1.3955953652004964,
+        "paper": 1.42,
+        "peak_only": 1.1690586690166154,
+        "system_evidence": 1.3955953652004964
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 100663296,
+          "reference": 100663296,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 1728053248,
+          "reference": 1728053248,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 5683331072,
+          "reference": 5683331072,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 1034478944256,
+          "reference": 1034478944256.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 1526726656,
+          "reference": 1526726656,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 4676698112,
+          "reference": 4676698112,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 981454553088,
+          "reference": 981454553088.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 679772160,
+          "reference": 679772160.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 679772160,
+          "reference": 679772160.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 623124480,
+          "reference": 623124480.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 113295360,
+          "reference": 113295360,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 113295360,
+          "reference": 113295360.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 1270923264,
+          "reference": 1270923264,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 928417579008,
+          "reference": 928417579008,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 226590720,
+          "reference": 226590720,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 0.44567127463142786,
+        "data_parallel": 0,
+        "forward": 0.24675584713068827,
+        "optimizer": 0.022732020184615384,
+        "pipeline_bubble": 0.0,
+        "pipeline_parallel": 0.0,
+        "recommunication": 0.06600397587692308,
+        "recompute": 0.048463972824615384,
+        "tensor_parallel": 0.30704300977230775
+      },
+      "case": "seqsel-tab5/megatron-22B/seqsel",
+      "compiled_breakdown_seconds": {
+        "backward": 0.4456712746314279,
+        "data_parallel": 0.0,
+        "forward": 0.24675584713068827,
+        "optimizer": 0.022732020184615384,
+        "pipeline_bubble": 0.0,
+        "pipeline_parallel": 0.0,
+        "recommunication": 0.06600397587692308,
+        "recompute": 0.048463972824615384,
+        "tensor_parallel": 0.3070430097723077
+      },
+      "ir": {
+        "distributed_digest": "437435a6805306add32e0557a4be1197e1d966c3",
+        "model_digest": "6ca20f14d69e2a0eea633ac6339f498a0a50a563",
+        "pass_checkpoints": [
+          {
+            "digest": "437435a6805306add32e0557a4be1197e1d966c3",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "873c82dde8f06f97a619855bf7fa74d5730c7d55",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "873c82dde8f06f97a619855bf7fa74d5730c7d55"
+      },
+      "memory_bytes": {
+        "calculon": 55920607232.0,
+        "compiled": 55920607232,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 774797000704,
+        "compiled_explicit_operations": 26575110144,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -17.73552556984597,
+        "system_evidence_vs_calculon": 0.0,
+        "system_evidence_vs_paper": 3.3336454927797825
+      },
+      "timing_seconds": {
+        "calculon": 1.1366701004205777,
+        "paper": 1.1,
+        "peak_only": 0.9350756841156923,
+        "system_evidence": 1.1366701004205777
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 1136656384,
+          "reference": 1136656384.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 4236296192,
+          "reference": 4236296192,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 1032805416960,
+          "reference": 1032805416960.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 213909504,
+          "reference": 213909504.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 1111490560,
+          "reference": 1111490560.0,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 402653184,
+          "reference": 402653184,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 3758145536,
+          "reference": 3758145536,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 980485668864,
+          "reference": 980485668864.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 402653184,
+          "reference": 402653184,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 679772160,
+          "reference": 679772160.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 679772160,
+          "reference": 679772160.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 623124480,
+          "reference": 623124480.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 113295360,
+          "reference": 113295360,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 113295360,
+          "reference": 113295360.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 918601728,
+          "reference": 918601728,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 927801016320,
+          "reference": 927801016320,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 226590720,
+          "reference": 226590720,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 6.906075908214845,
+        "data_parallel": 0,
+        "forward": 3.648568878349474,
+        "optimizer": 0.02154002038153846,
+        "pipeline_bubble": 0.633420485916905,
+        "pipeline_parallel": 0.8666734592,
+        "recommunication": 0.7091624093538462,
+        "recompute": 3.648568878349474,
+        "tensor_parallel": 1.5947695088246152
+      },
+      "case": "seqsel-tab5/gpt3-175B/full",
+      "compiled_breakdown_seconds": {
+        "backward": 6.906075908214845,
+        "data_parallel": 0.0,
+        "forward": 3.648568878349474,
+        "optimizer": 0.02154002038153846,
+        "pipeline_bubble": 0.633420485916905,
+        "pipeline_parallel": 0.8666734592,
+        "recommunication": 0.7091624093538462,
+        "recompute": 3.648568878349474,
+        "tensor_parallel": 1.5947695088246152
+      },
+      "ir": {
+        "distributed_digest": "4e300183da79f3354da1ced305b36a7e9c25bde6",
+        "model_digest": "e2a097e24aa28d6bc3fbfc731880d6a766ab9db9",
+        "pass_checkpoints": [
+          {
+            "digest": "4e300183da79f3354da1ced305b36a7e9c25bde6",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "2c9566d969073f2983b2ca3e35d840c986063058",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "2c9566d969073f2983b2ca3e35d840c986063058"
+      },
+      "memory_bytes": {
+        "calculon": 51649806336.0,
+        "compiled": 51649806336,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 7290655604736.0,
+        "compiled_explicit_operations": 954439041024,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -14.027829676265968,
+        "system_evidence_vs_calculon": 0.0,
+        "system_evidence_vs_paper": -0.5583036481483767
+      },
+      "timing_seconds": {
+        "calculon": 18.0287795485907,
+        "paper": 18.13,
+        "peak_only": 15.499733060804923,
+        "system_evidence": 18.0287795485907
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 50331648,
+          "reference": 50331648,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 780140544,
+          "reference": 780140544,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 3019997184,
+          "reference": 3019997184,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 980944945152,
+          "reference": 980944945152.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 679477248,
+          "reference": 679477248,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 100663296,
+          "reference": 100663296,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 2516680704,
+          "reference": 2516680704,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 954483081216,
+          "reference": 954483081216.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 100663296,
+          "reference": 100663296,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 2718498816,
+          "reference": 2718498816.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 2718498816,
+          "reference": 2718498816.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 2491957248,
+          "reference": 2491957248.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 100663296,
+          "reference": 100663296,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 453083136,
+          "reference": 453083136,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 453083136,
+          "reference": 453083136.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 1031897088,
+          "reference": 1031897088,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 928065257472,
+          "reference": 928065257472,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 906166272,
+          "reference": 906166272,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 6.347704600694845,
+        "data_parallel": 0,
+        "forward": 3.3334912747063967,
+        "optimizer": 0.02154002038153846,
+        "pipeline_bubble": 0.4789732160178498,
+        "pipeline_parallel": 0.11505418240000001,
+        "recommunication": 0.5357118070153847,
+        "recompute": 0.31852512492307694,
+        "tensor_parallel": 2.487064078178462
+      },
+      "case": "seqsel-tab5/gpt3-175B/seqsel",
+      "compiled_breakdown_seconds": {
+        "backward": 6.347704600694843,
+        "data_parallel": 0.0,
+        "forward": 3.3334912747063967,
+        "optimizer": 0.02154002038153846,
+        "pipeline_bubble": 0.4789732160178498,
+        "pipeline_parallel": 0.11505418240000001,
+        "recommunication": 0.5357118070153847,
+        "recompute": 0.31852512492307694,
+        "tensor_parallel": 2.487064078178462
+      },
+      "ir": {
+        "distributed_digest": "c237f8f3c66adea3643b1886605fc1becfc44ff6",
+        "model_digest": "e2a097e24aa28d6bc3fbfc731880d6a766ab9db9",
+        "pass_checkpoints": [
+          {
+            "digest": "c237f8f3c66adea3643b1886605fc1becfc44ff6",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "d3f1826b4e0b24ee91fc5920c95c1dd3b3ca6782",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "d3f1826b4e0b24ee91fc5920c95c1dd3b3ca6782"
+      },
+      "memory_bytes": {
+        "calculon": 58060800000.0,
+        "compiled": 58060800000,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 735106301952,
+        "compiled_explicit_operations": 13186891776,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -15.310899693144684,
+        "system_evidence_vs_calculon": -1.3024992401875457e-14,
+        "system_evidence_vs_paper": -0.8140777867814367
+      },
+      "timing_seconds": {
+        "calculon": 13.638064304317554,
+        "paper": 13.75,
+        "peak_only": 11.549953958596923,
+        "system_evidence": 13.638064304317552
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 484442112,
+          "reference": 484442112.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 2296479744,
+          "reference": 2296479744,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 980108181504,
+          "reference": 980108181504.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 106954752,
+          "reference": 106954752.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 471859200,
+          "reference": 471859200.0,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 2057404416,
+          "reference": 2057404416,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 953998639104,
+          "reference": 953998639104.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 201326592,
+          "reference": 201326592,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 2718498816,
+          "reference": 2718498816.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 2718498816,
+          "reference": 2718498816.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 2491957248,
+          "reference": 2491957248.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 100663296,
+          "reference": 100663296,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 453083136,
+          "reference": 453083136,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 453083136,
+          "reference": 453083136.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 855736320,
+          "reference": 855736320,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 927756976128,
+          "reference": 927756976128,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 906166272,
+          "reference": 906166272,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 18.497861257546738,
+        "data_parallel": 0,
+        "forward": 9.488717946599008,
+        "optimizer": 0.013535305846153848,
+        "pipeline_bubble": 1.9403746173382035,
+        "pipeline_parallel": 6.297093973333333,
+        "recommunication": 1.2815439753846154,
+        "recompute": 9.488717946599008,
+        "tensor_parallel": 2.8847319171282053
+      },
+      "case": "seqsel-tab5/turing-530B/full",
+      "compiled_breakdown_seconds": {
+        "backward": 18.49786125754674,
+        "data_parallel": 0.0,
+        "forward": 9.488717946599008,
+        "optimizer": 0.013535305846153848,
+        "pipeline_bubble": 1.9403746173382035,
+        "pipeline_parallel": 6.297093973333333,
+        "recommunication": 1.2815439753846154,
+        "recompute": 9.488717946599008,
+        "tensor_parallel": 2.8847319171282053
+      },
+      "ir": {
+        "distributed_digest": "2bf52253b604335356e4daf86bbd80f1a0a6a9a6",
+        "model_digest": "941505070aec9373c78d390e55facfadc3966960",
+        "pass_checkpoints": [
+          {
+            "digest": "2bf52253b604335356e4daf86bbd80f1a0a6a9a6",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "1eca776c1c27807964278cf5e768193a6f06c4cc",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "1eca776c1c27807964278cf5e768193a6f06c4cc"
+      },
+      "memory_bytes": {
+        "calculon": 45386465280.0,
+        "compiled": 45386465280,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 19880741961728.0,
+        "compiled_explicit_operations": 2621423222784,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -10.094236750002654,
+        "system_evidence_vs_calculon": 0.0,
+        "system_evidence_vs_paper": 1.7177919261473402
+      },
+      "timing_seconds": {
+        "calculon": 49.89257693977527,
+        "paper": 49.05,
+        "peak_only": 44.85630210279712,
+        "system_evidence": 49.89257693977527
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 83886080,
+          "reference": 83886080,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 1216348160,
+          "reference": 1216348160,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 5318541312,
+          "reference": 5318541312,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 2665549398016,
+          "reference": 2665549398016.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 1048576000,
+          "reference": 1048576000,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 167772160,
+          "reference": 167772160,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 4479680512,
+          "reference": 4479680512,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 2621496623104,
+          "reference": 2621496623104.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 167772160,
+          "reference": 167772160,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 7550730240,
+          "reference": 7550730240.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 7550730240,
+          "reference": 7550730240.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 6921502720,
+          "reference": 6921502720.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 167772160,
+          "reference": 167772160,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 1258455040,
+          "reference": 1258455040,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 1258455040,
+          "reference": 1258455040.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 2223144960,
+          "reference": 2223144960,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 2577567580160,
+          "reference": 2577567580160,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 2516910080,
+          "reference": 2516910080,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 17.479996894880074,
+        "data_parallel": 0,
+        "forward": 8.914357731624653,
+        "optimizer": 0.013535305846153848,
+        "pipeline_bubble": 1.34052038789163,
+        "pipeline_parallel": 0.8165367466666666,
+        "recommunication": 0.9653579815384615,
+        "recompute": 0.45357908108034195,
+        "tensor_parallel": 4.488910559179487
+      },
+      "case": "seqsel-tab5/turing-530B/seqsel",
+      "compiled_breakdown_seconds": {
+        "backward": 17.47999689488007,
+        "data_parallel": 0.0,
+        "forward": 8.914357731624653,
+        "optimizer": 0.013535305846153848,
+        "pipeline_bubble": 1.34052038789163,
+        "pipeline_parallel": 0.8165367466666666,
+        "recommunication": 0.9653579815384615,
+        "recompute": 0.45357908108034195,
+        "tensor_parallel": 4.4889105591794864
+      },
+      "ir": {
+        "distributed_digest": "83056fda70e2d0efac0e1f59982002888f8f7d48",
+        "model_digest": "941505070aec9373c78d390e55facfadc3966960",
+        "pass_checkpoints": [
+          {
+            "digest": "83056fda70e2d0efac0e1f59982002888f8f7d48",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "8095358ace4a3a62466c13b0895e03545c6f5621",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "8095358ace4a3a62466c13b0895e03545c6f5621"
+      },
+      "memory_bytes": {
+        "calculon": 57487032320.0,
+        "compiled": 57487032320,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 1998086733824,
+        "compiled_explicit_operations": 21877489664,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -11.03756118305332,
+        "system_evidence_vs_calculon": -2.0611695169375357e-14,
+        "system_evidence_vs_paper": -8.874452316395821
+      },
+      "timing_seconds": {
+        "calculon": 34.47279468870747,
+        "paper": 37.83,
+        "peak_only": 30.667838883433024,
+        "system_evidence": 34.47279468870746
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 723517440,
+          "reference": 723517440.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 4112678912,
+          "reference": 4112678912,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 2664154791936,
+          "reference": 2664154791936.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 178257920,
+          "reference": 178257920.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 702545920,
+          "reference": 702545920.0,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 335544320,
+          "reference": 335544320,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 3714220032,
+          "reference": 3714220032,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 2620689219584,
+          "reference": 2620689219584.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 335544320,
+          "reference": 335544320,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 7550730240,
+          "reference": 7550730240.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 7550730240,
+          "reference": 7550730240.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 6921502720,
+          "reference": 6921502720.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 167772160,
+          "reference": 167772160,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 1258455040,
+          "reference": 1258455040,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 1258455040,
+          "reference": 1258455040.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 1929543680,
+          "reference": 1929543680,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 2577053777920,
+          "reference": 2577053777920,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 2516910080,
+          "reference": 2516910080,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 34.176803076660136,
+        "data_parallel": 0,
+        "forward": 17.447966314699297,
+        "optimizer": 0.01409820471794872,
+        "pipeline_bubble": 9.868193566177599,
+        "pipeline_parallel": 4.792665884444444,
+        "recommunication": 1.947708914871795,
+        "recompute": 17.447966314699297,
+        "tensor_parallel": 4.3855419689572654
+      },
+      "case": "seqsel-tab5/megatron-1T/full",
+      "compiled_breakdown_seconds": {
+        "backward": 34.17680307666013,
+        "data_parallel": 0.0,
+        "forward": 17.447966314699297,
+        "optimizer": 0.01409820471794872,
+        "pipeline_bubble": 9.868193566177597,
+        "pipeline_parallel": 4.792665884444444,
+        "recommunication": 1.947708914871795,
+        "recompute": 17.447966314699297,
+        "tensor_parallel": 4.3855419689572654
+      },
+      "ir": {
+        "distributed_digest": "cc434813b1a0071df740e4135ec5b25a6c511729",
+        "model_digest": "f293e3af1366c93c861a1107ac21c88e394fecc2",
+        "pass_checkpoints": [
+          {
+            "digest": "cc434813b1a0071df740e4135ec5b25a6c511729",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "5ffc23392d5a374f442ef2f448366e3d9f6118ce",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "5ffc23392d5a374f442ef2f448366e3d9f6118ce"
+      },
+      "memory_bytes": {
+        "calculon": 49679769600.0,
+        "compiled": 49679769600,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 30890725212160.0,
+        "compiled_explicit_operations": 4082085396480,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -9.358089807696368,
+        "system_evidence_vs_calculon": -1.577565026018791e-14,
+        "system_evidence_vs_paper": -4.595483747905351
+      },
+      "timing_seconds": {
+        "calculon": 90.08094424522778,
+        "paper": 94.42,
+        "peak_only": 81.65108858313847,
+        "system_evidence": 90.08094424522777
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 104857600,
+          "reference": 104857600,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 1520435200,
+          "reference": 1520435200,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 7041392640,
+          "reference": 7041392640,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 4137243115520,
+          "reference": 4137243115520.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 1310720000,
+          "reference": 1310720000,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 209715200,
+          "reference": 209715200,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 5992816640,
+          "reference": 5992816640,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 4082177146880,
+          "reference": 4082177146880.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 209715200,
+          "reference": 209715200,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 11797708800,
+          "reference": 11797708800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 11797708800,
+          "reference": 11797708800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 10814566400,
+          "reference": 10814566400.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 209715200,
+          "reference": 209715200,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 1966284800,
+          "reference": 1966284800,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 1966284800,
+          "reference": 1966284800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 3172147200,
+          "reference": 3172147200,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 4027265843200,
+          "reference": 4027265843200,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 3932569600,
+          "reference": 3932569600,
+          "relative_error_percent": 0.0
+        }
+      }
+    },
+    {
+      "calculon_breakdown_seconds": {
+        "backward": 32.62577166688236,
+        "data_parallel": 0,
+        "forward": 16.572750749024085,
+        "optimizer": 0.01409820471794872,
+        "pipeline_bubble": 7.234216186981917,
+        "pipeline_parallel": 0.6170032355555556,
+        "recommunication": 1.4659016861538463,
+        "recompute": 0.6911681235509971,
+        "tensor_parallel": 6.819764661606838
+      },
+      "case": "seqsel-tab5/megatron-1T/seqsel",
+      "compiled_breakdown_seconds": {
+        "backward": 32.62577166688235,
+        "data_parallel": 0.0,
+        "forward": 16.572750749024085,
+        "optimizer": 0.01409820471794872,
+        "pipeline_bubble": 7.234216186981917,
+        "pipeline_parallel": 0.6170032355555556,
+        "recommunication": 1.4659016861538463,
+        "recompute": 0.6911681235509971,
+        "tensor_parallel": 6.819764661606838
+      },
+      "ir": {
+        "distributed_digest": "e2d2c7497ff079a09c1fb88aab5e9fd0cd40f084",
+        "model_digest": "f293e3af1366c93c861a1107ac21c88e394fecc2",
+        "pass_checkpoints": [
+          {
+            "digest": "e2d2c7497ff079a09c1fb88aab5e9fd0cd40f084",
+            "pass": "transformer-distribute-v1",
+            "schema": "blueprinting.distributed-task"
+          },
+          {
+            "digest": "377375178daedbd9655bdccb618eab11ba8b68f3",
+            "pass": "transformer-plan-work-v1",
+            "schema": "blueprinting.portable-plan"
+          }
+        ],
+        "portable_digest": "377375178daedbd9655bdccb618eab11ba8b68f3"
+      },
+      "memory_bytes": {
+        "calculon": 63507865600.0,
+        "compiled": 63507865600,
+        "relative_error_percent": 0.0
+      },
+      "recompute_counter_audit": {
+        "calculon_block_re_flops": 3101588193280,
+        "compiled_explicit_operations": 27346862080,
+        "note": "Calculon accumulates a running forward prefix in block_re_flops; block_re_time sums selected operations and is the comparable metric."
+      },
+      "timing_error_percent": {
+        "peak_only_vs_calculon": -10.154245769449348,
+        "system_evidence_vs_calculon": 0.0,
+        "system_evidence_vs_paper": -7.622500329453712
+      },
+      "timing_seconds": {
+        "calculon": 66.04067451447354,
+        "paper": 71.49,
+        "peak_only": 59.334742116471794,
+        "system_evidence": 66.04067451447354
+      },
+      "workload_audit": {
+        "block_activation_checkpoint_bytes": {
+          "compiled": 0,
+          "reference": 0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_bytes": {
+          "compiled": 904396800,
+          "reference": 904396800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_memory_bytes": {
+          "compiled": 5534064640,
+          "reference": 5534064640,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_gradient_operations": {
+          "compiled": 4135499857920,
+          "reference": 4135499857920.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_storage_bytes": {
+          "compiled": 222822400,
+          "reference": 222822400.0,
+          "relative_error_percent": 0.0
+        },
+        "block_activation_working_bytes": {
+          "compiled": 878182400,
+          "reference": 878182400.0,
+          "relative_error_percent": 0.0
+        },
+        "block_backward_tp_message_bytes": {
+          "compiled": 419430400,
+          "reference": 419430400,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_memory_bytes": {
+          "compiled": 5035991040,
+          "reference": 5035991040,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_operations": {
+          "compiled": 4081167892480,
+          "reference": 4081167892480.0,
+          "relative_error_percent": 0.0
+        },
+        "block_forward_tp_message_bytes": {
+          "compiled": 419430400,
+          "reference": 419430400,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_bytes": {
+          "compiled": 11797708800,
+          "reference": 11797708800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_memory_bytes": {
+          "compiled": 11797708800,
+          "reference": 11797708800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_optimizer_operations": {
+          "compiled": 10814566400,
+          "reference": 10814566400.0,
+          "relative_error_percent": 0.0
+        },
+        "block_recommunication_message_bytes": {
+          "compiled": 209715200,
+          "reference": 209715200,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_bytes": {
+          "compiled": 1966284800,
+          "reference": 1966284800,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_bytes": {
+          "compiled": 1966284800,
+          "reference": 1966284800.0,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_memory_bytes": {
+          "compiled": 2805145600,
+          "reference": 2805145600,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_operations": {
+          "compiled": 4026623590400,
+          "reference": 4026623590400,
+          "relative_error_percent": 0.0
+        },
+        "block_weight_gradient_unsharded_bytes": {
+          "compiled": 3932569600,
+          "reference": 3932569600,
+          "relative_error_percent": 0.0
+        }
+      }
+    }
+  ],
+  "hardware": {
+    "evidence_revision": "eb1eb9fcc4a6e414e85b0252c23ea9ad2730aae2",
+    "name": "a100_80g"
+  },
+  "schema": "blueprinting.calculon-calibration-experiment.v1",
+  "summary": {
+    "case_count": 8,
+    "peak_only_mean_absolute_error_percent": 12.993831306582473,
+    "system_evidence_max_absolute_error_percent": 2.0611695169375357e-14,
+    "system_evidence_mean_absolute_error_percent": 6.17654222892984e-15,
+    "system_evidence_vs_paper_max_absolute_error_percent": 8.874452316395821,
+    "system_evidence_vs_paper_mean_absolute_error_percent": 3.654361437637248,
+    "workload_max_absolute_error_percent": 0.0
+  }
+}

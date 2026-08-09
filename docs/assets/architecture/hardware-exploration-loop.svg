@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Blueprinting hardware architecture exploration loop</title>
+  <desc id="desc">Workloads and architecture questions produce candidate compute, memory, interconnect, and system blueprints. Mapping and evidence-backed simulation generate Pareto results, bottlenecks, and sensitivity analysis. Measurements calibrate later exploration revisions.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7F8FF"/>
+      <stop offset="1" stop-color="#EEF7F7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#25324A" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0,0 L11,5.5 L0,11 Z" fill="#53627C"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0,0 L11,5.5 L0,11 Z" fill="#6750A4"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0,0 L11,5.5 L0,11 Z" fill="#168A61"/>
+    </marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17223B; }
+      .title { font-size: 29px; font-weight: 750; letter-spacing: .3px; }
+      .subtitle { font-size: 15px; fill: #53627C; }
+      .section { font-size: 17px; font-weight: 750; letter-spacing: .4px; }
+      .box-title { font-size: 16px; font-weight: 720; }
+      .box-sub { font-size: 12.5px; fill: #56647A; }
+      .micro { font-size: 11.5px; fill: #647189; }
+      .flow { fill: none; stroke: #53627C; stroke-width: 2.4; marker-end: url(#arrow); }
+      .iterate { fill: none; stroke: #6750A4; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrow-purple); }
+      .feedback { fill: none; stroke: #168A61; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrow-green); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" rx="24" fill="url(#bg)"/>
+  <text x="800" y="48" text-anchor="middle" class="title">BLUEPRINTING · HARDWARE ARCHITECTURE EXPLORATION</text>
+  <text x="800" y="75" text-anchor="middle" class="subtitle">硬件蓝图 → 工作负载映射 → 证据驱动仿真 → Pareto / sensitivity → 校准后的新蓝图</text>
+
+  <rect x="52" y="120" width="286" height="666" rx="20" fill="#FFFFFF" stroke="#8090AD" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="195" y="158" text-anchor="middle" class="section">EXPLORATION INTENT</text>
+  <text x="195" y="179" text-anchor="middle" class="micro">探索问题与工作负载</text>
+
+  <rect x="78" y="211" width="234" height="126" rx="14" fill="#EFF2FF" stroke="#6C75C9"/>
+  <text x="195" y="242" text-anchor="middle" class="box-title">Workload Suite</text>
+  <text x="195" y="268" text-anchor="middle" class="box-sub">training · prefill · decode</text>
+  <text x="195" y="290" text-anchor="middle" class="box-sub">shape · precision · parallelism</text>
+  <text x="195" y="312" text-anchor="middle" class="box-sub">representative scenarios</text>
+
+  <rect x="78" y="363" width="234" height="148" rx="14" fill="#FFF5E8" stroke="#D9862C"/>
+  <text x="195" y="394" text-anchor="middle" class="box-title">Architecture Question</text>
+  <text x="195" y="420" text-anchor="middle" class="box-sub">Which bottleneck matters?</text>
+  <text x="195" y="442" text-anchor="middle" class="box-sub">What should be scaled?</text>
+  <text x="195" y="464" text-anchor="middle" class="box-sub">Which trade-off is acceptable?</text>
+  <text x="195" y="486" text-anchor="middle" class="box-sub">哪些设计决策值得进入硅实现？</text>
+
+  <rect x="78" y="537" width="234" height="214" rx="14" fill="#F5F7FA" stroke="#8A96A8"/>
+  <text x="195" y="568" text-anchor="middle" class="box-title">Objectives &amp; Constraints</text>
+  <text x="195" y="595" text-anchor="middle" class="box-sub">latency · throughput · memory</text>
+  <text x="195" y="619" text-anchor="middle" class="box-sub">utilization · energy · area · cost</text>
+  <text x="195" y="643" text-anchor="middle" class="box-sub">bandwidth · capacity · topology</text>
+  <line x1="105" y1="663" x2="285" y2="663" stroke="#C3CAD5"/>
+  <text x="195" y="690" text-anchor="middle" class="box-sub">Evidence policy</text>
+  <text x="195" y="713" text-anchor="middle" class="box-sub">fidelity · uncertainty · budget</text>
+
+  <rect x="382" y="120" width="550" height="420" rx="20" fill="#FFFFFF" stroke="#6750A4" stroke-width="1.7" filter="url(#shadow)"/>
+  <text x="657" y="158" text-anchor="middle" class="section">CANDIDATE HARDWARE BLUEPRINTS</text>
+  <text x="657" y="179" text-anchor="middle" class="micro">可版本化、可组合、可搜索的架构候选</text>
+
+  <rect x="410" y="211" width="238" height="126" rx="14" fill="#F0ECFF" stroke="#795BC1"/>
+  <text x="529" y="241" text-anchor="middle" class="box-title">Compute Substrate</text>
+  <text x="529" y="267" text-anchor="middle" class="box-sub">matrix / vector / scalar engines</text>
+  <text x="529" y="289" text-anchor="middle" class="box-sub">tile count · precision · frequency</text>
+  <text x="529" y="311" text-anchor="middle" class="box-sub">kernel and dataflow capabilities</text>
+
+  <rect x="668" y="211" width="238" height="126" rx="14" fill="#EAF7F4" stroke="#2B9275"/>
+  <text x="787" y="241" text-anchor="middle" class="box-title">Memory Hierarchy</text>
+  <text x="787" y="267" text-anchor="middle" class="box-sub">register / SRAM / HBM / host</text>
+  <text x="787" y="289" text-anchor="middle" class="box-sub">capacity · bandwidth · banking</text>
+  <text x="787" y="311" text-anchor="middle" class="box-sub">reuse · placement · movement</text>
+
+  <rect x="410" y="361" width="238" height="126" rx="14" fill="#EAF3FF" stroke="#3A78B8"/>
+  <text x="529" y="391" text-anchor="middle" class="box-title">Interconnect &amp; Network</text>
+  <text x="529" y="417" text-anchor="middle" class="box-sub">NoC · die-to-die · scale-up/out</text>
+  <text x="529" y="439" text-anchor="middle" class="box-sub">topology · links · routing</text>
+  <text x="529" y="461" text-anchor="middle" class="box-sub">collectives · congestion</text>
+
+  <rect x="668" y="361" width="238" height="126" rx="14" fill="#FFF3EA" stroke="#C97835"/>
+  <text x="787" y="391" text-anchor="middle" class="box-title">System Organization</text>
+  <text x="787" y="417" text-anchor="middle" class="box-sub">chiplet · package · node · cluster</text>
+  <text x="787" y="439" text-anchor="middle" class="box-sub">device count · topology · clocks</text>
+  <text x="787" y="461" text-anchor="middle" class="box-sub">power / area / cost envelope</text>
+
+  <rect x="382" y="582" width="550" height="204" rx="20" fill="#FFFFFF" stroke="#4F69B6" stroke-width="1.7" filter="url(#shadow)"/>
+  <text x="657" y="620" text-anchor="middle" class="section">WORKLOAD MAPPING &amp; PLAN CONSTRUCTION</text>
+  <text x="657" y="643" text-anchor="middle" class="micro">formal representation · verified derivation · automated analysis</text>
+  <rect x="410" y="670" width="148" height="76" rx="12" fill="#EEF1FF" stroke="#6773BE"/>
+  <text x="484" y="699" text-anchor="middle" class="box-title">Exact Work</text>
+  <text x="484" y="723" text-anchor="middle" class="box-sub">ops · bytes · messages</text>
+  <rect x="583" y="670" width="148" height="76" rx="12" fill="#EEF1FF" stroke="#6773BE"/>
+  <text x="657" y="699" text-anchor="middle" class="box-title">Mapping</text>
+  <text x="657" y="723" text-anchor="middle" class="box-sub">shard · place · schedule</text>
+  <rect x="756" y="670" width="148" height="76" rx="12" fill="#EEF1FF" stroke="#6773BE"/>
+  <text x="830" y="699" text-anchor="middle" class="box-title">Execution Plan</text>
+  <text x="830" y="723" text-anchor="middle" class="box-sub">queues · buffers · events</text>
+
+  <rect x="978" y="120" width="270" height="666" rx="20" fill="#FFFFFF" stroke="#D18A2F" stroke-width="1.7" filter="url(#shadow)"/>
+  <text x="1113" y="158" text-anchor="middle" class="section">EVIDENCE &amp; SIMULATION</text>
+  <text x="1113" y="179" text-anchor="middle" class="micro">多保真性能与系统模型</text>
+  <rect x="1004" y="211" width="218" height="92" rx="13" fill="#FFF7E8" stroke="#D18A2F"/>
+  <text x="1113" y="242" text-anchor="middle" class="box-title">Performance Database</text>
+  <text x="1113" y="268" text-anchor="middle" class="box-sub">kernel · memory · collective</text>
+  <rect x="1004" y="327" width="218" height="92" rx="13" fill="#FFF7E8" stroke="#D18A2F"/>
+  <text x="1113" y="358" text-anchor="middle" class="box-title">Analytical Models</text>
+  <text x="1113" y="384" text-anchor="middle" class="box-sub">roofline · latency/bandwidth</text>
+  <rect x="1004" y="443" width="218" height="92" rx="13" fill="#FFF7E8" stroke="#D18A2F"/>
+  <text x="1113" y="474" text-anchor="middle" class="box-title">Hardware Simulator</text>
+  <text x="1113" y="500" text-anchor="middle" class="box-sub">engine · memory · power</text>
+  <rect x="1004" y="559" width="218" height="92" rx="13" fill="#FFF7E8" stroke="#D18A2F"/>
+  <text x="1113" y="590" text-anchor="middle" class="box-title">Network Simulator</text>
+  <text x="1113" y="616" text-anchor="middle" class="box-sub">topology · routing · contention</text>
+  <rect x="1004" y="675" width="218" height="76" rx="13" fill="#EAF7F0" stroke="#2B9275"/>
+  <text x="1113" y="704" text-anchor="middle" class="box-title">Measured Evidence</text>
+  <text x="1113" y="728" text-anchor="middle" class="box-sub">profiler · silicon · testbed</text>
+
+  <rect x="1294" y="120" width="254" height="666" rx="20" fill="#FFFFFF" stroke="#168A61" stroke-width="1.7" filter="url(#shadow)"/>
+  <text x="1421" y="158" text-anchor="middle" class="section">EXPLORATION RESULTS</text>
+  <text x="1421" y="179" text-anchor="middle" class="micro">决策证据，而不只是一个时间</text>
+  <rect x="1320" y="211" width="202" height="126" rx="13" fill="#EAF7F0" stroke="#2B9275"/>
+  <text x="1421" y="242" text-anchor="middle" class="box-title">Performance Envelope</text>
+  <text x="1421" y="268" text-anchor="middle" class="box-sub">latency · throughput · memory</text>
+  <text x="1421" y="290" text-anchor="middle" class="box-sub">energy · area · cost</text>
+  <text x="1421" y="312" text-anchor="middle" class="box-sub">uncertainty bounds</text>
+  <rect x="1320" y="363" width="202" height="126" rx="13" fill="#EAF7F0" stroke="#2B9275"/>
+  <text x="1421" y="394" text-anchor="middle" class="box-title">Bottleneck &amp; Sensitivity</text>
+  <text x="1421" y="420" text-anchor="middle" class="box-sub">compute / memory / network</text>
+  <text x="1421" y="442" text-anchor="middle" class="box-sub">critical path · utilization</text>
+  <text x="1421" y="464" text-anchor="middle" class="box-sub">what-if derivatives</text>
+  <rect x="1320" y="515" width="202" height="126" rx="13" fill="#EAF7F0" stroke="#2B9275"/>
+  <text x="1421" y="546" text-anchor="middle" class="box-title">Pareto Blueprints</text>
+  <text x="1421" y="572" text-anchor="middle" class="box-sub">ranked architecture candidates</text>
+  <text x="1421" y="594" text-anchor="middle" class="box-sub">constraints · provenance</text>
+  <text x="1421" y="616" text-anchor="middle" class="box-sub">reproducible experiment bundle</text>
+  <rect x="1320" y="667" width="202" height="84" rx="13" fill="#F0ECFF" stroke="#795BC1"/>
+  <text x="1421" y="698" text-anchor="middle" class="box-title">Program / Config</text>
+  <text x="1421" y="724" text-anchor="middle" class="box-sub">optional downstream product</text>
+
+  <path d="M338 448 C356 448 360 330 382 330" class="flow"/>
+  <path d="M657 540 L657 582" class="flow"/>
+  <path d="M932 684 L978 684" class="flow"/>
+  <path d="M1248 452 L1294 452" class="flow"/>
+
+  <path d="M1421 786 C1421 842 830 844 830 790" class="iterate"/>
+  <path d="M1113 786 C1113 930 195 930 195 790" class="feedback"/>
+
+  <rect x="836" y="842" width="576" height="30" rx="10" fill="#F3F7F8" fill-opacity="0.96"/>
+  <text x="1124" y="863" text-anchor="middle" class="box-sub" fill="#6750A4">compare → prune → refine architecture candidates / 比较、剪枝、细化</text>
+
+  <rect x="386" y="899" width="536" height="30" rx="10" fill="#F3F7F8" fill-opacity="0.96"/>
+  <text x="654" y="920" text-anchor="middle" class="box-sub" fill="#168A61">observations create a new evidence revision / 观测生成新证据版本</text>
+
+  <text x="800" y="960" text-anchor="middle" class="micro">Formal representations and verified derivations provide semantic consistency; hardware insight is the product.</text>
+</svg>

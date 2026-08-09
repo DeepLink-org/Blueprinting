@@ -1,62 +1,68 @@
-"""
-XInsight Streamlit Application
-==============================
-异构计算模拟分析工具 - LLM 训练性能分析与浮点精度可视化
+"""Legacy Streamlit surface for Calculon and transitional Blueprinting pages.
 
-页面结构:
-- LLM计算器
-  - Overview: 模型总览和性能指标
-  - 块粒度: Transformer 块级分析和 IR 编译
-  - 分布式实验: TP/PP/DP 并行策略分析
-  - 准确性校验: 模拟器验证结果
-
-- 精度分析
-  - 浮点精度: 浮点数格式和精度可视化
+The primary workbench is now launched with ``blueprinting-workbench``. Existing
+Calculon pages remain available here as an independent baseline and are not
+part of the Blueprinting product analysis path.
 """
 
 import streamlit as st
 
-
 # ============================================================================
 # 页面导航配置
 # ============================================================================
-pg = st.navigation({
-    "LLM计算器": [
-        st.Page(
-            "pages/LLM_Calc/overview.py",
-            title="Overview",
-            icon="📊",
-            default=True,
-        ),
-        st.Page(
-            "pages/LLM_Calc/ir_pipeline.py",
-            title="IR 变换可视化",
-            icon="🧭",
-        ),
-        st.Page(
-            "pages/LLM_Calc/blockwise.py",
-            title="块粒度",
-            icon="🧱",
-        ),
-        st.Page(
-            "pages/LLM_Calc/distexp.py",
-            title="分布式实验",
-            icon="🔄",
-        ),
-        st.Page(
-            "pages/LLM_Calc/validation.py",
-            title="准确性校验",
-            icon="✅",
-        ),
-    ],
-    "精度分析": [
-        st.Page(
-            "pages/FloatAnalysis/float_precision.py",
-            title="浮点精度",
-            icon="🔢",
-        ),
-    ],
-})
+pg = st.navigation(
+    {
+        # The primary Blueprinting workflow stays directly visible. Secondary
+        # and legacy tools become collapsed groups in Streamlit's top nav.
+        "": [
+            st.Page(
+                "pages/Blueprinting/overview.py",
+                title="分析总览",
+                icon="🧭",
+                url_path="blueprinting-overview",
+                default=True,
+            ),
+            st.Page(
+                "pages/Blueprinting/ir_audit.py",
+                title="IR 推导审计",
+                icon="🔬",
+                url_path="blueprinting-ir-audit",
+            ),
+            st.Page(
+                "pages/Blueprinting/strategy_explorer.py",
+                title="策略空间探索",
+                icon="🧩",
+                url_path="blueprinting-strategy-explorer",
+            ),
+        ],
+        "Calculon 基线（旧版）": [
+            st.Page(
+                "pages/LLM_Calc/overview.py",
+                title="Overview",
+                icon="📊",
+                url_path="calculon-overview",
+            ),
+            st.Page(
+                "pages/LLM_Calc/blockwise.py",
+                title="块粒度",
+                icon="🧱",
+            ),
+            st.Page(
+                "pages/LLM_Calc/distexp.py",
+                title="分布式实验",
+                icon="🔄",
+            ),
+        ],
+        "精度分析": [
+            st.Page(
+                "pages/FloatAnalysis/float_precision.py",
+                title="浮点精度",
+                icon="🔢",
+            ),
+        ],
+    },
+    position="top",
+)
 
 
 # ============================================================================

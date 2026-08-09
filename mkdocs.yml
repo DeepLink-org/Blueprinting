@@ -1,0 +1,143 @@
+site_name: Blueprinting — Hardware Architecture Exploration
+site_description: Evidence-driven hardware architecture exploration and simulation for distributed AI workloads
+repo_url: https://github.com/reiase/blueprinting
+repo_name: reiase/blueprinting
+copyright: Copyright &copy; 2026 Blueprinting contributors
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Architecture Exploration:
+      - Why Blueprinting: exploration/index.md
+      - Hardware Design Space: exploration/design-space.md
+      - Exploration Workflow: exploration/workflow.md
+  - Models and Simulation:
+      - Hardware Architecture Model: modeling/hardware.md
+      - Workload and Mapping Model: modeling/workload.md
+      - Performance Evidence and Cost Models: design/performance/index.md
+      - Performance Database: design/performance/database.md
+      - Simulation and Calibration: design/performance/simulation.md
+  - Experiments:
+      - Calculon Calibration: experiments/calculon-calibration.md
+  - Formal Analysis Foundations:
+      - Formal Analysis Architecture: design/index.md
+      - Derivation and Verification Model: design/compilation-model.md
+      - Timeline Staging Path: design/timeline-path.md
+      - Golden Derivation Walkthrough: design/walkthrough.md
+      - Analysis Module Architecture: design/modules.md
+      - Formal Representations:
+          - Representation Stack: design/ir/index.md
+          - Workload and Distribution Models: design/ir/model-distributed.md
+          - Planning and Realization Models: design/ir/planning-execution.md
+      - Analysis and Transformation:
+          - Transaction Infrastructure: design/passes/index.md
+          - Transformer Workload Derivation: design/passes/transformer.md
+          - Architecture Binding and Plan Construction: design/passes/target.md
+  - Project:
+      - Implementation Status: project/status.md
+      - Roadmap: project/roadmap.md
+      - Decisions and Terminology: project/decisions.md
+      - Architecture Risk Register: project/risks.md
+      - Documentation Guide: contributing/documentation.md
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      # Shared, language-neutral assets are inherited from the default locale.
+      # Markdown fallback is guarded separately by scripts/check_docs_i18n.py.
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      build_only_locale: !ENV [BUILD_ONLY_LOCALE]
+      languages:
+        - locale: en
+          name: English
+          build: true
+          default: true
+        - locale: zh
+          name: 简体中文
+          build: true
+          site_name: Blueprinting 硬件架构探索
+          site_description: 面向分布式 AI 工作负载的证据驱动硬件架构探索与仿真系统
+          nav_translations:
+            Home: 首页
+            Architecture Exploration: 硬件架构探索
+            Why Blueprinting: 为什么叫 Blueprinting
+            Hardware Design Space: 硬件设计空间
+            Exploration Workflow: 探索工作流
+            Models and Simulation: 模型与仿真
+            Hardware Architecture Model: 硬件架构模型
+            Workload and Mapping Model: 工作负载与映射模型
+            Performance Evidence and Cost Models: 性能证据与 Cost Model
+            Performance Database: 性能数据库
+            Simulation and Calibration: 仿真与校准
+            Experiments: 实验
+            Calculon Calibration: Calculon 校准
+            Formal Analysis Foundations: 形式化分析基础
+            Formal Analysis Architecture: 形式化分析架构
+            Derivation and Verification Model: 推导与验证模型
+            Timeline Staging Path: Timeline 阶段路径
+            Golden Derivation Walkthrough: 完整推导示例
+            Analysis Module Architecture: 分析模块架构
+            Formal Representations: 形式化表示
+            Representation Stack: 表示体系
+            Workload and Distribution Models: 工作负载与分布模型
+            Planning and Realization Models: 规划与实现模型
+            Analysis and Transformation: 分析与变换
+            Transaction Infrastructure: 事务基础设施
+            Transformer Workload Derivation: Transformer 工作负载推导
+            Architecture Binding and Plan Construction: 架构绑定与计划构造
+            Project: 项目
+            Implementation Status: 实现状态
+            Roadmap: 路线图
+            Decisions and Terminology: 设计决策与术语
+            Architecture Risk Register: 架构风险登记表
+            Documentation Guide: 文档维护指南
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn

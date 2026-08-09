@@ -1,41 +1,68 @@
 # Blueprinting
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-**Blueprinting** is a simulation and analysis toolkit for heterogeneous computing and large-scale distributed training systems. It enables performance modeling, parameter optimization, and bottleneck analysis for LLM training workloads.
+Blueprinting is an evidence-driven hardware architecture exploration and simulation system for distributed AI
+workloads. It maps representative workloads onto candidate compute, memory, interconnect, and system blueprints,
+then compares their feasibility, bottlenecks, sensitivity, and performance trade-offs from versioned evidence.
 
-[English](#features) | [中文](#功能特性)
+## Hardware exploration model
 
----
+![Blueprinting hardware architecture exploration loop](docs/assets/architecture/hardware-exploration-loop.svg)
 
-## Features
-
-- **Performance Simulation**: Model distributed training performance with fine-grained layer-level analysis
-- **Distributed Strategy Analysis**: Evaluate DP/TP/PP parallelism strategies and their trade-offs
-- **Hardware-Software Co-design**: Explore the design space across model architecture, training configuration, and hardware specifications
-- **Numerical Precision Analysis**: Visualize and analyze floating-point formats (FP8, BF16, FP16) for training stability
-- **Interactive Web UI**: Streamlit-based dashboard for intuitive exploration and visualization
-
-## Use Cases
-
-| Role | Applications |
-|------|-------------|
-| **ML Engineers** | Model architecture design, training strategy optimization |
-| **Infrastructure Engineers** | Training configuration tuning, performance bottleneck analysis |
-| **System Architects** | Network topology evaluation, system configuration optimization |
-| **Hardware Designers** | Resource allocation analysis, hardware-model co-optimization |
-
-## Installation
-
-### From PyPI (Coming Soon)
-
-```bash
-pip install blueprinting
+```text
+architecture question + workload suite
+  -> candidate hardware blueprints
+  -> legal workload mappings
+  -> analytical / network / hardware simulation
+  -> bottleneck, sensitivity, uncertainty, and Pareto analysis
+  -> measured evidence and calibrated revisions
 ```
 
-### From Source
+The name is the product thesis: a blueprint is detailed enough to map, simulate, compare, revise, and eventually
+hand to a hardware or runtime implementation. Existing GPUs, future LPUs, and other accelerators are candidates in
+the same exploration space.
+
+The analysis engine uses typed formal models and verified derivations to keep comparisons honest:
+
+- every candidate receives the same exact workload operations, bytes, messages, and dependencies;
+- architecture capabilities and resources bind late, so GPU, LPU, and experimental designs remain comparable;
+- predicted behavior belongs to versioned evidence rather than semantic workload fields;
+- the target architecture requires simulation and optional program emission to consume the same verified architecture-bound execution-plan envelope.
+
+The implementation borrows IR, lowering, transactional passes, and verifiers from compiler engineering. Here they
+encode staged refinement and executable verification obligations; they are not a standalone Compiler component or the project's
+identity.
+
+Read [Why Blueprinting](docs/exploration/index.en.md) or [为什么叫 Blueprinting](docs/exploration/index.zh.md), then
+continue with the [hardware design space](docs/exploration/design-space.en.md). The formal derivation, verification,
+representation, and transformation contracts live under Formal Analysis Foundations.
+
+## Current implementation
+
+The current implementation is a workload-analysis and evidence foundation for the target exploration system. It
+provides:
+
+- immutable schemas and structural verifiers for the current five-layer IR backbone; only the first three layers have a production derivation slice, while `ConcretePlanIR` and `MachineIR` remain experimental contracts;
+- stable IDs, lineage, schema-versioned serialization, content digests, and typed binding sessions;
+- declarative transformation contracts with analysis invalidation and derivation checkpoints;
+- a typed decoder-only Transformer training frontend;
+- `ModelIR -> DistributedTaskIR -> PortablePlanIR` staged derivation with explicit TP collectives, recomputation, workload,
+  and buffer facts;
+- peak-only and hardware-evidence cost views;
+- a reproducible Calculon/SeqSel calibration experiment.
+
+First-class architecture blueprints, hardware design variables, concrete resource simulation, network/hardware
+simulator adapters, bottleneck/sensitivity reports, energy/area/cost models, and Pareto search are planned product
+slices. MachineIR emission remains an optional downstream validation path for GPU, LPU, and other targets.
+
+The near-term architecture-bound deliverable is a provenance-carrying timeline bundle derived from a verified concrete
+plan—not a return to a timestamp-authoritative `TimelineIR`. See the [timeline staging path](docs/design/timeline-path.en.md)
+and the [architecture risk register](docs/project/risks.en.md).
+
+## Installation
 
 ```bash
 git clone https://github.com/reiase/blueprinting.git
@@ -43,210 +70,121 @@ cd blueprinting
 pip install -e .
 ```
 
-### Dependencies
-
-Core dependencies are automatically installed. For the full experience including the web UI:
+For development and documentation tooling:
 
 ```bash
-pip install -e ".[full]"
+pip install -e ".[dev,docs]"
 ```
 
-## Quick Start
-
-### Web Interface
-
-Launch the interactive dashboard:
-
-```bash
-streamlit run streamlit_app.py
-```
-
-The dashboard provides:
-- **LLM Calculator**: Performance overview, block-level analysis, distributed experiments
-- **Precision Analysis**: Floating-point format visualization and comparison
-
-### Command Line Interface
-
-```bash
-# Show available commands
-blueprinting --help
-
-# Analyze LLM training performance
-blueprinting train --model <model.json> --execution <execution.json> --system <system.json>
-```
-
-### Python API
+## Build the current Transformer workload blueprint
 
 ```python
-import blueprinting as bp
+from blueprinting.compiler.lowering import (
+    DistributeTransformerTrainingPass,
+    PlanTransformerTrainingPass,
+)
+from blueprinting.compiler.models import (
+    TransformerExecutionSpec,
+    TransformerModelSpec,
+    build_transformer_model_ir,
+    compilation_session_for,
+)
+from blueprinting.compiler.passes import PassManager, PassPipeline
 
-# Define model configuration
-model = bp.Model({
-    "hidden": 4096,
-    "num_blocks": 32,
-    "num_heads": 32,
-    # ...
-})
+model = TransformerModelSpec.from_mapping("gpt3-175B", model_config)
+execution = TransformerExecutionSpec.from_mapping(execution_config)
+source = build_transformer_model_ir(model)
 
-# Define system configuration
-system = bp.System({
-    "processor": {"peak_flops": 312e12},
-    "memory": {"capacity": 80e9},
-    # ...
-})
+result = PassManager().run(
+    PassPipeline.of(
+        DistributeTransformerTrainingPass(),
+        PlanTransformerTrainingPass(),
+    ),
+    source,
+    session=compilation_session_for(model, execution),
+)
 
-# Define execution parameters
-execution = bp.Execution({
-    "micro_batch_size": 4,
-    "tensor_parallel": 8,
-    "pipeline_parallel": 4,
-    # ...
-})
+portable_plan = result.ir
+for checkpoint in result.checkpoints:
+    print(checkpoint.pass_name, checkpoint.ir.digest)
 ```
 
-## Project Structure
+The mapping inputs use the model and execution schemas in `data/`. Invalid topology such as
+`world_size != tp * pp * dp` is rejected at the typed frontend boundary.
 
-```
-blueprinting/
-├── src/
-│   ├── blueprinting/      # Core library
-│   │   ├── ir/            # Intermediate representation & compiler
-│   │   ├── nn/            # Neural network abstractions
-│   │   ├── types/         # Type definitions (Model, System, Execution)
-│   │   └── fp/            # Floating-point analysis tools
-│   ├── calculon/          # Performance calculation engine
-│   └── simfloat/          # Floating-point simulation
-├── pages/                 # Streamlit UI pages
-├── data/                  # Model & system configurations
-│   ├── models/            # Pre-defined model configs (GPT, LLaMA, Qwen, etc.)
-│   └── systems/           # Hardware system configs (A100, H100, etc.)
-├── tests/                 # Test suite
-└── docs/                  # Documentation
+## Reproduce the Calculon calibration
+
+```bash
+.venv/bin/python examples/calculon_calibration.py
+.venv/bin/python examples/calculon_calibration.py \
+  --output examples/calculon_calibration_result.json
 ```
 
-## Configuration Examples
+The experiment derives operation, memory, collective, recomputation, and pipeline facts through typed workload
+analysis.
+Calculon and SeqSel measurements enter only after workload derivation and estimation, as comparison oracles. The methodology and current
+results are documented in the [Calculon calibration experiment](docs/experiments/calculon-calibration.en.md).
 
-Pre-configured model and system files are available in the `data/` directory:
+## Interactive workbench and CLI tools
 
-**Models**: GPT-3 (13B, 175B), LLaMA 2/3 (7B-405B), Qwen2 (0.5B-72B), and more
+The primary architecture workbench is a NiceGUI single-page application backed directly by the framework-neutral
+`BlueprintingService`:
 
-**Systems**: NVIDIA A100, H100 configurations
+```bash
+uv run blueprinting-workbench
+blueprinting --help
+```
+
+It provides a shared configuration surface for single-point analysis, canonical IR derivation audit, and bounded
+TP/PP/DP strategy exploration. Analysis runs outside the UI event loop, and failed candidates remain visible as
+structured diagnostics.
+
+The existing Calculon and floating-point Streamlit tools remain isolated as an optional legacy interface:
+
+```bash
+uv sync --extra legacy-ui
+uv run streamlit run streamlit_app.py
+```
+
+Calculon remains an adjacent calibration utility and does not participate in the Blueprinting product analysis path.
+
+## Repository layout
+
+```text
+src/blueprinting/compiler/
+├── ir/              # five canonical IR contracts
+├── models/          # typed semantic frontends
+├── lowering/        # staged derivation passes
+├── analysis/        # exact workload and derived cost analyses
+├── experiments/     # reproducible validation experiments
+├── passes/          # transformation contracts and manager
+└── session.py       # explicit bindings and typed derivation context
+
+src/blueprinting/application/  # framework-neutral analysis service
+src/blueprinting/workbench/    # NiceGUI workbench and legacy presentation adapters
+
+tests/compiler/      # current formal-representation and calibration tests
+docs/                # bilingual MkDocs design, reference, experiment, and project documentation
+```
+
+The `compiler` package path and names such as `CompilationSession` are current implementation identifiers retained
+for compatibility; they do not define the product architecture.
 
 ## Development
 
-### Setup
-
 ```bash
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run tests
 pytest
-
-# Format code
-ruff format src/
-ruff check src/ --fix
+ruff check src/ tests/ examples/calculon_calibration.py
+ruff format --check src/ tests/ examples/calculon_calibration.py
+uv run python scripts/check_docs_i18n.py
+uv run mkdocs build --strict
 ```
-
-### Running Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=blueprinting
-
-# Run specific test file
-pytest tests/ir/test_compiler.py
-```
-
-## Documentation
-
-- [Architecture Overview](docs/architecture.md)
-- [API Reference](docs/overview.md)
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Blueprinting is released under the [MIT License](LICENSE).
 
 ## Acknowledgments
 
-- [Calculon](https://github.com/calculon-ai/calculon) - Performance modeling foundations
-- The open-source LLM community for model configurations and validation data
-
-## Citation
-
-If you use Blueprinting in your research, please cite:
-
-```bibtex
-@software{blueprinting2024,
-  title = {Blueprinting: Heterogeneous Computing and Distributed Training Simulator},
-  author = {Reiase},
-  year = {2024},
-  url = {https://github.com/reiase/blueprinting}
-}
-```
-
----
-
-## 功能特性
-
-- **性能仿真**：支持细粒度的分布式训练性能建模
-- **分布式策略分析**：评估 DP/TP/PP 并行策略及其权衡
-- **软硬协同设计**：探索模型架构、训练配置和硬件规格的设计空间
-- **数值精度分析**：可视化分析 FP8、BF16、FP16 等浮点格式对训练稳定性的影响
-- **交互式界面**：基于 Streamlit 的可视化仪表板
-
-## 快速开始
-
-### 启动 Web 界面
-
-```bash
-streamlit run streamlit_app.py
-```
-
-### 命令行使用
-
-```bash
-blueprinting --help
-```
-
-### 开发模式
-
-```bash
-# 开发模式安装
-pip install -e .
-
-# 运行测试
-pytest
-
-# 代码格式化
-ruff format src/
-```
-
-## 路线图
-
-- [ ] **核心功能**
-  - [ ] P0: 分布式训练仿真
-  - [ ] P0: 系统参数寻优
-  - [ ] P1: 自动并行优化
-  - [ ] P1: 软硬协同设计
-- [ ] **用户接口**
-  - [ ] P0: Web UI 界面
-  - [ ] P1: 命令行界面
-  - [ ] P1: Python API
-- [ ] **仿真内核**
-  - [ ] Transformer 主干结构
-  - [ ] MoE 主干结构
-  - [ ] DP/TP/PP 并行校验
+- [Calculon](https://github.com/calculon-ai/calculon) for the retained comparison engine and public validation data.
+- The open-source LLM systems community for model and hardware configurations.

@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="940" viewBox="0 0 1440 940" role="img" aria-labelledby="title desc">
+  <title id="title">Blueprinting system architecture</title>
+  <desc id="desc">Three-plane architecture showing canonical planning IR, late target binding, the performance evidence plane, concrete scheduling, simulation, target program emission, and profiler feedback.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#172033" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526075"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D67B14"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#168A61"/>
+    </marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .title { font-size: 34px; font-weight: 750; letter-spacing: -0.5px; }
+      .subtitle { font-size: 16px; fill: #667085; }
+      .plane-title { font-size: 17px; font-weight: 750; letter-spacing: 0.7px; }
+      .plane-subtitle { font-size: 13px; fill: #667085; }
+      .box-title { font-size: 18px; font-weight: 720; }
+      .box-subtitle { font-size: 13px; fill: #5D687A; }
+      .small-title { font-size: 14px; font-weight: 700; }
+      .small-subtitle { font-size: 11px; fill: #667085; }
+      .legend { font-size: 12px; fill: #526075; }
+      .arrow { fill: none; stroke: #526075; stroke-width: 2.2; marker-end: url(#arrow); }
+      .arrow-orange { fill: none; stroke: #D67B14; stroke-width: 2.7; marker-end: url(#arrowOrange); }
+      .arrow-green { fill: none; stroke: #168A61; stroke-width: 2.4; marker-end: url(#arrowGreen); }
+      .feedback { fill: none; stroke: #8C6BC8; stroke-width: 2.1; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1440" height="940" fill="#F7F9FC"/>
+  <text x="52" y="58" class="title">Blueprinting System Architecture</text>
+  <text x="52" y="86" class="subtitle">系统架构 · Canonical planning, late target binding, evidence-driven scheduling, and shared simulation/program semantics</text>
+
+  <g transform="translate(755,45)">
+    <rect x="0" y="0" width="14" height="14" rx="4" fill="#6C5CE7"/><text x="21" y="12" class="legend">Canonical IR</text>
+    <rect x="125" y="0" width="14" height="14" rx="4" fill="#2D7FF9"/><text x="146" y="12" class="legend">Derived view</text>
+    <rect x="252" y="0" width="14" height="14" rx="4" fill="#E58A20"/><text x="273" y="12" class="legend">Binding / decision</text>
+    <rect x="408" y="0" width="14" height="14" rx="4" fill="#1B9A6C"/><text x="429" y="12" class="legend">Artifact / product</text>
+    <rect x="555" y="0" width="14" height="14" rx="4" fill="#D99A00"/><text x="576" y="12" class="legend">Evidence</text>
+  </g>
+
+  <rect x="36" y="120" width="420" height="772" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+  <rect x="486" y="120" width="450" height="772" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+  <rect x="966" y="120" width="438" height="772" rx="22" fill="#FFFFFF" stroke="#DCE3ED"/>
+
+  <text x="62" y="156" class="plane-title" fill="#5B46D6">SEMANTIC &amp; PLANNING</text>
+  <text x="62" y="178" class="plane-subtitle">语义与规划面 · target-neutral</text>
+  <text x="512" y="156" class="plane-title" fill="#B56B10">TARGET &amp; EVIDENCE</text>
+  <text x="512" y="178" class="plane-subtitle">目标与证据面 · late binding</text>
+  <text x="992" y="156" class="plane-title" fill="#137A57">EXECUTION &amp; PRODUCTS</text>
+  <text x="992" y="178" class="plane-subtitle">执行与产品面 · one command truth</text>
+
+  <g filter="url(#shadow)">
+    <rect x="78" y="212" width="336" height="72" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <text x="102" y="242" class="box-title">WorkloadSpec</text>
+    <text x="102" y="264" class="box-subtitle">模型、训练/推理模式、动态维度</text>
+
+    <rect x="78" y="326" width="336" height="78" rx="14" fill="#EEEBFF" stroke="#8274E8"/>
+    <text x="102" y="357" class="box-title">ModelIR</text>
+    <text x="102" y="380" class="box-subtitle">模型语义、类型、数据流与副作用</text>
+
+    <rect x="78" y="446" width="336" height="78" rx="14" fill="#EAF0FF" stroke="#5B78E8"/>
+    <text x="102" y="477" class="box-title">DistributedTaskIR</text>
+    <text x="102" y="500" class="box-subtitle">逻辑 mesh、sharding、collective、依赖</text>
+
+    <rect x="78" y="566" width="336" height="94" rx="14" fill="#E6F8FB" stroke="#1E9FB5"/>
+    <text x="102" y="598" class="box-title">PortablePlanIR</text>
+    <text x="102" y="621" class="box-subtitle">精确 workload、抽象资源、buffer、目标</text>
+    <text x="102" y="643" class="box-subtitle">No kernel ID · No target latency · No timestamp</text>
+  </g>
+
+  <path d="M246 284 L246 326" class="arrow"/>
+  <path d="M246 404 L246 446" class="arrow"/>
+  <path d="M246 524 L246 566" class="arrow"/>
+  <rect x="112" y="700" width="268" height="54" rx="27" fill="#F4F0FF" stroke="#A79BEA" stroke-dasharray="6 5"/>
+  <text x="246" y="723" text-anchor="middle" class="small-title">PlanSet / Pareto candidates</text>
+  <text x="246" y="742" text-anchor="middle" class="small-subtitle">分析期候选集与 provenance</text>
+  <path d="M246 660 L246 700" class="arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="528" y="212" width="366" height="76" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="552" y="242" class="box-title">TargetProfile + DeploymentProfile</text>
+    <text x="552" y="265" class="box-subtitle">架构、runtime、拓扑、容量、ABI revision</text>
+
+    <rect x="528" y="326" width="82" height="72" rx="12" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="569" y="354" text-anchor="middle" class="small-title">Perf DB</text>
+    <text x="569" y="375" text-anchor="middle" class="small-subtitle">测量</text>
+    <rect x="622" y="326" width="82" height="72" rx="12" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="663" y="354" text-anchor="middle" class="small-title">HW Sim</text>
+    <text x="663" y="375" text-anchor="middle" class="small-subtitle">硬件</text>
+    <rect x="716" y="326" width="82" height="72" rx="12" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="757" y="354" text-anchor="middle" class="small-title">Net Sim</text>
+    <text x="757" y="375" text-anchor="middle" class="small-subtitle">网络</text>
+    <rect x="810" y="326" width="82" height="72" rx="12" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="851" y="354" text-anchor="middle" class="small-title">Profiler</text>
+    <text x="851" y="375" text-anchor="middle" class="small-subtitle">观测</text>
+
+    <rect x="590" y="438" width="242" height="72" rx="14" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="711" y="468" text-anchor="middle" class="box-title">CostResolver</text>
+    <text x="711" y="491" text-anchor="middle" class="box-subtitle">policy · provenance · uncertainty</text>
+
+    <rect x="528" y="558" width="366" height="82" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="552" y="590" class="box-title">Legalize + Select Implementation</text>
+    <text x="552" y="614" class="box-subtitle">合法性、kernel/collective 候选、target extension</text>
+
+    <rect x="528" y="704" width="366" height="88" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
+    <text x="552" y="738" class="box-title">Resource Scheduler + Memory Planner</text>
+    <text x="552" y="762" class="box-subtitle">placement · ordering · typed target schedule · buffer reuse</text>
+  </g>
+
+  <path d="M711 288 L711 318" class="arrow-orange"/>
+  <path d="M569 398 L569 416 L711 416 L711 438" class="arrow"/>
+  <path d="M663 398 L663 438" class="arrow"/>
+  <path d="M757 398 L757 438" class="arrow"/>
+  <path d="M851 398 L851 416 L711 416" class="arrow"/>
+  <path d="M711 510 L711 558" class="arrow-orange"/>
+  <path d="M711 640 L711 704" class="arrow-orange"/>
+  <path d="M414 613 L528 599" class="arrow-orange"/>
+  <text x="470" y="580" text-anchor="middle" class="small-title" fill="#B56B10">LATE BINDING</text>
+  <text x="470" y="599" text-anchor="middle" class="small-subtitle">迟绑定门</text>
+
+  <g filter="url(#shadow)">
+    <rect x="1006" y="244" width="358" height="96" rx="16" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1032" y="278" class="box-title">ConcretePlanIR</text>
+    <text x="1032" y="302" class="box-subtitle">权威 plan envelope · coordination core · typed target extension</text>
+    <text x="1032" y="323" class="box-subtitle">Correctness by dependencies, never predicted timestamps</text>
+
+    <rect x="992" y="430" width="182" height="76" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="1083" y="460" text-anchor="middle" class="box-title">TimingProjection</text>
+    <text x="1083" y="484" text-anchor="middle" class="box-subtitle">可重建时间视图</text>
+    <rect x="1190" y="430" width="190" height="76" rx="14" fill="#EDF1F7" stroke="#51627A"/>
+    <text x="1285" y="460" text-anchor="middle" class="box-title">Target MachineIR</text>
+    <text x="1285" y="484" text-anchor="middle" class="box-subtitle">GPU / LPU / other dialect</text>
+
+    <rect x="992" y="580" width="182" height="86" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
+    <text x="1083" y="612" text-anchor="middle" class="box-title">SimulationTraceIR</text>
+    <text x="1083" y="636" text-anchor="middle" class="box-subtitle">event · interval · counter</text>
+    <rect x="1190" y="580" width="190" height="86" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1285" y="612" text-anchor="middle" class="box-title">ProgramArtifact</text>
+    <text x="1285" y="636" text-anchor="middle" class="box-subtitle">ABI manifest · executable</text>
+
+    <rect x="992" y="738" width="182" height="82" rx="14" fill="#E7F7F1" stroke="#1B9A6C"/>
+    <text x="1083" y="770" text-anchor="middle" class="box-title">EvaluationReport</text>
+    <text x="1083" y="794" text-anchor="middle" class="box-subtitle">objective · constraint</text>
+    <rect x="1190" y="738" width="190" height="82" rx="14" fill="#FFF7DB" stroke="#D99A00"/>
+    <text x="1285" y="770" text-anchor="middle" class="box-title">Runtime Observation</text>
+    <text x="1285" y="794" text-anchor="middle" class="box-subtitle">command-correlated evidence</text>
+  </g>
+
+  <path d="M894 748 C948 748 960 292 1006 292" class="arrow-green"/>
+  <path d="M1185 340 C1136 375 1083 386 1083 430" class="arrow"/>
+  <path d="M1185 340 C1235 375 1285 386 1285 430" class="arrow-green"/>
+  <path d="M1083 506 L1083 580" class="arrow"/>
+  <path d="M1285 506 L1285 580" class="arrow-green"/>
+  <path d="M1083 666 L1083 738" class="arrow"/>
+  <path d="M1285 666 L1285 738" class="arrow-green"/>
+  <path d="M1285 820 C1285 872 928 880 851 398" class="feedback"/>
+  <text x="1084" y="872" text-anchor="middle" class="small-title" fill="#7B5BB7">Profiler feedback → immutable evidence revision / 观测反馈</text>
+</svg>

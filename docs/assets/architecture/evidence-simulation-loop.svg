@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="980" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
+  <title id="title">Blueprinting evidence resolution and simulation calibration loop</title>
+  <desc id="desc">A three-stage flow from typed estimate context through performance database, hardware, network, and analytical providers into a costed plan, concrete scheduling, simulation and program execution, with immutable observations feeding a new calibration and evidence revision.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#172033" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526075"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2F7FFF"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#168A61"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7657E8"/>
+    </marker>
+    <style>
+      text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .title { font-size: 34px; font-weight: 700; }
+      .subtitle { font-size: 16px; fill: #334155; }
+      .section { font-size: 16px; font-weight: 700; letter-spacing: 0.7px; }
+      .box-title { font-size: 18px; font-weight: 650; }
+      .box-body { font-size: 13px; fill: #334155; }
+      .micro { font-size: 12px; fill: #475569; }
+      .label { font-size: 12px; font-weight: 650; }
+      .panel { fill: #FFFFFF; stroke: #D9E1EC; stroke-width: 1.2; }
+      .canonical { fill: #E4F7FA; stroke: #22A6BA; stroke-width: 1.25; }
+      .binding { fill: #FFF1DF; stroke: #F08A19; stroke-width: 1.25; }
+      .evidence { fill: #FFF8DB; stroke: #E5A100; stroke-width: 1.25; }
+      .derived { fill: #E8F2FF; stroke: #2F7FFF; stroke-width: 1.25; }
+      .product { fill: #E6F7F1; stroke: #18A16F; stroke-width: 1.25; }
+      .revision { fill: #F1EDFF; stroke: #8A6BEF; stroke-width: 1.25; }
+      .neutral { fill: #F1F4F8; stroke: #A8B5C8; stroke-width: 1.15; }
+      .flow { fill: none; stroke: #526075; stroke-width: 2.2; marker-end: url(#arrow); }
+      .blue-flow { fill: none; stroke: #2F7FFF; stroke-width: 2.2; marker-end: url(#arrowBlue); }
+      .green-flow { fill: none; stroke: #168A61; stroke-width: 2.2; marker-end: url(#arrowGreen); }
+      .feedback { fill: none; stroke: #7657E8; stroke-width: 2.2; stroke-dasharray: 8 7; marker-end: url(#arrowPurple); }
+    </style>
+  </defs>
+
+  <rect width="1440" height="980" fill="#F5F7FB"/>
+  <text x="52" y="58" class="title">Evidence Resolution &amp; Simulation Calibration Loop</text>
+  <text x="52" y="87" class="subtitle">性能证据闭环 · Facts remain stable; estimates and calibration advance through immutable revisions</text>
+
+  <rect x="36" y="120" width="384" height="626" rx="22" class="panel"/>
+  <rect x="444" y="120" width="512" height="626" rx="22" class="panel"/>
+  <rect x="980" y="120" width="424" height="626" rx="22" class="panel"/>
+
+  <text x="62" y="154" class="section" fill="#7657E8">1 · BUILD TYPED REQUEST / 构造请求</text>
+  <text x="470" y="154" class="section" fill="#B86408">2 · RESOLVE EVIDENCE / 解析证据</text>
+  <text x="1006" y="154" class="section" fill="#087B57">3 · PLAN, SIMULATE, EXECUTE / 规划与执行</text>
+
+  <rect x="68" y="184" width="320" height="88" rx="15" class="canonical"/>
+  <text x="92" y="216" class="box-title">Plan subject</text>
+  <text x="92" y="241" class="box-body">Portable task or Concrete command</text>
+  <text x="92" y="260" class="micro">exact FLOPs · bytes · messages · dependency</text>
+
+  <rect x="68" y="294" width="320" height="92" rx="15" class="binding"/>
+  <text x="92" y="327" class="box-title">TargetProfile + DeploymentProfile</text>
+  <text x="92" y="352" class="box-body">architecture · runtime · ABI · topology</text>
+  <text x="92" y="371" class="micro">capacity · reservations · environment revision</text>
+
+  <rect x="68" y="408" width="320" height="92" rx="15" class="neutral"/>
+  <text x="92" y="441" class="box-title">Context + EvidencePolicy</text>
+  <text x="92" y="466" class="box-body">implementation · concurrency · metrics</text>
+  <text x="92" y="485" class="micro">fast / balanced / accurate / conservative</text>
+
+  <path d="M 228 272 L 228 294 M 228 386 L 228 408 M 228 500 L 228 536" class="flow"/>
+
+  <rect x="68" y="536" width="320" height="112" rx="15" class="binding" filter="url(#shadow)"/>
+  <text x="92" y="572" class="box-title">EstimateRequest</text>
+  <text x="92" y="598" class="box-body">hashable · batchable · namespaced extension</text>
+  <text x="92" y="620" class="micro">subject + fingerprints + validity context</text>
+  <text x="92" y="639" class="micro">request_digest becomes the evidence address</text>
+
+  <path d="M 388 592 C 448 592, 448 380, 520 380" class="flow"/>
+
+  <rect x="470" y="184" width="108" height="86" rx="14" class="evidence"/>
+  <text x="524" y="217" class="box-title" text-anchor="middle">Perf DB</text>
+  <text x="524" y="242" class="micro" text-anchor="middle">测量 / 插值</text>
+  <text x="524" y="260" class="micro" text-anchor="middle">measurement</text>
+
+  <rect x="590" y="184" width="108" height="86" rx="14" class="evidence"/>
+  <text x="644" y="217" class="box-title" text-anchor="middle">HW Sim</text>
+  <text x="644" y="242" class="micro" text-anchor="middle">硬件模拟</text>
+  <text x="644" y="260" class="micro" text-anchor="middle">local / plan</text>
+
+  <rect x="710" y="184" width="108" height="86" rx="14" class="evidence"/>
+  <text x="764" y="217" class="box-title" text-anchor="middle">Net Sim</text>
+  <text x="764" y="242" class="micro" text-anchor="middle">网络模拟</text>
+  <text x="764" y="260" class="micro" text-anchor="middle">route / contention</text>
+
+  <rect x="830" y="184" width="100" height="86" rx="14" class="evidence"/>
+  <text x="880" y="217" class="box-title" text-anchor="middle">Analytical</text>
+  <text x="880" y="242" class="micro" text-anchor="middle">显式 fallback</text>
+  <text x="880" y="260" class="micro" text-anchor="middle">roofline / BW</text>
+
+  <path d="M 524 270 L 524 324 L 700 324 M 644 270 L 644 324 M 764 270 L 764 324 M 880 270 L 880 324 L 700 324" fill="none" stroke="#D29412" stroke-width="2"/>
+
+  <rect x="520" y="324" width="360" height="112" rx="16" class="binding" filter="url(#shadow)"/>
+  <text x="700" y="362" class="box-title" text-anchor="middle">CostResolver</text>
+  <text x="700" y="390" class="box-body" text-anchor="middle">match quality · revision compatibility · uncertainty</text>
+  <text x="700" y="413" class="micro" text-anchor="middle">provider choice + fusion + explicit fallback reason</text>
+
+  <path d="M 700 436 L 700 466" class="flow"/>
+
+  <rect x="520" y="466" width="360" height="88" rx="15" class="derived"/>
+  <text x="700" y="499" class="box-title" text-anchor="middle">EstimateResult</text>
+  <text x="700" y="524" class="box-body" text-anchor="middle">latency interval · workspace · resources · energy</text>
+  <text x="700" y="544" class="micro" text-anchor="middle">quality + validity domain + complete provenance</text>
+
+  <path d="M 700 554 L 700 584" class="blue-flow"/>
+
+  <rect x="520" y="584" width="360" height="84" rx="15" class="derived"/>
+  <text x="700" y="617" class="box-title" text-anchor="middle">CostedTaskView</text>
+  <text x="700" y="642" class="box-body" text-anchor="middle">content-addressed · versioned · rebuildable</text>
+  <text x="700" y="661" class="micro" text-anchor="middle">never mutates the canonical source IR</text>
+
+  <path d="M 880 626 C 930 626, 940 216, 1008 216" class="blue-flow"/>
+
+  <rect x="1008" y="184" width="368" height="86" rx="15" class="binding"/>
+  <text x="1192" y="218" class="box-title" text-anchor="middle">Implementation + Resource Planning</text>
+  <text x="1192" y="244" class="box-body" text-anchor="middle">legalize · place · order · synchronize · reuse buffers</text>
+  <text x="1192" y="263" class="micro" text-anchor="middle">cost guides choice; dependency defines correctness</text>
+
+  <path d="M 1192 270 L 1192 302" class="green-flow"/>
+
+  <rect x="1008" y="302" width="368" height="88" rx="15" class="product" filter="url(#shadow)"/>
+  <text x="1192" y="337" class="box-title" text-anchor="middle">ConcretePlanIR</text>
+  <text x="1192" y="363" class="box-body" text-anchor="middle">coordination core · typed target extension · buffers · sync</text>
+  <text x="1192" y="382" class="micro" text-anchor="middle">one plan identity for both branches</text>
+
+  <path d="M 1192 390 L 1192 418 L 1094 418 L 1094 442 M 1192 418 L 1290 418 L 1290 442" fill="none" stroke="#168A61" stroke-width="2.2"/>
+
+  <rect x="1008" y="442" width="174" height="92" rx="15" class="derived"/>
+  <text x="1095" y="475" class="box-title" text-anchor="middle">Discrete-event Sim</text>
+  <text x="1095" y="500" class="box-body" text-anchor="middle">readiness · resource</text>
+  <text x="1095" y="520" class="micro" text-anchor="middle">timing / trace / TimelineBundle</text>
+
+  <rect x="1202" y="442" width="174" height="92" rx="15" class="product"/>
+  <text x="1289" y="475" class="box-title" text-anchor="middle">Program + Runtime</text>
+  <text x="1289" y="500" class="box-body" text-anchor="middle">MachineIR · artifact</text>
+  <text x="1289" y="520" class="micro" text-anchor="middle">dependency-driven</text>
+
+  <path d="M 1095 534 L 1095 574 M 1289 534 L 1289 574" class="green-flow"/>
+
+  <rect x="1008" y="574" width="174" height="94" rx="15" class="derived"/>
+  <text x="1095" y="607" class="box-title" text-anchor="middle">EvaluationReport</text>
+  <text x="1095" y="632" class="box-body" text-anchor="middle">objective · bottleneck</text>
+  <text x="1095" y="652" class="micro" text-anchor="middle">uncertainty · validation</text>
+
+  <rect x="1202" y="574" width="174" height="94" rx="15" class="evidence"/>
+  <text x="1289" y="607" class="box-title" text-anchor="middle">Runtime Observation</text>
+  <text x="1289" y="632" class="box-body" text-anchor="middle">events · counters</text>
+  <text x="1289" y="652" class="micro" text-anchor="middle">stable command lineage</text>
+
+  <rect x="36" y="770" width="1368" height="164" rx="22" class="panel"/>
+  <text x="62" y="804" class="section" fill="#7657E8">IMMUTABLE FEEDBACK / 不可变反馈</text>
+
+  <rect x="82" y="830" width="286" height="72" rx="14" class="revision"/>
+  <text x="225" y="859" class="box-title" text-anchor="middle">EvidenceSnapshot N + 1</text>
+  <text x="225" y="884" class="micro" text-anchor="middle">new address; historical evidence preserved</text>
+
+  <rect x="466" y="830" width="286" height="72" rx="14" class="revision"/>
+  <text x="609" y="859" class="box-title" text-anchor="middle">CalibrationRevision</text>
+  <text x="609" y="884" class="micro" text-anchor="middle">domain-scoped fit · residual · uncertainty</text>
+
+  <rect x="850" y="830" width="286" height="72" rx="14" class="revision"/>
+  <text x="993" y="859" class="box-title" text-anchor="middle">ObservationSet</text>
+  <text x="993" y="884" class="micro" text-anchor="middle">normalized · immutable · source-correlated</text>
+
+  <path d="M 1202 621 C 1178 621, 1186 866, 1136 866" class="feedback"/>
+  <path d="M 850 866 L 752 866" class="feedback"/>
+  <path d="M 466 866 L 368 866" class="feedback"/>
+  <path d="M 225 830 C 225 754, 456 754, 520 400" class="feedback"/>
+
+  <text x="1220" y="724" class="label" fill="#7657E8">observation never overwrites IR</text>
+  <text x="1220" y="741" class="micro">观测只产生新 revision</text>
+</svg>
