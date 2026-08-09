@@ -78,7 +78,7 @@ Planner 可以优化 expected latency、conservative bound 或 risk-adjusted obj
 
 仓库现在已经提供 normalized `CostQuery`/`CostEstimate` contract、ordered `CostResolver` policy、analytical `RooflineCostProvider`、immutable exact-selector `PerformanceDatabase`、通用 simulator table ingestion，以及显式 Vidur/AIConfigurator importer。Static inference 从 portable task facts 推导 query，并解析 task 与 pipeline communication cost；同时仍严格区分 admissible cost provider 与只读 `InferenceBaseline.lookup()` comparison contract。
 
-这仍是 implemented slice，而不是完整 architecture-exploration evidence service。Database 支持 exact declared selector 与 repeated-sample uncertainty，但还没有 calibrated interpolation、durable append-only raw-evidence service、environment manifest、discrete-event simulation、observation ingestion 或 calibration。Training 在 Calculon equivalence test 能保护 resolver migration 之前，仍直接使用 `HardwareProfile` costing。可运行边界见 [Cost Provider 与性能数据导入](providers.md)。
+这仍是 implemented slice，而不是完整 architecture-exploration evidence service。Database 支持 exact declared selector 与 repeated-sample uncertainty，但还没有 calibrated interpolation、durable append-only raw-evidence service、environment manifest、discrete-event simulation、observation ingestion 或 calibration。Training 在 Calculon equivalence test 能保护 resolver migration 之前，仍直接使用 `SystemProfile` costing。可运行边界见 [Cost Provider 与性能数据导入](providers.md)。
 
 ## 设计不变量
 

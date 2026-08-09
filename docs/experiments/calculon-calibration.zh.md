@@ -148,7 +148,8 @@ uv run pytest -m baseline_regression tests/regression
 
 实现映射：
 
-- `synthesizer/models/transformer.py`：typed frontend 与 execution facts；
+- `workload/transformer.py`：typed workload 与 execution facts；
+- `synthesizer/frontend/transformer.py`：canonical import 与 binding adapter；
 - `analysis/transformer_workload.py`：静态 operation/byte analysis；
 - `synthesizer/lowering/transformer.py`：两个 canonical derivation pass；
 - `analysis/cost_model.py`：peak-only 与 evidence-backed view；

@@ -34,7 +34,7 @@ Every field participates in the canonical query digest. Empty optional identity 
 
 ## Roofline provider
 
-`RooflineCostProvider` wraps a versioned `HardwareProfile`. For a local operator it computes:
+`RooflineCostProvider` wraps a versioned `SystemProfile`. For a local operator it computes:
 
 ```text
 compute_time = operations / effective_engine_throughput

@@ -20,6 +20,7 @@ This page is the compact index of architecture commitments, rejected alternative
 | Schema maturity | Internal schema versions are not automatically public compatibility promises | A contract graduates only after producer, independent consumer, migration, and conformance gates pass |
 | Documentation | Colocated suffix-based bilingual sources | Navigation and language switching remain page-aligned |
 | Formal derivation package | Hard-cut Python rename to `blueprinting.synthesizer`; preserve historical codec tags | Source ownership matches formal plan synthesis without invalidating unchanged canonical snapshots; see [ADR-0001](adr/0001-synthesizer-package.md) |
+| Domain packages | `blueprinting.workload` owns target-neutral workload contracts; `blueprinting.system` owns chip/interconnect/system profiles | Synthesis and analysis consume explicit domain inputs without owning them; see [ADR-0002](adr/0002-workload-system-domains.md) |
 
 ## Rejected alternatives
 

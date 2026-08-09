@@ -3,7 +3,7 @@
 The performance database is a revisioned evidence store behind a normalized query protocol. It answers a precise question—how an architecture component or legal implementation is expected to behave in a declared context—without hiding architecture choices or calibration knobs inside a lookup table.
 
 !!! note "Design status"
-    The first general slice is implemented as `CostQuery`, `CostEstimate`, `CostResolver`, `PerformanceDatabase`, and typed providers. Static inference consumes that resolver; training still loads `HardwareProfile` directly pending equivalence migration. `VidurProfileBaseline` remains baseline-only, while the separate `VidurProfileImporter` is an explicit evidence-promotion path. See [Cost Providers and Performance-Data Imports](providers.md).
+    The first general slice is implemented as `CostQuery`, `CostEstimate`, `CostResolver`, `PerformanceDatabase`, and typed providers. Static inference consumes that resolver; training still loads `SystemProfile` directly pending equivalence migration. `VidurProfileBaseline` remains baseline-only, while the separate `VidurProfileImporter` is an explicit evidence-promotion path. See [Cost Providers and Performance-Data Imports](providers.md).
 
 ## Request contract
 
@@ -94,9 +94,9 @@ Calibration learns target-wide or implementation-family response behavior from o
 
 Forbidden inputs include a benchmark case ID, comparison-oracle total time, or a per-model correction factor whose only purpose is matching a table. Those variables do not explain a causal target behavior and cannot generalize to a new plan.
 
-## Migration from HardwareProfile
+## Migration from SystemProfile
 
-The existing `HardwareProfile` already supplies useful versioned curves for matrix/vector throughput, memory transfer, and collectives. Migration should preserve its behavior behind providers:
+The existing `SystemProfile` already supplies useful versioned curves for matrix/vector throughput, memory transfer, and collectives. Migration should preserve its behavior behind providers:
 
 1. **Done for static inference:** convert portable tasks into normalized queries;
 2. **Done:** wrap the current profile as a roofline/system-evidence provider;

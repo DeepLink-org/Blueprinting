@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from ...synthesizer.codec import content_digest
 from ...synthesizer.frozen import FrozenDict
-from ..cost_model import CalibrationMode, HardwareProfile
+from ...system import SystemProfile
+from ..cost_model import CalibrationMode
 from .protocol import (
     CostEstimate,
     CostProvider,
@@ -29,13 +30,13 @@ class RooflineCostProvider(CostProvider):
 
     def __init__(
         self,
-        hardware: HardwareProfile,
+        hardware: SystemProfile,
         *,
         mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
         processing_mode: str = "roofline",
     ) -> None:
-        if not isinstance(hardware, HardwareProfile):
-            raise TypeError("hardware must be HardwareProfile")
+        if not isinstance(hardware, SystemProfile):
+            raise TypeError("hardware must be SystemProfile")
         if not isinstance(mode, CalibrationMode):
             raise TypeError("mode must be CalibrationMode")
         if processing_mode == "profile":
@@ -67,14 +68,14 @@ class RooflineCostProvider(CostProvider):
         return self._revision
 
     @property
-    def hardware(self) -> HardwareProfile:
+    def hardware(self) -> SystemProfile:
         return self._hardware
 
     def supports(self, query: CostQuery) -> CostSupport:
         if query.hardware != self._hardware.name:
-            return CostSupport.unavailable("query targets a different hardware profile")
+            return CostSupport.unavailable("query targets a different system profile")
         if query.datatype != self._hardware.datatype:
-            return CostSupport.unavailable("query datatype is not covered by this hardware profile")
+            return CostSupport.unavailable("query datatype is not covered by this system profile")
         if query.hardware_revision and query.hardware_revision != self._hardware.evidence_revision:
             return CostSupport.unavailable("query requires a different hardware evidence revision")
         if query.subject is CostSubject.OPERATOR:
@@ -84,7 +85,7 @@ class RooflineCostProvider(CostProvider):
                 )
             return CostSupport.available("compute/memory roofline is defined")
         if query.network_tier >= len(self._hardware.networks):
-            return CostSupport.unavailable("hardware profile does not define the requested network tier")
+            return CostSupport.unavailable("system profile does not define the requested network tier")
         network = self._hardware.networks[query.network_tier]
         if query.operation not in network.operations:
             return CostSupport.unavailable("network tier does not define the requested communication operation")
@@ -103,10 +104,16 @@ class RooflineCostProvider(CostProvider):
         if query.subject is CostSubject.OPERATOR:
             processor = self._hardware.matrix if query.engine == "matrix" else self._hardware.vector
             if query.operations:
-                compute_seconds = query.operations / processor.throughput(query.operations, self._mode)
+                compute_seconds = query.operations / processor.throughput(
+                    query.operations,
+                    apply_efficiency=self._mode is CalibrationMode.SYSTEM_EVIDENCE,
+                )
             transferred_bytes = query.read_bytes + query.write_bytes
             if transferred_bytes:
-                memory_seconds = transferred_bytes / self._hardware.memory.throughput(transferred_bytes, self._mode)
+                memory_seconds = transferred_bytes / self._hardware.memory.throughput(
+                    transferred_bytes,
+                    apply_efficiency=self._mode is CalibrationMode.SYSTEM_EVIDENCE,
+                )
             if self._processing_mode == "roofline":
                 seconds = max(compute_seconds, memory_seconds)
                 bottleneck = "compute" if compute_seconds >= memory_seconds else "memory"
@@ -121,7 +128,7 @@ class RooflineCostProvider(CostProvider):
                 query.operation,
                 query.message_bytes,
                 query.participants,
-                self._mode,
+                apply_efficiency=self._mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
             seconds = network_seconds
             bottleneck = "network"

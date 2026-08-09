@@ -17,7 +17,7 @@ TransformerModelSpec + TransformerExecutionSpec
   -> PortablePlanIR
 ```
 
-图中的红色边界是有意保留的。`HardwareProfile` 只在 `PortablePlanIR` 之后被 derived estimate 消费；它既不是隐式 target binding，也不意味着系统已经能够生成 `ConcretePlanIR`。
+图中的红色边界是有意保留的。`SystemProfile` 只在 `PortablePlanIR` 之后被 derived estimate 消费；它既不是隐式 target binding，也不意味着系统已经能够生成 `ConcretePlanIR`。
 
 当前切片只覆盖 decoder-only training 的 block scope。完整模型的 PP/DP task graph、推理 prefill/decode、中间 buffer lifetime、target legalization 和物理调度仍属于后续工作。
 
@@ -86,7 +86,8 @@ Observer 可以把这些 facts 与 framework trace 或 reference model 对比并
 
 | 关注点 | 源码 | 测试 |
 |---|---|---|
-| 强类型 Transformer specification | `src/blueprinting/synthesizer/models/transformer.py` | binding 与 calibration tests |
+| 强类型 Transformer specification | `src/blueprinting/workload/transformer.py` | binding 与 calibration tests |
+| Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation 与 calibration tests |
 | 工作量代数 | `src/blueprinting/analysis/transformer_workload.py` | `tests/synthesizer/test_calculon_calibration.py` |
 | 两个 derivation pass | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation 与 calibration tests |
 | 事务与 checkpoint | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |

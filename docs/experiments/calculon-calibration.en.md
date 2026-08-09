@@ -148,7 +148,8 @@ The original eight parametrized training regressions remain in `tests/synthesize
 
 Implementation map:
 
-- `synthesizer/models/transformer.py`: typed frontend and execution facts;
+- `workload/transformer.py`: typed workload and execution facts;
+- `synthesizer/frontend/transformer.py`: canonical import and binding adapter;
 - `analysis/transformer_workload.py`: static operation/byte analysis;
 - `synthesizer/lowering/transformer.py`: the two canonical derivation passes;
 - `analysis/cost_model.py`: peak-only and evidence-backed views;

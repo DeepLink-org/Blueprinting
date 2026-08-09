@@ -3,7 +3,7 @@
 性能数据库是 normalized query protocol 背后的版本化 evidence store。它回答一个精确问题——某个 architecture component 或合法 implementation 在明确 context 中预计如何表现——但不会把 architecture choice 或 calibration knob 隐藏在 lookup table 中。
 
 !!! note "设计状态"
-    第一版通用 slice 已实现为 `CostQuery`、`CostEstimate`、`CostResolver`、`PerformanceDatabase` 与 typed provider。Static inference 已消费该 resolver；training 在 equivalence migration 前仍直接加载 `HardwareProfile`。`VidurProfileBaseline` 保持 baseline-only；独立的 `VidurProfileImporter` 才是显式 evidence promotion 路径。详见 [Cost Provider 与性能数据导入](providers.md)。
+    第一版通用 slice 已实现为 `CostQuery`、`CostEstimate`、`CostResolver`、`PerformanceDatabase` 与 typed provider。Static inference 已消费该 resolver；training 在 equivalence migration 前仍直接加载 `SystemProfile`。`VidurProfileBaseline` 保持 baseline-only；独立的 `VidurProfileImporter` 才是显式 evidence promotion 路径。详见 [Cost Provider 与性能数据导入](providers.md)。
 
 ## Request Contract
 
@@ -94,9 +94,9 @@ Calibration 从 observation 学习 target-wide 或 implementation-family respons
 
 禁止输入 benchmark case ID、comparison-oracle total time，或唯一作用是匹配某张表的 per-model correction factor。这些变量不能解释因果 target behavior，也无法泛化到新 plan。
 
-## 从 HardwareProfile 迁移
+## 从 SystemProfile 迁移
 
-现有 `HardwareProfile` 已经提供 matrix/vector throughput、memory transfer 与 collective 的有用版本化 curve。迁移应通过 provider 保持现有行为：
+现有 `SystemProfile` 已经提供 matrix/vector throughput、memory transfer 与 collective 的有用版本化 curve。迁移应通过 provider 保持现有行为：
 
 1. **Static inference 已完成：**把 portable task 转换为 normalized query；
 2. **已完成：**将当前 profile 包装为 roofline/system-evidence provider；

@@ -78,7 +78,7 @@ This does not mean every stage is assigned a wall-clock duration. Early stages a
 
 The repository now provides normalized `CostQuery`/`CostEstimate` contracts, ordered `CostResolver` policy, analytical `RooflineCostProvider`, an immutable exact-selector `PerformanceDatabase`, generic simulator table ingestion, and explicit Vidur and AIConfigurator importers. Static inference derives queries from portable task facts and resolves both task and pipeline communication costs. It still separates admissible cost providers from the read-only `InferenceBaseline.lookup()` comparison contract.
 
-This remains an implemented slice, not a complete architecture-exploration evidence service. The database supports exact declared selectors and repeated-sample uncertainty, but not calibrated interpolation, a durable append-only raw-evidence service, environment manifests, discrete-event simulation, observation ingestion, or calibration. Training still uses direct `HardwareProfile` costing until Calculon equivalence tests protect its resolver migration. See [Cost Providers and Performance-Data Imports](providers.md) for the executable boundary.
+This remains an implemented slice, not a complete architecture-exploration evidence service. The database supports exact declared selectors and repeated-sample uncertainty, but not calibrated interpolation, a durable append-only raw-evidence service, environment manifests, discrete-event simulation, observation ingestion, or calibration. Training still uses direct `SystemProfile` costing until Calculon equivalence tests protect its resolver migration. See [Cost Providers and Performance-Data Imports](providers.md) for the executable boundary.
 
 ## Design invariants
 

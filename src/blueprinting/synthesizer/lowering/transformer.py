@@ -7,6 +7,11 @@ from ...analysis.transformer_workload import (
     PrimitiveInvocation,
     derive_transformer_block,
 )
+from ...workload import (
+    TensorParallelCommunication,
+    TransformerExecutionSpec,
+    TransformerModelSpec,
+)
 from ..axes import BindingAxis
 from ..frozen import FrozenDict
 from ..ids import BufferId, Lineage, NodeId, ValueId
@@ -39,11 +44,6 @@ from ..ir import (
     TensorType,
     ValueRole,
     WorkloadFacts,
-)
-from ..models.transformer import (
-    TensorParallelCommunication,
-    TransformerExecutionSpec,
-    TransformerModelSpec,
 )
 from ..passes import DerivationPass, PassContext, PassContract
 

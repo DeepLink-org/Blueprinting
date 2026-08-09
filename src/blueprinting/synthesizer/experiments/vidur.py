@@ -14,21 +14,17 @@ from typing import Any
 
 from ...analysis import (
     CalibrationMode,
-    HardwareProfile,
     InferenceBaseline,
     InferencePhaseEstimate,
     estimate_inference_phase,
     inference_evidence_query_for,
 )
+from ...system import SystemProfile
+from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from ..bindings import InferencePhase
+from ..frontend import build_transformer_inference_model_ir, inference_synthesis_session_for
 from ..ir import PortablePlanIR
 from ..lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from ..models import (
-    TransformerInferenceExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_inference_model_ir,
-    inference_synthesis_session_for,
-)
 from ..passes import PassManager, PassPipeline
 
 
@@ -166,7 +162,7 @@ class VidurExperimentCase:
     name: str
     model: TransformerModelSpec
     execution: TransformerInferenceExecutionSpec
-    hardware: HardwareProfile
+    hardware: SystemProfile
     phase: InferencePhase
     batch_size: int
     context_tokens: int
@@ -294,7 +290,7 @@ class VidurExperimentReport:
 def compare_inference_phase_to_vidur(
     plan: PortablePlanIR,
     estimate: InferencePhaseEstimate,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     baseline: InferenceBaseline,
 ) -> VidurPhaseComparison:
     """Compare an already-lowered and already-costed phase with Vidur."""

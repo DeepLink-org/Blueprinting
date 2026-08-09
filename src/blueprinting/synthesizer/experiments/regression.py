@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ...analysis import HardwareProfile, VidurProfileBaseline
+from ...analysis import VidurProfileBaseline
+from ...system import SystemProfile
+from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from ..bindings import InferencePhase
-from ..models import TransformerInferenceExecutionSpec, TransformerModelSpec
 from .calculon import CalculonExperimentReport, discover_seqsel_tab5_cases, run_calculon_experiment
 from .vidur import VidurExperimentCase, VidurExperimentReport, run_vidur_experiment
 
@@ -278,7 +279,7 @@ def _load_vidur_report(
     model = TransformerModelSpec(**manifest["blueprinting"]["model"])
     execution = TransformerInferenceExecutionSpec(**manifest["blueprinting"]["execution"])
     hardware_manifest = manifest["blueprinting"]["hardware"]
-    hardware = HardwareProfile.from_mapping(
+    hardware = SystemProfile.from_mapping(
         hardware_manifest["name"],
         _read_json(repository_root / hardware_manifest["profile"]),
         datatype=execution.datatype,

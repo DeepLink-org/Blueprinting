@@ -17,7 +17,7 @@ TransformerModelSpec + TransformerExecutionSpec
   -> PortablePlanIR
 ```
 
-The red boundary in the figure is intentional. `HardwareProfile` is consumed only by a derived estimate after `PortablePlanIR`; it is not an implicit target binding and it does not make `ConcretePlanIR` available.
+The red boundary in the figure is intentional. `SystemProfile` is consumed only by a derived estimate after `PortablePlanIR`; it is not an implicit target binding and it does not make `ConcretePlanIR` available.
 
 This slice currently models decoder-only training at block scope. Full-model PP/DP task graphs, inference prefill/decode, intermediate-buffer lifetimes, target legalization, and physical scheduling remain subsequent work.
 
@@ -86,7 +86,8 @@ The derivation does not compensate for a discrepancy by reading a reference late
 
 | Concern | Source | Tests |
 |---|---|---|
-| Typed Transformer specifications | `src/blueprinting/synthesizer/models/transformer.py` | binding and calibration tests |
+| Typed Transformer specifications | `src/blueprinting/workload/transformer.py` | binding and calibration tests |
+| Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation and calibration tests |
 | Workload algebra | `src/blueprinting/analysis/transformer_workload.py` | `tests/synthesizer/test_calculon_calibration.py` |
 | Two derivation passes | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation and calibration tests |
 | Transaction/checkpoints | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |

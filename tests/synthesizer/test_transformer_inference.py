@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from blueprinting.analysis import (
-    HardwareProfile,
     InferenceCostProvider,
     InferenceEvidenceQuery,
     VidurProfileBaseline,
@@ -18,15 +17,18 @@ from blueprinting.synthesizer.experiments import (
     compare_inference_phase_to_vidur,
     run_vidur_experiment,
 )
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.synthesizer.models import (
-    TransformerInferenceExecutionSpec,
-    TransformerInferenceRequestSpec,
-    TransformerModelSpec,
+from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import (
+    TransformerInferenceExecutionSpec,
+    TransformerInferenceRequestSpec,
+    TransformerModelSpec,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -213,7 +215,7 @@ def test_vidur_adapter_uses_only_exact_shape_matches(tmp_path: Path):
     assert compute_exact.seconds == pytest.approx(0.00075)
 
     _, plan = _derive(InferencePhase.DECODE, 96)
-    hardware = HardwareProfile.from_mapping(
+    hardware = SystemProfile.from_mapping(
         "fixture-hardware",
         json.loads((ROOT / "data" / "systems" / "a100_80g.json").read_text(encoding="utf-8")),
         datatype="float16",

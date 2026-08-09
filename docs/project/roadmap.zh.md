@@ -46,7 +46,7 @@ Portable workload baseline 不得出现 architecture latency 或 kernel identity
 - system multiplicity/topology；
 - fixed、variable、derived 与 constrained field；
 - canonical identity 与 verifier；
-- 将 `HardwareProfile` 适配为 versioned evidence，而不是 architecture truth。
+- 将 `SystemProfile` 适配为 versioned evidence，而不是 architecture truth。
 
 验收要求两个实质不同 virtual blueprint 绑定同一 portable workload，对 incompatible mapping 给出 diagnostic，并保持相同 source-workload digest。
 
@@ -98,7 +98,7 @@ Hardware program emission 会增强验证，但不属于这个 minimum definitio
 ## 近期交付顺序
 
 1. 定义最小 hierarchical `ArchitectureBlueprint` 与 verifier。
-2. 把 `HardwareProfile` 包装到 normalized evidence request/result 后。
+2. 把 `SystemProfile` 包装到 normalized evidence request/result 后。
 3. 增加两个 parameterized virtual blueprint 与 architecture legality。
 4. 完成 resource mapping 所需的 portable buffer/lifetime。
 5. 用 queue-centric/non-queue-centric virtual target 冻结 common coordination core 与 typed extension boundary。

@@ -6,7 +6,7 @@ Blueprinting 现在已经具备一条可运行的 decoder inference 切片，但
 
 ## 从相关工作中吸收什么
 
-[LLMCompass](https://arxiv.org/abs/2312.03134)说明，LLM 推理硬件评估需要分离 software、hardware、mapping 与 cost，并通过显式 mapping search 取代单一闭式模型。Blueprinting 吸收了这个分层：canonical representation 先保存 workload 与 mapping 事实，之后才允许 hardware profile 或测量 latency 参与。LLMCompass 的 area/cost 与 architecture design-space machinery 属于后续 provider 和 exploration 工作；本项目没有把其 artifact code 复制进 canonical IR。
+[LLMCompass](https://arxiv.org/abs/2312.03134)说明，LLM 推理硬件评估需要分离 software、hardware、mapping 与 cost，并通过显式 mapping search 取代单一闭式模型。Blueprinting 吸收了这个分层：canonical representation 先保存 workload 与 mapping 事实，之后才允许 system profile 或测量 latency 参与。LLMCompass 的 area/cost 与 architecture design-space machinery 属于后续 provider 和 exploration 工作；本项目没有把其 artifact code 复制进 canonical IR。
 
 [Vidur](https://github.com/microsoft/vidur)提供了另一条关键边界：request arrival、replica scheduling、batching 和 event progression 属于离散事件层，execution time 则由基于 profiling data 的 component predictor 提供。Blueprinting 吸收了这层分离：phase plan 是稳定的 cost subject；未来 serving simulator 在其上调度 request/batch，而不是在 scheduler 代码里重新定义 Transformer work。
 
@@ -17,7 +17,7 @@ Blueprinting 现在已经具备一条可运行的 decoder inference 切片，但
 | Transformer operation/byte/collective 推导 | canonical inference analysis | Implemented slice |
 | Prefill 与 decode 特化 | workload binding + lowering passes | Implemented slice |
 | KV-cache state 与容量 | ModelIR effect + portable state buffer + memory view | Implemented slice |
-| 解析式 component cost | `HardwareProfile` fallback | Implemented slice |
+| 解析式 component cost | `SystemProfile` fallback | Implemented slice |
 | Vidur profiling CSV 复用 | post-hoc exact-match baseline | Implemented experiment |
 | 静态 decoder-block phase composition | inference application service | Implemented slice |
 | Arrival、queue、continuous batching、scheduling | serving discrete-event simulator | Planned |
@@ -70,10 +70,11 @@ mean decode-step model time = decode total / (O-1), when O > 1
 `VidurProfileBaseline.from_csv(...)` 读取用户提供的 Vidur `attention.csv` 与 compute/MLP CSV。调用者必须固定 upstream revision、hardware identity、attention backend 与 cache block size。Adapter 把输入文件和 identity 一起哈希为 baseline revision，将 Vidur 的毫秒 median 转为秒；只有 model dimension、maximum sequence length、TP、batch/token shape、phase、backend、block size 与 context 完全匹配时才返回 reference。Vidur 的 decode `kv_cache_size` 表示当前 token 写入前的长度，而 Blueprinting 的 context 表示写入后 attention 可见的长度，因此 adapter 显式使用 `vidur_kv_cache_size = context_tokens - 1`。
 
 ```python
-from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
+from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.system import SystemProfile
 from blueprinting.synthesizer.bindings import InferencePhase
 from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.synthesizer.models import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -88,7 +89,7 @@ case = VidurExperimentCase(
     name="decode/context-128",
     model=TransformerModelSpec(...),
     execution=TransformerInferenceExecutionSpec(...),
-    hardware=HardwareProfile(...),
+    hardware=SystemProfile(...),
     phase=InferencePhase.DECODE,
     batch_size=1,
     context_tokens=128,

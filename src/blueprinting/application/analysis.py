@@ -16,23 +16,20 @@ from enum import Enum
 from itertools import product
 from typing import TYPE_CHECKING, Any
 
-from blueprinting.analysis import CalibrationMode, HardwareProfile, estimate_iteration
+from blueprinting.analysis import CalibrationMode, estimate_iteration
 from blueprinting.synthesizer.codec import content_digest
 from blueprinting.synthesizer.errors import (
     IRVerificationError,
     PassExecutionError,
     SynthesisError,
 )
+from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
 from blueprinting.synthesizer.ir import DistributedTaskIR, ModelIR, PortablePlanIR
 from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from blueprinting.synthesizer.models import (
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_model_ir,
-    synthesis_session_for,
-)
 from blueprinting.synthesizer.passes import AnalysisStore, PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
 
 LOGGER = logging.getLogger(__name__)
 
@@ -450,7 +447,7 @@ class BlueprintingService:
 
         model = TransformerModelSpec.from_mapping(draft.model_name, model_data)
         execution = TransformerExecutionSpec.from_mapping(execution_data)
-        hardware = HardwareProfile.from_mapping(
+        hardware = SystemProfile.from_mapping(
             draft.hardware_name,
             hardware_data,
             datatype=execution.datatype,

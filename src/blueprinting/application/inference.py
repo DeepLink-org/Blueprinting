@@ -16,7 +16,6 @@ from typing import Any
 
 from blueprinting.analysis import (
     CalibrationMode,
-    HardwareProfile,
     InferenceCostProvider,
     InferencePhaseEstimate,
     estimate_inference_phase,
@@ -24,17 +23,20 @@ from blueprinting.analysis import (
 from blueprinting.synthesizer.bindings import InferencePhase
 from blueprinting.synthesizer.codec import content_digest
 from blueprinting.synthesizer.errors import IRVerificationError, PassExecutionError, SynthesisError
-from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
-from blueprinting.synthesizer.ir import ModelIR, PortablePlanIR
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.synthesizer.models import (
-    TransformerInferenceExecutionSpec,
-    TransformerInferenceRequestSpec,
-    TransformerModelSpec,
+from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
+from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
+from blueprinting.synthesizer.ir import ModelIR, PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import AnalysisStore, PassCheckpoint, PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import (
+    TransformerInferenceExecutionSpec,
+    TransformerInferenceRequestSpec,
+    TransformerModelSpec,
+)
 
 from .analysis import (
     AnalysisDiagnostic,
@@ -306,7 +308,7 @@ class InferenceAnalysisService:
         source: ModelIR,
         model: TransformerModelSpec,
         execution: TransformerInferenceExecutionSpec,
-        hardware: HardwareProfile,
+        hardware: SystemProfile,
         draft: InferenceAnalysisDraft,
         *,
         phase: InferencePhase,
@@ -345,7 +347,7 @@ class InferenceAnalysisService:
         request = TransformerInferenceRequestSpec.from_mapping(request_data)
         execution.validate_model(model)
         request.validate_model(model)
-        hardware = HardwareProfile.from_mapping(
+        hardware = SystemProfile.from_mapping(
             draft.hardware_name,
             hardware_data,
             datatype=execution.datatype,
@@ -547,7 +549,7 @@ class InferenceAnalysisService:
                 "replicas 只参与映射合法性与 world-size 记账；当前报告是单 replica cohort latency，不估算跨 replica serving capacity。",
                 "当前 workload dialect 支持 dense multi-head attention 与非 gated MLP；embedding、LM head 和 sampler 尚未建模。",
                 "PortablePlanIR 尚未绑定 attention implementation；working memory 使用未融合 score materialization 的保守上界。",
-                "除非提供 Blueprinting cost provider，组件耗时使用共享 hardware profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
+                "除非提供 Blueprinting cost provider，组件耗时使用共享 system profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
             ),
         )
         return InferenceAnalysisOutcome(draft.fingerprint, diagnostics, report)

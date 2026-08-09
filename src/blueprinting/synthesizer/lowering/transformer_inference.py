@@ -8,6 +8,7 @@ from ...analysis.transformer_inference import (
     derive_transformer_inference_block,
 )
 from ...analysis.transformer_workload import EngineKind
+from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from ..axes import BindingAxis
 from ..bindings import InferencePhase, WorkloadMode
 from ..frozen import FrozenDict
@@ -44,8 +45,6 @@ from ..ir import (
     ValueRole,
     WorkloadFacts,
 )
-from ..models.transformer import TransformerModelSpec
-from ..models.transformer_inference import TransformerInferenceExecutionSpec
 from ..passes import DerivationPass, PassContext, PassContract
 
 

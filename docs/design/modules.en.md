@@ -26,13 +26,21 @@ result.sensitivity
 
 Internally, each candidate creates an immutable typed derivation context for workload mapping, architecture binding, and analysis addressing. The current implementation names this object `SynthesisSession`; that class and its workload/strategy bindings are implemented, while `ExplorationSession` and the end-to-end product facade are planned. Global mutable configuration is forbidden because it would invalidate experiment reproducibility.
 
+## Workload and system domain models
+
+`blueprinting.workload` owns target-neutral model semantics, request scenarios, and logical mapping intent. A workload object cannot contain a chip name, peak rate, empirical latency, kernel identity, or physical placement. The current slice provides typed Transformer training and inference contracts.
+
+`blueprinting.system` owns immutable chip-local compute engines, memory capacity/bandwidth, interconnect tiers, collective volume rules, and their imported evidence revision. `SystemProfile` is the current limited compute/memory/network adapter; it is not yet the hierarchical `ArchitectureBlueprint`, physical deployment, or target binding described by the product design. Cost policy remains in `analysis`: the system contract exposes peak and evidence-bearing facts but does not choose calibration mode.
+
+These packages are authoritative domain inputs, not alternative IR hierarchies. Canonical derivation starts only when a synthesizer frontend imports a workload contract into `ModelIR`; a system profile remains outside canonical workload state and is consumed by explicit analysis or later target binding.
+
 ## Frontends
 
 Frontends parse model or framework input, validate target-independent types and effects, assign stable identities, and emit `ModelIR`. They own import diagnostics and source mappings.
 
 Frontends do not read peak throughput, kernel catalogs, physical topology, or runtime observations. Framework adapters expose canonical IR rather than a parallel public IR hierarchy.
 
-The current frontend covers typed decoder-only Transformer training. Additional training architectures, inference prefill/decode, KV-cache semantics, and framework importers are planned.
+The current frontend covers typed decoder-only Transformer training plus static inference prefill/decode with explicit KV-cache semantics. Additional model families, framework importers, and online serving scenarios are planned.
 
 ## Canonical formal-representation infrastructure
 
@@ -107,34 +115,31 @@ The same lineage supports forward and reverse queries from model operation to ru
 ## Dependency direction
 
 ```text
-frontend ───────► ir/common
-                    │
-lowering/passes ────┼────► planning
-bindings/session ───┘          │
-                               ▼
-                    architecture binding
-                               │
-              evidence ◄───────┼──────► scheduling
-                               │
-                               ▼
-                    simulation / emission
-                               │
-                               ▼
-                    observation / calibration
+workload ──► synthesizer/frontend ──► ModelIR
+                                       │
+                         lowering/passes ──► portable planning
+                                       │               │
+system ─────────────────────────► analysis              ▼
+                                       │    architecture binding
+evidence ──────────────────────────────┘               │
+                                                       ▼
+                                            simulation / emission
 ```
 
-The canonical IR, binding, pass, and lowering infrastructure lives under `src/blueprinting/synthesizer/`. The analytical subsystem is a sibling package at `src/blueprinting/analysis/`: the synthesizer materializes explicit workload and plan facts, while analysis evaluates those facts against analytical models and external evidence. Analysis may depend on canonical synthesis contracts; callers must not treat cost evidence as an implicit lowering decision.
+The dependency direction is explicit: workload contracts do not depend on system descriptions; system descriptions do not depend on analysis policy; analysis does not construct canonical plans. The synthesizer materializes workload and plan facts, while analysis evaluates those facts against system descriptions and external evidence. Callers must not treat cost evidence as an implicit lowering decision.
 
 ## Current source map
 
 | Concern | Source | Status |
 |---|---|---|
+| Workload semantics and logical mapping intent | `workload/` | Implemented Transformer slice |
+| Chip, memory, interconnect, and aggregate system profile | `system/` | Implemented limited profile adapter |
 | IDs, expressions, codec, frozen values | `synthesizer/{ids,expr,codec,frozen}.py` | Implemented |
 | Canonical formal representations (`*IR`) | `synthesizer/ir/` | Implemented contracts |
 | Bindings and sessions | `synthesizer/{bindings,session}.py` | Implemented |
 | Analysis/transformation transactions | `synthesizer/passes/base.py` | Implemented |
-| Transformer frontend | `synthesizer/models/` | Implemented slice |
+| Workload-to-IR/session frontends | `synthesizer/frontend/` | Implemented Transformer slice |
 | Workload and cost analysis | `analysis/` | Implemented slice |
 | Transformer derivation passes | `synthesizer/lowering/transformer.py` | Implemented through portable plan |
-| Current hardware evidence adapter | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
+| Current system cost adapters | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
 | Architecture model/search, evidence service, simulation, emission | Accepted boundaries | Planned |

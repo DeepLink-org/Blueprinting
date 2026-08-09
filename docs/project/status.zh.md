@@ -21,7 +21,7 @@
 | Typed Transformer training workload accounting | **Implemented** | 精确 block operation、byte、collective、recomputation 与 phase |
 | Static Transformer inference phase planning | **Implemented slice** | 独立验证的 prefill/decode plan、KV 容量以及 decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path 到达 `PortablePlanIR` |
-| 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` 与两种 analytical estimate mode |
+| 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` 与两种 analytical estimate mode |
 | Normalized task-cost resolution 与性能数据导入 | **Implemented slice** | immutable query/result/store、ordered resolver、roofline fallback、通用 simulator 表、Vidur profile 与四类 AIConfigurator 表 |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | 独立 lowering/costing 后进行 exact-key CSV lookup，并报告 component coverage 与不可抵消的误差归因 |
 | Calculon/SeqSel workload 与 cost calibration | **Implemented experiment** | 8 case 可复现 report 与 test |
@@ -55,7 +55,7 @@ TransformerModelSpec + TransformerExecutionSpec
   -> ModelIR
   -> DistributedTaskIR
   -> PortablePlanIR
-  -> HardwareProfile analytical estimate
+  -> SystemProfile analytical estimate
   -> Calculon / paper comparison report
 
 TransformerModelSpec + inference mapping + request cohort
@@ -67,7 +67,7 @@ TransformerModelSpec + inference mapping + request cohort
   -> 静态 prefill / decode-step model time 与解析 memory report
 ```
 
-`PassManager` 验证每次 staged derivation 并暴露 immutable checkpoint。`HardwareProfile` 在 portable plan 后提供 evidence。当前路径尚未构造 architecture hierarchy、绑定 physical resource、执行 discrete-event simulation 或搜索 hardware candidate。
+`PassManager` 验证每次 staged derivation 并暴露 immutable checkpoint。`SystemProfile` 在 portable plan 后提供 evidence。当前路径尚未构造 architecture hierarchy、绑定 physical resource、执行 discrete-event simulation 或搜索 hardware candidate。
 
 ## 当前结果可以声称什么
 
@@ -82,11 +82,12 @@ TransformerModelSpec + inference mapping + request cohort
 | Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
 | 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`；只有前三层存在 production derivation slice |
 | Typed workload/strategy/target/deployment binding | **Implemented** | `bindings.py`、`session.py` |
+| Chip、memory、interconnect 与聚合 system profile | **Implemented adapter** | `src/blueprinting/system/`；是 evidence-bearing profile，不是计划中的 `ArchitectureBlueprint` |
 | Transactional analysis/transformation、checkpoint、observer | **Implemented** | `passes/base.py` |
-| Transformer semantic frontend 与 workload algebra | **Implemented slice** | `models/transformer.py`、`analysis/transformer_workload.py` |
+| Transformer workload contract、frontend 与 workload algebra | **Implemented slice** | `workload/transformer.py`、`synthesizer/frontend/transformer.py`、`analysis/transformer_workload.py` |
 | Distributed/portable mapping derivation | **Implemented slice** | `lowering/transformer.py` |
 | Cost protocol、resolver、roofline、database 与外部 importer | **Implemented slice** | `analysis/cost/`、`analysis/vidur.py`；仅覆盖 exact task latency，不是 plan simulation |
-| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `models/transformer_inference.py`、`analysis/{transformer_inference,inference_cost}.py`、`lowering/transformer_inference.py`、`application/inference.py` |
+| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `workload/transformer_inference.py`、`synthesizer/frontend/transformer_inference.py`、`analysis/{transformer_inference,inference_cost}.py`、`synthesizer/lowering/transformer_inference.py`、`application/inference.py` |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
 | 外部 baseline 回归门禁 | **Implemented** | `data/validation/` 下的冻结 contract 与带许可证离线 fixture、`experiments/regression.py`、`.github/workflows/quality.yml` |
@@ -106,7 +107,7 @@ TransformerModelSpec + inference mapping + request cohort
 ```text
 one Transformer workload suite
   + two parameterized virtual ArchitectureBlueprints
-  + normalized HardwareProfile evidence
+  + normalized SystemProfile evidence
   -> legal architecture-bound plans
   -> deterministic resource simulation
   -> bottleneck + utilization + latency/memory comparison

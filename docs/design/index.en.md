@@ -122,7 +122,7 @@ Each shortcut makes architecture candidates less comparable or conclusions less 
 
 ## Current versus target system
 
-The current connected path ends at `PortablePlanIR`, followed by an analytical `HardwareProfile` estimate used for validation. Five typed representation schemas, verified transformation transactions, workload derivation, and the Calculon experiment are implemented foundations. Internal schema version numbers identify serialization contracts; they are not public compatibility promises until production producers, independent consumers, and migration policies exist.
+The current connected path ends at `PortablePlanIR`, followed by an analytical `SystemProfile` estimate used for validation. Five typed representation schemas, verified transformation transactions, workload derivation, and the Calculon experiment are implemented foundations. Internal schema version numbers identify serialization contracts; they are not public compatibility promises until production producers, independent consumers, and migration policies exist.
 
 First-class architecture blueprints, target/resource binding, concrete scheduling, event simulation, simulator providers, design-space search, and optional GPU/LPU program emission remain planned or contract-only. The [status page](../project/status.md) is authoritative.
 

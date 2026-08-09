@@ -79,6 +79,7 @@ nav:
       - Roadmap: project/roadmap.md
       - Decisions and Terminology: project/decisions.md
       - ADR-0001 — Synthesizer Package: project/adr/0001-synthesizer-package.md
+      - ADR-0002 — Workload and System Domains: project/adr/0002-workload-system-domains.md
       - Architecture Risk Register: project/risks.md
       - Documentation Guide: contributing/documentation.md
 
@@ -138,6 +139,7 @@ plugins:
             Roadmap: 路线图
             Decisions and Terminology: 设计决策与术语
             ADR-0001 — Synthesizer Package: ADR-0001 — Synthesizer 包命名
+            ADR-0002 — Workload and System Domains: ADR-0002 — Workload 与 System 领域
             Architecture Risk Register: 架构风险登记表
             Documentation Guide: 文档维护指南
 

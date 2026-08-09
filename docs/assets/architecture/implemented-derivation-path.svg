@@ -95,7 +95,7 @@
 
   <g filter="url(#shadow)">
     <rect x="912" y="314" width="458" height="88" rx="14" fill="#FFF7DB" stroke="#D99A00"/>
-    <text x="936" y="346" class="box-title">HardwareProfile</text>
+    <text x="936" y="346" class="box-title">SystemProfile</text>
     <text x="936" y="369" class="box-sub">peak throughput/bandwidth + versioned efficiency curves</text>
     <text x="936" y="389" class="box-sub">same evidence revision shared across every case</text>
 

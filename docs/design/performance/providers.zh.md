@@ -34,7 +34,7 @@ Resolver 只选择一个 provider，不会把 correction 相乘，也不会平�
 
 ## Roofline Provider
 
-`RooflineCostProvider` 包装版本化 `HardwareProfile`。对于 local operator，它计算：
+`RooflineCostProvider` 包装版本化 `SystemProfile`。对于 local operator，它计算：
 
 ```text
 compute_time = operations / effective_engine_throughput

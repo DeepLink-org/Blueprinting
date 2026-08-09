@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from ..synthesizer.bindings import InferencePhase
 from ..synthesizer.frozen import FrozenDict
 from ..synthesizer.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
-from ..synthesizer.models.transformer import TransformerModelSpec
-from ..synthesizer.models.transformer_inference import TransformerInferenceExecutionSpec
+from ..system import SystemProfile
+from ..workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject
-from .cost_model import CalibrationMode, HardwareProfile
+from .cost_model import CalibrationMode
 from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery
 from .transformer_inference import InferenceInvocation
 from .transformer_workload import EngineKind, PhaseWork
@@ -63,7 +63,7 @@ class InferencePhaseEstimate:
 def inference_evidence_query_for(
     invocation: InferenceInvocation,
     *,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     execution: TransformerInferenceExecutionSpec,
     model: TransformerModelSpec,
     batch_size: int,
@@ -112,7 +112,7 @@ def _merge_dimensions(base: dict[str, object], extra: FrozenDict) -> FrozenDict:
 def cost_query_for_inference_task(
     task: PlanTask,
     *,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     execution: TransformerInferenceExecutionSpec,
     model: TransformerModelSpec,
     batch_size: int,
@@ -193,7 +193,7 @@ def cost_query_for_inference_task(
 def _task_estimate(
     task: PlanTask,
     *,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     execution: TransformerInferenceExecutionSpec,
     model: TransformerModelSpec,
     batch_size: int,
@@ -207,9 +207,16 @@ def _task_estimate(
     invocation = _invocation_from_plan_task(task)
     work = invocation.work
     processor = hardware.matrix if invocation.engine is EngineKind.MATRIX else hardware.vector
-    compute_seconds = work.operations / processor.throughput(work.operations, mode) if work.operations else 0.0
+    apply_efficiency = mode is CalibrationMode.SYSTEM_EVIDENCE
+    compute_seconds = (
+        work.operations / processor.throughput(work.operations, apply_efficiency=apply_efficiency)
+        if work.operations
+        else 0.0
+    )
     memory_seconds = (
-        work.memory_bytes / hardware.memory.throughput(work.memory_bytes, mode) if work.memory_bytes else 0.0
+        work.memory_bytes / hardware.memory.throughput(work.memory_bytes, apply_efficiency=apply_efficiency)
+        if work.memory_bytes
+        else 0.0
     )
     network_seconds = 0.0
     if invocation.engine is EngineKind.COLLECTIVE:
@@ -218,12 +225,12 @@ def _task_estimate(
         try:
             network = hardware.networks[invocation.network_tier]
         except IndexError as error:
-            raise ValueError(f"hardware profile does not define network tier {invocation.network_tier}") from error
+            raise ValueError(f"system profile does not define network tier {invocation.network_tier}") from error
         network_seconds = network.time(
             invocation.collective.value,
             work.message_bytes,
             execution.tensor_parallel,
-            mode,
+            apply_efficiency=apply_efficiency,
         )
     analytical_seconds = hardware.processing_time(compute_seconds, memory_seconds) + network_seconds
     provider_name = "analytical-system-profile"
@@ -358,7 +365,7 @@ def _semantic_buffer_size(plan: PortablePlanIR, semantic: str) -> int:
 
 def estimate_inference_phase(
     plan: PortablePlanIR,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
     *,
     cost_provider: InferenceCostProvider | None = None,
@@ -377,7 +384,7 @@ def estimate_inference_phase(
     if not isinstance(phase, InferencePhase):
         raise TypeError("portable inference plan is missing InferencePhase")
     if hardware.datatype != execution.datatype:
-        raise ValueError("hardware profile datatype does not match inference execution datatype")
+        raise ValueError("system profile datatype does not match inference execution datatype")
     if cost_provider is not None and cost_resolver is not None:
         raise ValueError("cost_provider and cost_resolver are mutually exclusive")
     if not isinstance(cost_context, CostQueryContext):
@@ -417,9 +424,14 @@ def estimate_inference_phase(
                 network = hardware.networks[execution.pipeline_parallel_network]
             except IndexError as error:
                 raise ValueError(
-                    f"hardware profile does not define network tier {execution.pipeline_parallel_network}"
+                    f"system profile does not define network tier {execution.pipeline_parallel_network}"
                 ) from error
-            one_hop_seconds = network.time("p2p", boundary_bytes, 2, mode)
+            one_hop_seconds = network.time(
+                "p2p",
+                boundary_bytes,
+                2,
+                apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
+            )
         else:
             pipeline_dimensions = {
                 "semantic_operation": "p2p",

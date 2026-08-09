@@ -3,7 +3,7 @@
 硬件探索从强类型、版本化 candidate definition 开始。Candidate 不能只是 device name 或 peak-FLOP number；它是一份可组合的 resource、topology、constraint 与 implementation capability 蓝图，能够被 mapping、simulation、comparison 与 revision。
 
 !!! note "设计状态"
-    本页定义已接受的产品模型。当前仓库已有 `HardwareProfile` evidence，但尚无完整 public `ArchitectureBlueprint` schema 或 search API。
+    本页定义已接受的产品模型。当前仓库已有 `SystemProfile` evidence，但尚无完整 public `ArchitectureBlueprint` schema 或 search API。
 
 ## Candidate Blueprint
 

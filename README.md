@@ -84,13 +84,9 @@ from blueprinting.synthesizer.lowering import (
     DistributeTransformerTrainingPass,
     PlanTransformerTrainingPass,
 )
-from blueprinting.synthesizer.models import (
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_model_ir,
-    synthesis_session_for,
-)
+from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
 
 model = TransformerModelSpec.from_mapping("gpt3-175B", model_config)
 execution = TransformerExecutionSpec.from_mapping(execution_config)
@@ -154,12 +150,14 @@ Calculon remains an adjacent calibration utility and does not participate in the
 ```text
 src/blueprinting/synthesizer/
 ├── ir/              # five canonical IR contracts
-├── models/          # typed semantic frontends
+├── frontend/        # workload-to-IR/session adapters
 ├── lowering/        # staged derivation passes
 ├── experiments/     # reproducible validation experiments
 ├── passes/          # transformation contracts and manager
 └── session.py       # explicit bindings and typed derivation context
 
+src/blueprinting/workload/      # target-neutral workload and mapping contracts
+src/blueprinting/system/        # chip, memory, interconnect, and system profiles
 src/blueprinting/analysis/      # exact workload and evidence-backed cost analyses
 src/blueprinting/application/  # framework-neutral analysis service
 src/blueprinting/workbench/    # NiceGUI workbench and legacy presentation adapters
@@ -168,8 +166,8 @@ tests/synthesizer/      # current formal-representation and calibration tests
 docs/                # bilingual MkDocs design, reference, experiment, and project documentation
 ```
 
-The `synthesizer` package owns canonical representations and verified derivation mechanics. The name describes
-formal plan synthesis—not RTL synthesis, a standalone Compiler product, or Blueprinting's top-level identity.
+`workload` and `system` own the two domain inputs. `synthesizer` connects them through canonical representations
+and verified derivation mechanics; `analysis` evaluates the resulting facts without owning either domain model.
 
 ## Development
 

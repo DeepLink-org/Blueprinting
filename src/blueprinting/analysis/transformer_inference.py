@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from ..synthesizer.bindings import InferencePhase
 from ..synthesizer.codec import record_type
 from ..synthesizer.ir import CollectiveKind
-from ..synthesizer.models.transformer import TransformerModelSpec
-from ..synthesizer.models.transformer_inference import TransformerInferenceExecutionSpec
+from ..workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from .transformer_workload import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.

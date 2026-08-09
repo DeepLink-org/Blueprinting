@@ -20,6 +20,7 @@
 | Schema maturity | Internal schema version 不自动构成 public compatibility promise | Producer、独立 consumer、migration 与 conformance Gate 通过后才毕业为 stable contract |
 | Documentation | 同目录 suffix-based 双语 source | Navigation 与 language switching 始终按页面对齐 |
 | 形式化推导 package | Python path 硬切为 `blueprinting.synthesizer`；保留历史 codec tag | Source ownership 对齐 formal plan synthesis，同时不破坏未变化的 canonical snapshot；见 [ADR-0001](adr/0001-synthesizer-package.md) |
+| Domain package | `blueprinting.workload` 拥有 target-neutral workload contract；`blueprinting.system` 拥有 chip/interconnect/system profile | Synthesis/analysis 消费显式 domain input，但不拥有它们；见 [ADR-0002](adr/0002-workload-system-domains.md) |
 
 ## 被拒绝方案
 

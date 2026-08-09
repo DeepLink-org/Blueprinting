@@ -21,7 +21,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Typed Transformer training workload accounting | **Implemented** | exact block operations, bytes, collectives, recomputation, and phases |
 | Static Transformer inference phase planning | **Implemented slice** | independently verified prefill/decode plans, KV capacity, and decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path reaches `PortablePlanIR` |
-| Versioned compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` and two analytical estimate modes |
+| Versioned compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` and two analytical estimate modes |
 | Normalized task-cost resolution and performance-data ingestion | **Implemented slice** | immutable query/result/store, ordered resolver, roofline fallback, generic simulator tables, Vidur profiles, and four AIConfigurator table families |
 | Vidur raw component-profile alignment | **Implemented experiment** | exact-key CSV lookup after independent lowering/costing, with component coverage and non-cancelling error attribution |
 | Calculon/SeqSel workload and cost calibration | **Implemented experiment** | eight-case reproducible report and tests |
@@ -55,7 +55,7 @@ TransformerModelSpec + TransformerExecutionSpec
   -> ModelIR
   -> DistributedTaskIR
   -> PortablePlanIR
-  -> HardwareProfile analytical estimate
+  -> SystemProfile analytical estimate
   -> Calculon / paper comparison report
 
 TransformerModelSpec + inference mapping + request cohort
@@ -67,7 +67,7 @@ TransformerModelSpec + inference mapping + request cohort
   -> static prefill / decode-step model time and analytical memory report
 ```
 
-`PassManager` verifies each staged derivation and exposes immutable checkpoints. `HardwareProfile` supplies evidence after the portable plan. The path does not yet construct an architecture hierarchy, bind physical resources, execute a discrete-event simulation, or search hardware candidates.
+`PassManager` verifies each staged derivation and exposes immutable checkpoints. `SystemProfile` supplies evidence after the portable plan. The path does not yet construct an architecture hierarchy, bind physical resources, execute a discrete-event simulation, or search hardware candidates.
 
 ## What the current result can claim
 
@@ -82,11 +82,12 @@ It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous 
 | Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
 | Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`; only the first three have a production derivation slice |
 | Typed workload/strategy/target/deployment bindings | **Implemented** | `bindings.py`, `session.py` |
+| Chip, memory, interconnect, and aggregate system profile | **Implemented adapter** | `src/blueprinting/system/`; evidence-bearing profile, not the planned `ArchitectureBlueprint` |
 | Transactional analyses/transformations, checkpoints, observers | **Implemented** | `passes/base.py` |
-| Transformer semantic frontend and workload algebra | **Implemented slice** | `models/transformer.py`, `analysis/transformer_workload.py` |
+| Transformer workload contracts, frontend, and workload algebra | **Implemented slice** | `workload/transformer.py`, `synthesizer/frontend/transformer.py`, `analysis/transformer_workload.py` |
 | Distributed and portable mapping derivations | **Implemented slice** | `lowering/transformer.py` |
 | Cost protocol, resolver, roofline, database, and external importers | **Implemented slice** | `analysis/cost/`, `analysis/vidur.py`; exact task latency only, not plan simulation |
-| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `models/transformer_inference.py`, `analysis/{transformer_inference,inference_cost}.py`, `lowering/transformer_inference.py`, `application/inference.py` |
+| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `workload/transformer_inference.py`, `synthesizer/frontend/transformer_inference.py`, `analysis/{transformer_inference,inference_cost}.py`, `synthesizer/lowering/transformer_inference.py`, `application/inference.py` |
 | Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
 | External-baseline regression gate | **Implemented** | frozen contract and licensed offline fixtures under `data/validation/`; `experiments/regression.py`; `.github/workflows/quality.yml` |
@@ -106,7 +107,7 @@ The next milestone is a minimal two-blueprint exploration:
 ```text
 one Transformer workload suite
   + two parameterized virtual ArchitectureBlueprints
-  + normalized HardwareProfile evidence
+  + normalized SystemProfile evidence
   -> legal architecture-bound plans
   -> deterministic resource simulation
   -> bottleneck + utilization + latency/memory comparison

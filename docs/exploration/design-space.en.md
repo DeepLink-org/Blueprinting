@@ -3,7 +3,7 @@
 Hardware exploration begins with a typed, versioned candidate definition. A candidate is not just a device name or peak-FLOP number; it is a composable blueprint of resources, topology, constraints, and implementation capabilities that can be mapped, simulated, compared, and revised.
 
 !!! note "Design status"
-    This page defines the accepted product model. The current repository has `HardwareProfile` evidence but not yet a complete public `ArchitectureBlueprint` schema or search API.
+    This page defines the accepted product model. The current repository has `SystemProfile` evidence but not yet a complete public `ArchitectureBlueprint` schema or search API.
 
 ## Candidate blueprint
 

@@ -3,7 +3,7 @@
 Hardware model 是 candidate architecture 的语义描述，定义存在哪些 resource/capability，以及它们如何连接。Performance evidence 估算这些 resource 如何表现；deployment 标识具体 instance。只有保持三者独立，design-space exploration 才有意义。
 
 !!! note "设计状态"
-    当前 `HardwareProfile` 只实现有限的 compute、memory 与 network evidence profile。这里描述的 hierarchical architecture schema 是目标设计，尚未端到端连接。
+    当前 `SystemProfile` 只实现有限的 compute、memory 与 network evidence profile。这里描述的 hierarchical architecture schema 是目标设计，尚未端到端连接。
 
 ## Architecture、Deployment 与 Evidence
 
@@ -94,6 +94,6 @@ Schema migration 必须显式。已发布 experiment 保留原始 blueprint/prov
 
 ## 当前实现差距
 
-`HardwareProfile` 当前提供 matrix/vector throughput curve、memory capacity/bandwidth curve、network tier 与 collective model，用于 Calculon calibration。它尚未建模 component hierarchy、NoC、queue、power/area/cost、architecture variable 或通用 target capability graph。
+`SystemProfile` 当前提供 matrix/vector throughput curve、memory capacity/bandwidth curve、network tier 与 collective model，用于 Calculon calibration。它尚未建模 component hierarchy、NoC、queue、power/area/cost、architecture variable 或通用 target capability graph。
 
-第一步迁移应把 `HardwareProfile` 包装为 minimal virtual `ArchitectureBlueprint` 的 evidence，在保持现有结果的同时引入上述分离。参见[路线图](../project/roadmap.md)。
+第一步迁移应把 `SystemProfile` 包装为 minimal virtual `ArchitectureBlueprint` 的 evidence，在保持现有结果的同时引入上述分离。参见[路线图](../project/roadmap.md)。

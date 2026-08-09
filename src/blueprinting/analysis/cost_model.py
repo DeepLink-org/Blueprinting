@@ -15,15 +15,13 @@ The model has two deliberately separate modes:
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
-from ..synthesizer.codec import content_digest, enum_type, record_type
-from ..synthesizer.frozen import FrozenDict
+from ..synthesizer.codec import enum_type
 from ..synthesizer.ir import CollectiveKind, PortablePlanIR
-from ..synthesizer.models.transformer import (
+from ..system import SystemProfile
+from ..workload import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,
@@ -44,183 +42,6 @@ from .transformer_workload import (
 class CalibrationMode(Enum):
     PEAK_ONLY = "peak_only"
     SYSTEM_EVIDENCE = "system_evidence"
-
-
-@record_type("compiler.analysis.efficiency_point.v1")
-@dataclass(frozen=True)
-class EfficiencyPoint:
-    threshold: int
-    efficiency: float
-
-    def __post_init__(self) -> None:
-        if isinstance(self.threshold, bool) or not isinstance(self.threshold, int) or self.threshold < 0:
-            raise ValueError("efficiency threshold must be a non-negative integer")
-        if not isinstance(self.efficiency, (int, float)) or not 0 < self.efficiency <= 1:
-            raise ValueError("efficiency must be in (0, 1]")
-
-
-@record_type("compiler.analysis.efficiency_curve.v1")
-@dataclass(frozen=True)
-class EfficiencyCurve:
-    points: tuple[EfficiencyPoint, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "points", tuple(self.points))
-        if not self.points or any(not isinstance(point, EfficiencyPoint) for point in self.points):
-            raise ValueError("an efficiency curve requires typed points")
-        thresholds = tuple(point.threshold for point in self.points)
-        if thresholds != tuple(sorted(thresholds, reverse=True)) or len(set(thresholds)) != len(thresholds):
-            raise ValueError("efficiency thresholds must be unique and descending")
-        if thresholds[-1] != 0:
-            raise ValueError("efficiency curve must cover a zero threshold")
-
-    def lookup(self, work: int) -> float:
-        if isinstance(work, bool) or not isinstance(work, int) or work < 0:
-            raise ValueError("curve lookup work must be a non-negative integer")
-        for point in self.points:
-            if work >= point.threshold:
-                return point.efficiency
-        raise AssertionError("zero-threshold curve failed to cover work")
-
-
-@record_type("compiler.analysis.processor_profile.v1")
-@dataclass(frozen=True)
-class ProcessorProfile:
-    peak_operations_per_second: float
-    efficiency: EfficiencyCurve
-
-    def throughput(self, operations: int, mode: CalibrationMode) -> float:
-        efficiency = self.efficiency.lookup(operations) if mode is CalibrationMode.SYSTEM_EVIDENCE else 1.0
-        return self.peak_operations_per_second * efficiency
-
-
-@record_type("compiler.analysis.memory_profile.v1")
-@dataclass(frozen=True)
-class MemoryProfile:
-    capacity_bytes: int
-    peak_bytes_per_second: float
-    efficiency: EfficiencyCurve
-
-    def throughput(self, transferred_bytes: int, mode: CalibrationMode) -> float:
-        efficiency = self.efficiency.lookup(transferred_bytes) if mode is CalibrationMode.SYSTEM_EVIDENCE else 1.0
-        return self.peak_bytes_per_second * efficiency
-
-
-@record_type("compiler.analysis.network_operation.v1")
-@dataclass(frozen=True)
-class NetworkOperationProfile:
-    volume_multiplier: float
-    participant_offset: int
-
-
-@record_type("compiler.analysis.network_profile.v1")
-@dataclass(frozen=True)
-class NetworkProfile:
-    peak_bytes_per_second: float
-    efficiency: float
-    latency_seconds: float
-    participant_capacity: int
-    operations: FrozenDict
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "operations", FrozenDict(self.operations))
-
-    def time(
-        self,
-        operation: str,
-        message_bytes: int,
-        participants: int,
-        mode: CalibrationMode,
-    ) -> float:
-        profile = self.operations.get(operation)
-        if not isinstance(profile, NetworkOperationProfile):
-            raise ValueError(f"network does not define operation {operation!r}")
-        if participants < 2:
-            return 0.0
-        scaled = message_bytes * profile.volume_multiplier
-        scaled += scaled / participants * profile.participant_offset
-        efficiency = self.efficiency if mode is CalibrationMode.SYSTEM_EVIDENCE else 1.0
-        return self.latency_seconds + scaled / (self.peak_bytes_per_second * efficiency)
-
-
-@record_type("compiler.analysis.hardware_profile.v1")
-@dataclass(frozen=True)
-class HardwareProfile:
-    name: str
-    datatype: str
-    matrix: ProcessorProfile
-    vector: ProcessorProfile
-    memory: MemoryProfile
-    processing_mode: str
-    networks: tuple[NetworkProfile, ...]
-    evidence_revision: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "networks", tuple(self.networks))
-        if self.processing_mode not in {"roofline", "no_overlap"}:
-            raise ValueError("processing_mode must be roofline or no_overlap")
-        if not self.name or not self.datatype or not self.evidence_revision:
-            raise ValueError("hardware profile identity must not be empty")
-
-    @classmethod
-    def from_mapping(
-        cls,
-        name: str,
-        data: Mapping[str, Any],
-        *,
-        datatype: str,
-    ) -> HardwareProfile:
-        def processor(section: str) -> ProcessorProfile:
-            item = data[section][datatype]
-            curve = EfficiencyCurve(
-                tuple(
-                    EfficiencyPoint(int(giga_operations * 1e9), efficiency)
-                    for giga_operations, efficiency in item["gflops_efficiency"]
-                )
-            )
-            return ProcessorProfile(item["tflops"] * 1e12, curve)
-
-        memory_data = data["mem1"]
-        memory_curve = EfficiencyCurve(
-            tuple(
-                EfficiencyPoint(int(megabytes * 1e6), efficiency)
-                for megabytes, efficiency in memory_data["MB_efficiency"]
-            )
-        )
-        networks = []
-        for network in data["networks"]:
-            operations = {}
-            for operation, (multiplier, offset) in network["ops"].items():
-                operations[operation] = NetworkOperationProfile(multiplier, 0 if offset is None else offset)
-            networks.append(
-                NetworkProfile(
-                    peak_bytes_per_second=network["bandwidth"] * 1e9,
-                    efficiency=network["efficiency"],
-                    latency_seconds=network["latency"],
-                    participant_capacity=network["size"],
-                    operations=FrozenDict(operations),
-                )
-            )
-        revision = content_digest(FrozenDict(dict(data)), f"hardware-profile:{name}:{datatype}")
-        return cls(
-            name=name,
-            datatype=datatype,
-            matrix=processor("matrix"),
-            vector=processor("vector"),
-            memory=MemoryProfile(
-                int(memory_data["GiB"] * 1024**3),
-                memory_data["GBps"] * 1e9,
-                memory_curve,
-            ),
-            processing_mode=data["processing_mode"],
-            networks=tuple(networks),
-            evidence_revision=revision,
-        )
-
-    def processing_time(self, compute_seconds: float, memory_seconds: float) -> float:
-        if self.processing_mode == "roofline":
-            return max(compute_seconds, memory_seconds)
-        return compute_seconds + memory_seconds
 
 
 @dataclass(frozen=True)
@@ -286,15 +107,22 @@ class IterationEstimate:
 
 def _task_estimate(
     invocation: PrimitiveInvocation,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     participants: int,
     mode: CalibrationMode,
 ) -> TaskEstimate:
     work = invocation.work
     processor = hardware.matrix if invocation.engine is EngineKind.MATRIX else hardware.vector
-    compute_seconds = work.operations / processor.throughput(work.operations, mode) if work.operations else 0.0
+    apply_efficiency = mode is CalibrationMode.SYSTEM_EVIDENCE
+    compute_seconds = (
+        work.operations / processor.throughput(work.operations, apply_efficiency=apply_efficiency)
+        if work.operations
+        else 0.0
+    )
     memory_seconds = (
-        work.memory_bytes / hardware.memory.throughput(work.memory_bytes, mode) if work.memory_bytes else 0.0
+        work.memory_bytes / hardware.memory.throughput(work.memory_bytes, apply_efficiency=apply_efficiency)
+        if work.memory_bytes
+        else 0.0
     )
     local_seconds = hardware.processing_time(compute_seconds, memory_seconds)
     network_seconds = 0.0
@@ -302,7 +130,12 @@ def _task_estimate(
         if invocation.network_tier is None or invocation.collective is None:
             raise ValueError("collective invocation is missing network facts")
         network = hardware.networks[invocation.network_tier]
-        network_seconds = network.time(invocation.collective.value, work.message_bytes, participants, mode)
+        network_seconds = network.time(
+            invocation.collective.value,
+            work.message_bytes,
+            participants,
+            apply_efficiency=apply_efficiency,
+        )
     return TaskEstimate(
         invocation=invocation,
         compute_seconds=compute_seconds,
@@ -314,7 +147,7 @@ def _task_estimate(
 
 def estimate_block(
     plan: PortablePlanIR,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     mode: CalibrationMode,
 ) -> BlockEstimate:
     execution = plan.attributes.get("execution_spec")
@@ -395,7 +228,7 @@ def _iteration_memory(
 
 def estimate_iteration(
     plan: PortablePlanIR,
-    hardware: HardwareProfile,
+    hardware: SystemProfile,
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
 ) -> IterationEstimate:
     """Apply an explicit 1F1B/interleaved schedule to a derived block plan."""
@@ -410,7 +243,7 @@ def estimate_iteration(
     if not isinstance(block_memory, BlockMemoryFacts):
         raise TypeError("portable plan is missing BlockMemoryFacts")
     if hardware.datatype != execution.datatype:
-        raise ValueError("hardware profile datatype does not match execution datatype")
+        raise ValueError("system profile datatype does not match execution datatype")
 
     blocks_per_processor = math.ceil(model.block_count / execution.pipeline_parallel)
     if execution.pipeline_interleaving > blocks_per_processor:
@@ -428,7 +261,12 @@ def estimate_iteration(
     pipeline_message = activation_elements * execution.bytes_per_element
     if execution.pipeline_parallel > 1:
         pipeline_network = hardware.networks[execution.pipeline_parallel_network]
-        pipeline_point_to_point = pipeline_network.time("p2p", pipeline_message, 2, mode)
+        pipeline_point_to_point = pipeline_network.time(
+            "p2p",
+            pipeline_message,
+            2,
+            apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
+        )
     else:
         pipeline_point_to_point = 0.0
 
@@ -484,19 +322,19 @@ def estimate_iteration(
                 CollectiveKind.REDUCE_SCATTER.value,
                 block_memory.weights,
                 execution.data_parallel,
-                mode,
+                apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             ) + network.time(
                 CollectiveKind.ALL_GATHER.value,
                 block_memory.weights,
                 execution.data_parallel,
-                mode,
+                apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
         else:
             per_block = network.time(
                 CollectiveKind.ALL_REDUCE.value,
                 block_memory.weights,
                 execution.data_parallel,
-                mode,
+                apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
         data_parallel = blocks_per_processor * per_block
 

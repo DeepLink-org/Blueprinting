@@ -46,7 +46,7 @@ Implement a minimal `ArchitectureBlueprint` with:
 - system multiplicity/topology;
 - fixed, variable, derived, and constrained fields;
 - canonical identity and verifier;
-- `HardwareProfile` adapted as versioned evidence rather than architecture truth.
+- `SystemProfile` adapted as versioned evidence rather than architecture truth.
 
 Acceptance requires two materially different virtual blueprints that bind the same portable workload, reject incompatible mappings with diagnostics, and preserve the same source-workload digest.
 
@@ -98,7 +98,7 @@ Hardware program emission strengthens validation but is not part of this minimum
 ## Near-term delivery order
 
 1. Define the minimal hierarchical `ArchitectureBlueprint` and verifier.
-2. Wrap `HardwareProfile` behind normalized evidence requests/results.
+2. Wrap `SystemProfile` behind normalized evidence requests/results.
 3. Add two parameterized virtual blueprints and architecture legality.
 4. Complete portable buffers/lifetimes needed for resource mapping.
 5. Use queue-centric and non-queue-centric virtual targets to freeze the common coordination core and typed-extension boundary.

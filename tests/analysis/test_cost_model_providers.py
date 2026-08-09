@@ -14,7 +14,6 @@ from blueprinting.analysis import (
     CostSubject,
     EstimateMethod,
     EvidenceProvenance,
-    HardwareProfile,
     LatencyUnit,
     PerformanceDatabase,
     PerformanceDatabaseProvider,
@@ -28,21 +27,24 @@ from blueprinting.analysis import (
 )
 from blueprinting.analysis.cost import InvalidCostEvidenceError
 from blueprinting.synthesizer.bindings import InferencePhase
-from blueprinting.synthesizer.frozen import FrozenDict
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.synthesizer.models import (
-    TransformerInferenceExecutionSpec,
-    TransformerModelSpec,
+from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
+from blueprinting.synthesizer.frozen import FrozenDict
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import (
+    TransformerInferenceExecutionSpec,
+    TransformerModelSpec,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _hardware(name: str = "fixture-hardware") -> HardwareProfile:
-    return HardwareProfile.from_mapping(
+def _hardware(name: str = "fixture-hardware") -> SystemProfile:
+    return SystemProfile.from_mapping(
         name,
         json.loads((ROOT / "data" / "systems" / "a100_80g.json").read_text(encoding="utf-8")),
         datatype="float16",

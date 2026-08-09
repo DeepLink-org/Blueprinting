@@ -26,7 +26,6 @@ from .cost import (
 from .cost_model import (
     BlockEstimate,
     CalibrationMode,
-    HardwareProfile,
     IterationEstimate,
     IterationMemory,
     estimate_block,
@@ -79,7 +78,6 @@ __all__ = [
     "EstimateMatch",
     "EstimateMethod",
     "EvidenceProvenance",
-    "HardwareProfile",
     "InferenceBlockMemoryFacts",
     "InferenceBaseline",
     "InferenceCostProvider",

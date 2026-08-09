@@ -5,17 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.analysis.cost_model import CalibrationMode, HardwareProfile, estimate_iteration
+from blueprinting.analysis.cost_model import CalibrationMode, estimate_iteration
 from blueprinting.analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
 from blueprinting.synthesizer.experiments import discover_seqsel_tab5_cases, run_calculon_experiment
+from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from blueprinting.synthesizer.models import (
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_model_ir,
-    synthesis_session_for,
-)
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,7 +75,7 @@ def test_selective_recompute_is_structural_and_linear_gradients_are_derived():
 
 def test_hardware_evidence_is_shared_and_does_not_change_workload():
     _, execution, _, result = _derive("gpt3-175B", "full")
-    hardware = HardwareProfile.from_mapping(
+    hardware = SystemProfile.from_mapping(
         "a100_80g",
         _json(ROOT / "data" / "systems" / "a100_80g.json"),
         datatype=execution.datatype,

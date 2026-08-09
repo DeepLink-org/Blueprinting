@@ -4,9 +4,10 @@ import pickle
 
 from blueprinting.analysis import CalibrationMode
 from blueprinting.application import AnalysisDraft, BlueprintingService, SweepRequest
+from blueprinting.synthesizer.frontend import build_transformer_model_ir
 from blueprinting.synthesizer.frozen import FrozenDict
-from blueprinting.synthesizer.models import TransformerModelSpec, build_transformer_model_ir
 from blueprinting.workbench import default_catalog
+from blueprinting.workload import TransformerModelSpec
 
 
 def _draft(**execution_changes) -> AnalysisDraft:

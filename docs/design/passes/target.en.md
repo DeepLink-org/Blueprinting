@@ -92,7 +92,7 @@ This path makes a hardware or simulator mismatch actionable at the owning layer 
 The next vertical slice should deliberately minimize target complexity:
 
 1. implement one queue-centric and one non-queue-centric `VirtualTargetPlugin` to jointly validate the coordination core;
-2. adapt the current `HardwareProfile` behind a normalized estimate provider;
+2. adapt the current `SystemProfile` behind a normalized estimate provider;
 3. legalize the existing Transformer `PortablePlanIR`;
 4. build a single-device or simple-TP `ConcretePlanIR` with explicit ordering, resources, buffers, and typed extensions;
 5. derive a timing projection, discrete-event result, and `TimelineBundle`;

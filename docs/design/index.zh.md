@@ -122,7 +122,7 @@ Search 可以昂贵，但必须有界且可复现。Runtime 或 simulation execu
 
 ## 当前系统与目标系统
 
-当前贯通路径结束在 `PortablePlanIR`，随后通过 analytical `HardwareProfile` estimate 做验证。五层 typed representation schema、verified transformation transaction、workload derivation 与 Calculon experiment 已经实现，是后续产品的基础。Schema 的内部版本号只标识 serialization contract；在 production producer、独立 consumer 与 migration policy 到位前，不构成 public compatibility 承诺。
+当前贯通路径结束在 `PortablePlanIR`，随后通过 analytical `SystemProfile` estimate 做验证。五层 typed representation schema、verified transformation transaction、workload derivation 与 Calculon experiment 已经实现，是后续产品的基础。Schema 的内部版本号只标识 serialization contract；在 production producer、独立 consumer 与 migration policy 到位前，不构成 public compatibility 承诺。
 
 First-class architecture blueprint、target/resource binding、concrete scheduling、event simulation、simulator provider、design-space search 与可选 GPU/LPU program emission 仍为 planned 或 contract-only。以[状态页](../project/status.md)为准。
 

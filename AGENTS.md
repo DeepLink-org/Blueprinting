@@ -142,13 +142,15 @@ handling。若 LPU 的 issue cycle/slot 具有 correctness 含义，它在 targe
 
 ## 9. 当前实现边界
 
-当前 canonical 表示与形式化推导机制位于 `src/blueprinting/synthesizer/`，分析与证据评估位于同级
-`src/blueprinting/analysis/`。Synthesizer 表示 formal plan synthesis 的实现边界，不是产品身份、RTL 综合器或独立 Compiler 组件。已经实现：
+Target-neutral workload contract 位于 `src/blueprinting/workload/`，芯片、memory、interconnect 与 system profile
+位于 `src/blueprinting/system/`；canonical 表示与形式化推导机制位于 `src/blueprinting/synthesizer/`，分析与证据评估
+位于同级 `src/blueprinting/analysis/`。Synthesizer 表示 formal plan synthesis 的实现边界，不是产品身份、RTL 综合器或独立 Compiler 组件。已经实现：
 
 - 五层 canonical IR 的 immutable schema、serialization 和 structural verifier；其中后两层仍是 experimental contract；
 - stable ID、lineage、typed scalar expression、binding/session；
 - pass contract、analysis cache/invalidation 和 derivation checkpoint；
-- decoder-only Transformer training frontend；
+- decoder-only Transformer workload contract 与 training/inference frontend adapter；
+- compute、memory、interconnect 和聚合 `SystemProfile` contract；
 - `ModelIR -> DistributedTaskIR -> PortablePlanIR` 的 TP、recompute、workload 与 buffer derivation；
 - peak-only / system-evidence cost view 和 Calculon/SeqSel 校准实验。
 
@@ -163,8 +165,11 @@ handling。若 LPU 的 issue cycle/slot 具有 correctness 含义，它在 targe
 
 ## 10. 代码与仓库规则
 
-- 新 canonical 表示与推导代码进入 `src/blueprinting/synthesizer/` 对应边界，cost/evidence analysis 进入
-  `src/blueprinting/analysis/`；不得新建平行表示栈。
+- Workload semantic/request/mapping contract 进入 `src/blueprinting/workload/`；芯片、memory、interconnect 与 system
+  contract 进入 `src/blueprinting/system/`；workload-to-IR adapter、canonical 表示与推导进入
+  `src/blueprinting/synthesizer/`；cost/evidence analysis 进入 `src/blueprinting/analysis/`。不得新建平行表示栈。
+- `SystemProfile` 是当前有限的 compute/memory/network evidence-bearing adapter，不得被描述成已经实现的完整
+  `ArchitectureBlueprint`；`src/blueprinting/types/system/` 只服务 legacy calculator，新代码不得依赖它。
 - `blueprinting.compiler` Python path 已硬切删除；历史 `compiler.*` canonical codec tag 作为 wire identity 保留，
   未经迁移 ADR 不得改写。
 - IR 对象默认 frozen；语义字段使用 typed dataclass/enum/ID，不使用自由字典代替 contract。

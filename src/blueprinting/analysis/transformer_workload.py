@@ -13,7 +13,7 @@ from enum import Enum
 
 from ..synthesizer.codec import enum_type, record_type
 from ..synthesizer.ir import CollectiveKind
-from ..synthesizer.models.transformer import (
+from ..workload import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,

@@ -6,7 +6,7 @@ The experiment uses Calculon in two roles only:
 * a source of historical SeqSel paper values for held-out validation.
 
 Calculon results are never read while constructing IR, workload facts, or the
-hardware profile.  The calibrated estimate consumes only the same target-wide
+system profile.  The calibrated estimate consumes only the same target-wide
 system evidence curves for every case.
 """
 
@@ -23,19 +23,15 @@ from calculon.system import System
 
 from ...analysis.cost_model import (
     CalibrationMode,
-    HardwareProfile,
     IterationEstimate,
     estimate_iteration,
 )
 from ...analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
+from ...system import SystemProfile
+from ...workload import TransformerExecutionSpec, TransformerModelSpec
+from ..frontend import build_transformer_model_ir, synthesis_session_for
 from ..ir import PortablePlanIR
 from ..lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from ..models import (
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-    build_transformer_model_ir,
-    synthesis_session_for,
-)
 from ..passes import PassManager, PassPipeline
 
 SEQSEL_TABLE5_SECONDS = {
@@ -368,7 +364,7 @@ def run_calculon_experiment(cases: tuple[CalculonCase, ...]) -> CalculonExperime
         model = TransformerModelSpec.from_mapping(case.model_path.stem, model_data)
         execution = TransformerExecutionSpec.from_mapping(execution_data)
         plan, checkpoints, model_digest, distributed_digest = _derive_plan(model, execution)
-        hardware = HardwareProfile.from_mapping(case.system_path.stem, system_data, datatype=execution.datatype)
+        hardware = SystemProfile.from_mapping(case.system_path.stem, system_data, datatype=execution.datatype)
         if not evidence_revision:
             evidence_revision = hardware.evidence_revision
         elif evidence_revision != hardware.evidence_revision:

@@ -6,7 +6,7 @@ Blueprinting now has a runnable decoder-inference slice, but its boundary is int
 
 ## What we adopt from related work
 
-[LLMCompass](https://arxiv.org/abs/2312.03134) demonstrates why LLM inference hardware evaluation needs separate software, hardware, mapping, and cost concerns, plus an explicit mapping search rather than a single closed-form model. Blueprinting adopts that separation. Its canonical representations preserve workload and mapping facts before a hardware profile or measured latency is consulted. LLMCompass's area/cost and architecture design-space machinery remains future provider and exploration work; its artifact code is not copied into the canonical IR.
+[LLMCompass](https://arxiv.org/abs/2312.03134) demonstrates why LLM inference hardware evaluation needs separate software, hardware, mapping, and cost concerns, plus an explicit mapping search rather than a single closed-form model. Blueprinting adopts that separation. Its canonical representations preserve workload and mapping facts before a system profile or measured latency is consulted. LLMCompass's area/cost and architecture design-space machinery remains future provider and exploration work; its artifact code is not copied into the canonical IR.
 
 [Vidur](https://github.com/microsoft/vidur) demonstrates a complementary boundary: request arrivals, replica scheduling, batching, and event progression are a discrete-event layer, while execution time is supplied by component predictors trained from profiling data. Blueprinting adopts that split. Phase plans are the stable cost subjects; a future serving simulator will schedule requests and batches against them rather than redefining Transformer work inside scheduler code.
 
@@ -17,7 +17,7 @@ The resulting boundary is deliberate:
 | Transformer operation/byte/collective derivation | canonical inference analysis | Implemented slice |
 | Prefill and decode specialization | workload binding + lowering passes | Implemented slice |
 | KV-cache state and capacity | ModelIR effect + portable state buffer + memory view | Implemented slice |
-| Analytical component cost | `HardwareProfile` fallback | Implemented slice |
+| Analytical component cost | `SystemProfile` fallback | Implemented slice |
 | Vidur profiling CSV reuse | post-hoc exact-match baseline | Implemented experiment |
 | Static decoder-block phase composition | inference application service | Implemented slice |
 | Arrivals, queues, continuous batching, scheduling | serving discrete-event simulator | Planned |
@@ -70,10 +70,11 @@ It is multiplied by the number of blocks in one pipeline stage. Weight storage i
 `VidurProfileBaseline.from_csv(...)` consumes user-supplied Vidur `attention.csv` and compute/MLP CSV files. The caller must pin an upstream revision, hardware identity, attention backend, and cache block size. The adapter hashes the inputs and identity into a baseline revision, converts Vidur's millisecond medians to seconds, and only returns a reference when model dimensions, maximum sequence length, TP, batch/token shape, phase, backend, block size, and context match exactly. Vidur records decode `kv_cache_size` before the current token is appended; Blueprinting records the visible context after append, so the adapter makes the explicit relation `vidur_kv_cache_size = context_tokens - 1`.
 
 ```python
-from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
+from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.system import SystemProfile
 from blueprinting.synthesizer.bindings import InferencePhase
 from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.synthesizer.models import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -88,7 +89,7 @@ case = VidurExperimentCase(
     name="decode/context-128",
     model=TransformerModelSpec(...),
     execution=TransformerInferenceExecutionSpec(...),
-    hardware=HardwareProfile(...),
+    hardware=SystemProfile(...),
     phase=InferencePhase.DECODE,
     batch_size=1,
     context_tokens=128,

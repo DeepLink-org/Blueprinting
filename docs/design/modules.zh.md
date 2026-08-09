@@ -26,13 +26,21 @@ result.sensitivity
 
 内部会为每个 candidate 创建 immutable typed derivation context，用于 workload mapping、architecture binding 与 analysis addressing。当前实现把这个对象命名为 `SynthesisSession`；该 class 及其 workload/strategy binding 已实现，而 `ExplorationSession` 与 end-to-end product facade 仍为 planned。Global mutable configuration 被禁止，因为它会破坏 experiment reproducibility。
 
+## Workload 与 System 领域模型
+
+`blueprinting.workload` 拥有 target-neutral model semantic、request scenario 与 logical mapping intent。Workload object 不得包含 chip name、peak rate、empirical latency、kernel identity 或 physical placement。当前 slice 提供 typed Transformer training/inference contract。
+
+`blueprinting.system` 拥有 immutable chip-local compute engine、memory capacity/bandwidth、interconnect tier、collective volume rule 与导入 evidence revision。`SystemProfile` 是当前有限的 compute/memory/network adapter；它还不是产品设计中的 hierarchical `ArchitectureBlueprint`、physical deployment 或 target binding。Cost policy 继续属于 `analysis`：system contract 暴露 peak 与 evidence-bearing facts，但不选择 calibration mode。
+
+这两个 package 是权威 domain input，不是另一套 IR hierarchy。只有 synthesizer frontend 把 workload contract 导入 `ModelIR` 后，canonical derivation 才开始；system profile 继续位于 canonical workload state 之外，只能被显式 analysis 或后续 target binding 消费。
+
 ## Frontend
 
 Frontend 解析 model 或 framework input，验证 target-independent type/effect，分配 stable identity，并输出 `ModelIR`。它拥有 import diagnostic 和 source mapping。
 
 Frontend 不读取 peak throughput、kernel catalog、physical topology 或 runtime observation。Framework adapter 暴露 canonical IR，而不是平行的 public IR hierarchy。
 
-当前 frontend 覆盖 typed decoder-only Transformer training。更多 training architecture、inference prefill/decode、KV-cache semantic 和 framework importer 属于后续工作。
+当前 frontend 覆盖 typed decoder-only Transformer training，以及带显式 KV-cache semantic 的 static inference prefill/decode。更多 model family、framework importer 与 online serving scenario 属于后续工作。
 
 ## Canonical 形式化表示基础设施
 
@@ -107,34 +115,31 @@ Profiler adapter 把 runtime event 关联到 machine instruction 与 concrete co
 ## 依赖方向
 
 ```text
-frontend ───────► ir/common
-                    │
-lowering/passes ────┼────► planning
-bindings/session ───┘          │
-                               ▼
-                    architecture binding
-                               │
-              evidence ◄───────┼──────► scheduling
-                               │
-                               ▼
-                    simulation / emission
-                               │
-                               ▼
-                    observation / calibration
+workload ──► synthesizer/frontend ──► ModelIR
+                                       │
+                         lowering/passes ──► portable planning
+                                       │               │
+system ─────────────────────────► analysis              ▼
+                                       │    architecture binding
+evidence ──────────────────────────────┘               │
+                                                       ▼
+                                            simulation / emission
 ```
 
-Canonical IR、binding、pass 与 lowering 基础设施位于 `src/blueprinting/synthesizer/`。分析子系统则是同级的 `src/blueprinting/analysis/`：synthesizer 产出显式 workload 与 plan facts，analysis 再用解析模型和外部证据评估这些事实。Analysis 可以依赖 canonical synthesis contract，但调用方不能把 cost evidence 当作隐式 lowering 决策。
+依赖方向是显式的：workload contract 不依赖 system description；system description 不依赖 analysis policy；analysis 不构造 canonical plan。Synthesizer 物化 workload/plan facts，analysis 再使用 system description 与外部 evidence 评估这些事实。调用方不能把 cost evidence 当作隐式 lowering 决策。
 
 ## 当前源码映射
 
 | 关注点 | 源码 | 状态 |
 |---|---|---|
+| Workload semantic 与 logical mapping intent | `workload/` | Implemented Transformer slice |
+| Chip、memory、interconnect 与聚合 system profile | `system/` | Implemented limited profile adapter |
 | ID、expression、codec、frozen value | `synthesizer/{ids,expr,codec,frozen}.py` | Implemented |
 | Canonical 形式化表示（`*IR`） | `synthesizer/ir/` | Implemented contracts |
 | Binding 与 session | `synthesizer/{bindings,session}.py` | Implemented |
 | Analysis/transformation transaction | `synthesizer/passes/base.py` | Implemented |
-| Transformer frontend | `synthesizer/models/` | Implemented slice |
+| Workload-to-IR/session frontend | `synthesizer/frontend/` | Implemented Transformer slice |
 | Workload 与 cost analysis | `analysis/` | Implemented slice |
 | Transformer derivation pass | `synthesizer/lowering/transformer.py` | Implemented through portable plan |
-| 当前 hardware evidence adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
+| 当前 system cost adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
 | Architecture model/search、evidence service、simulation、emission | Accepted boundary | Planned |
