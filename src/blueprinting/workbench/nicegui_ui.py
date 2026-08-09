@@ -28,6 +28,7 @@ from blueprinting.application import (
 
 from .catalog import ConfigCatalog, default_catalog
 from .chrome_trace import perfetto_open_javascript, portable_projection_trace_json
+from .evidence_lab import EvidenceLabPanel
 from .float_analysis import FloatAnalysisPanel
 from .nicegui_theme import METRIC_COLORS, WORKBENCH_CSS
 from .presentation import (
@@ -76,6 +77,7 @@ _BOTTLENECK_LABELS = {
 class WorkbenchMode(Enum):
     ANALYSIS = "analysis"
     SWEEP = "sweep"
+    EVIDENCE = "evidence"
     FLOAT = "float"
 
 
@@ -608,6 +610,7 @@ class BlueprintingWorkbench:
         self.batch_pp_filter: Any | None = None
         self.batch_dp_filter: Any | None = None
         self.batch_grid: Any | None = None
+        self.evidence_panel: EvidenceLabPanel | None = None
         self.float_panel: FloatAnalysisPanel | None = None
 
     def build(self) -> None:
@@ -644,6 +647,11 @@ class BlueprintingWorkbench:
                         "批量探索",
                         icon="scatter_plot",
                     ).mark("mode-sweep")
+                    self.evidence_mode_tab = ui.tab(
+                        WorkbenchMode.EVIDENCE.value,
+                        "性能证据",
+                        icon="monitoring",
+                    ).mark("mode-evidence")
                     self.float_mode_tab = ui.tab(
                         WorkbenchMode.FLOAT.value,
                         "浮点分析",
@@ -715,7 +723,7 @@ class BlueprintingWorkbench:
         self.mode = WorkbenchMode(str(event.value))
         self.local_error = None
         self.config_dialog.close()
-        if self.form is not None and self.mode is not WorkbenchMode.FLOAT:
+        if self.form is not None and self.mode in {WorkbenchMode.ANALYSIS, WorkbenchMode.SWEEP}:
             self.form.set_mode(self.mode)
         self._render_sidebar_controls()
         self._render_workspace()
@@ -747,6 +755,14 @@ class BlueprintingWorkbench:
         self.quick_pp = None
         self.quick_dp = None
         self.quick_calibration = None
+        if self.mode is WorkbenchMode.EVIDENCE:
+            with self.sidebar_controls:
+                ui.label("EVIDENCE CONTROLS").classes("bp-sidebar-kicker")
+                with ui.element("section").classes("bp-sidebar-controls-card"):
+                    ui.label("只读证据目录").classes("bp-sidebar-title")
+                    ui.label("Vidur Phi-2 · A100 · exact selectors").classes("bp-sidebar-meta")
+                    ui.label("GEMM primitive 在主视图切换。 ").classes("bp-sidebar-meta")
+            return
         if self.mode is WorkbenchMode.FLOAT:
             with self.sidebar_controls:
                 ui.label("NUMERIC CONTROLS").classes("bp-sidebar-kicker")
@@ -940,6 +956,9 @@ class BlueprintingWorkbench:
         with self.workspace:
             if self.busy:
                 self._render_loading()
+            elif self.mode is WorkbenchMode.EVIDENCE:
+                self.evidence_panel = EvidenceLabPanel(self.catalog)
+                self.evidence_panel.build()
             elif self.mode is WorkbenchMode.FLOAT:
                 self.float_panel = FloatAnalysisPanel()
                 self.float_panel.build()
@@ -956,6 +975,13 @@ class BlueprintingWorkbench:
         if self.sidebar_summary is None:
             return
         self.sidebar_summary.clear()
+        if self.mode is WorkbenchMode.EVIDENCE:
+            with self.sidebar_summary:
+                ui.label("EVIDENCE STATUS").classes("bp-sidebar-kicker")
+                ui.label("Pinned profile").classes("bp-sidebar-title")
+                ui.label("20 typed records · measured + analytical").classes("bp-sidebar-meta")
+                ui.label("只读 PoC").classes("bp-sidebar-state bp-sidebar-state--ready")
+            return
         if self.mode is WorkbenchMode.FLOAT:
             with self.sidebar_summary:
                 ui.label("NUMERIC STATUS").classes("bp-sidebar-kicker")
@@ -1007,7 +1033,7 @@ class BlueprintingWorkbench:
         if self.sidebar_action_host is None:
             return
         self.sidebar_action_host.clear()
-        if self.mode is WorkbenchMode.FLOAT:
+        if self.mode in {WorkbenchMode.EVIDENCE, WorkbenchMode.FLOAT}:
             return
         if self.form is None:
             return
@@ -1220,6 +1246,7 @@ class BlueprintingWorkbench:
         self._set_quick_controls_busy(True)
         self.analysis_mode_tab.disable()
         self.sweep_mode_tab.disable()
+        self.evidence_mode_tab.disable()
         self.float_mode_tab.disable()
         self.config_dialog.close()
         self._render_workspace()
@@ -1239,6 +1266,7 @@ class BlueprintingWorkbench:
             self._set_quick_controls_busy(False)
             self.analysis_mode_tab.enable()
             self.sweep_mode_tab.enable()
+            self.evidence_mode_tab.enable()
             self.float_mode_tab.enable()
             self._render_workspace()
 
@@ -1261,6 +1289,7 @@ class BlueprintingWorkbench:
         self._set_quick_controls_busy(True)
         self.analysis_mode_tab.disable()
         self.sweep_mode_tab.disable()
+        self.evidence_mode_tab.disable()
         self.float_mode_tab.disable()
         self.config_dialog.close()
         self.progress_timer.activate()
@@ -1290,6 +1319,7 @@ class BlueprintingWorkbench:
             self._set_quick_controls_busy(False)
             self.analysis_mode_tab.enable()
             self.sweep_mode_tab.enable()
+            self.evidence_mode_tab.enable()
             self.float_mode_tab.enable()
             self._render_workspace()
 

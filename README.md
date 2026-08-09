@@ -134,9 +134,10 @@ uv run blueprinting-workbench
 blueprinting --help
 ```
 
-It provides a shared configuration surface for single-point analysis, canonical IR derivation audit, and bounded
-TP/PP/DP strategy exploration. Analysis runs outside the UI event loop, and failed candidates remain visible as
-structured diagnostics.
+It provides a shared configuration surface for single-point analysis, canonical IR derivation audit, bounded
+TP/PP/DP strategy exploration, and a read-only performance-evidence lab. The evidence PoC catalogs the pinned
+Vidur Phi-2/A100 records and compares exact GEMM samples with the analytical roofline on identical workload facts.
+Analysis runs outside the UI event loop, and failed candidates remain visible as structured diagnostics.
 
 The existing Calculon Streamlit tools remain isolated as an optional legacy interface. Floating-point analysis is available in the primary NiceGUI workbench:
 

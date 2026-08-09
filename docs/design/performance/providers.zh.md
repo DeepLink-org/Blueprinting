@@ -172,6 +172,12 @@ Application 入口同样接受 `cost_resolver` 与 `cost_context`，因此导入
 
 Inference task query 直接从 canonical `PlanTask.workload` 推导；GEMM dimension 与 local attention-head dimension 来自 model 和 TP facts。Tensor-parallel collective 与 pipeline P2P 使用同一个 resolver。所有 task 都必须被已安装的 provider 覆盖——通常是 exact database 后接 roofline——unknown task 不会被静默变成零。
 
+## 性能证据界面 PoC
+
+NiceGUI workbench 的“性能证据”入口提供只读 evidence catalog、operation coverage、GEMM 特性曲线和 query/record inspector。首个 pinned dataset 是 Vidur Phi-2/A100 profile；它连同 source revision、manifest 与 license 一起进入 base wheel。
+
+PoC 只对四类 GEMM semantic 绘制 database-versus-roofline 对比，因为这些 selector 可以无歧义地重建 `M/N/K`、FLOPs 与 bytes。Measured series 只显示 exact sample point，不声明插值；analytical series 是相同 workload facts 下的 compute/memory roofline，不是事件级仿真。Attention 与其他 operation 当前只进入 coverage catalog，尚不伪造通用解析对比公式。
+
 ## 已实现边界与后续工作
 
 当前已经实现：
@@ -183,6 +189,7 @@ Inference task query 直接从 canonical `PlanTask.workload` 推导；GEMM dimen
 - 通用 simulator/profiler table ingestion；
 - 显式 Vidur 与四类 AIConfigurator ingestion；
 - inference task/pipeline 接入与回归测试。
+- pinned Vidur profile 的只读 evidence catalog 与 GEMM curve comparison PoC。
 
 仍未实现：
 
@@ -193,5 +200,6 @@ Inference task query 直接从 canonical `PlanTask.workload` 推导；GEMM dimen
 - contention、overlap、queueing 与 plan-level discrete-event simulation；
 - 作为 normalized planner objective 的 energy/power metric；
 - observation ingestion 与 calibration revision。
+- 多数据库 repository/registry、用户导入与显式 evidence promotion UI。
 
 这些边界非常重要：task latency resolution 是 evidence layer，不是已经完成的 hardware simulator 或 serving simulator。

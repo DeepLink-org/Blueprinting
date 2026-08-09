@@ -172,6 +172,12 @@ The application boundary also accepts `cost_resolver` and `cost_context`, so evi
 
 Inference task queries are derived from canonical `PlanTask.workload`; GEMM dimensions and local attention-head dimensions are derived from model and TP facts. Tensor-parallel collectives and pipeline P2P use the same resolver. All tasks must be covered by an installed provider—normally an exact database followed by roofline—so an unknown task never becomes zero.
 
+## Performance-evidence UI PoC
+
+The NiceGUI workbench's Performance Evidence entry provides a read-only evidence catalog, operation coverage, GEMM characteristic curves, and a query/record inspector. Its first pinned dataset is the Vidur Phi-2/A100 profile, shipped in the base wheel together with its source revision, manifest, and license.
+
+The PoC compares only four GEMM semantics because their selectors can reconstruct `M/N/K`, FLOPs, and bytes without ambiguity. The measured series contains exact sample points and makes no interpolation claim; the analytical series is a compute/memory roofline over the same workload facts, not an event-level simulation. Attention and other operations currently appear only in the coverage catalog rather than receiving a fabricated generic analytical formula.
+
 ## Implemented boundary and next steps
 
 Implemented now:
@@ -183,6 +189,7 @@ Implemented now:
 - generic simulator/profiler table ingestion;
 - explicit Vidur and four-family AIConfigurator ingestion;
 - inference task and pipeline integration with regression tests.
+- a read-only evidence catalog and GEMM curve-comparison PoC over the pinned Vidur profile.
 
 Still missing:
 
@@ -193,5 +200,6 @@ Still missing:
 - contention, overlap, queueing, and plan-level discrete-event simulation;
 - energy/power metrics as normalized planner objectives;
 - observation ingestion and calibration revisions.
+- multi-database repository/registry, user import, and explicit evidence-promotion UI.
 
 These omissions are important: task latency resolution is an evidence layer, not a completed hardware or serving simulator.

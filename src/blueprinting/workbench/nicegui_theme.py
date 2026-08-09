@@ -124,7 +124,7 @@ body {
 }
 
 .bp-mode-switch {
-  min-height: 42px;
+  min-height: 79px;
   padding: 3px;
   border: 1px solid var(--bp-sidebar-line);
   border-radius: 8px;
@@ -132,17 +132,30 @@ body {
 }
 
 .bp-mode-switch .q-tabs__content {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
+  overflow: visible !important;
+  transform: none !important;
 }
 
 .bp-mode-switch .q-tab {
+  width: 100%;
+  min-width: 0;
   min-height: 34px;
-  flex: 1 1 0;
-  padding: 0 7px;
+  padding: 0 5px;
   color: var(--bp-sidebar-muted);
   border: 1px solid transparent;
   border-radius: 6px;
   font-size: 11px;
+}
+
+.bp-mode-switch .q-tabs__arrow {
+  display: none !important;
+}
+
+.bp-mode-switch .q-tab__indicator {
+  display: none !important;
 }
 
 .bp-mode-switch .q-tab__content {

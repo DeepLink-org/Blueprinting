@@ -123,6 +123,7 @@ packages = ["src/blueprinting", "src/calculon"]
 [tool.hatch.build.targets.wheel.force-include]
 "data/models" = "blueprinting/presets/models"
 "data/systems" = "blueprinting/presets/systems"
+"data/validation/vidur/phi2_a100_tp1" = "blueprinting/presets/evidence/vidur/phi2_a100_tp1"
 
 [tool.hatch.envs.default]
 features = ["dev", "full"]

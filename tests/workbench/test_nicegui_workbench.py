@@ -10,6 +10,7 @@ from nicegui import core
 from nicegui.testing import User, user_simulation
 
 from blueprinting.workbench.nicegui_app import build_parser, run_workbench
+from blueprinting.workbench.nicegui_theme import WORKBENCH_CSS
 from blueprinting.workbench.nicegui_ui import create_workbench_root
 
 
@@ -51,6 +52,7 @@ async def test_nicegui_workbench_loads_without_eager_analysis(
         await user.should_see(marker="run-analysis")
         await user.should_see(marker="sidebar-run-analysis")
         await user.should_see("Calculon / Streamlit Legacy")
+        await user.should_see(marker="mode-evidence")
         await user.should_see(marker="mode-float")
 
 
@@ -149,6 +151,22 @@ async def test_nicegui_float_analysis_is_available_without_running_workload_anal
         await user.should_see("FP7(E4M2) 位级计算器")
 
 
+async def test_nicegui_evidence_lab_compares_measured_and_analytical_curves(
+    simulated_user: Callable[[Callable[[], None]], AbstractAsyncContextManager[User]],
+) -> None:
+    async with simulated_user(create_workbench_root()) as user:
+        await user.open("/")
+        user.find(marker="mode-evidence").click()
+
+        await user.should_see("性能证据实验室")
+        await user.should_see("Evidence catalog")
+        await user.should_see("Operation coverage")
+        await user.should_see("Characteristic curve")
+        await user.should_see("Vidur exact records")
+        await user.should_see(marker="evidence-semantic-operation")
+        await user.should_see(marker="evidence-query-inspector")
+
+
 def test_workbench_cli_defaults_to_local_only() -> None:
     args = build_parser().parse_args([])
 
@@ -156,6 +174,13 @@ def test_workbench_cli_defaults_to_local_only() -> None:
     assert args.port == 8080
     assert not args.no_open
     assert not args.reload
+
+
+def test_sidebar_mode_switch_uses_a_non_scrolling_two_by_two_grid() -> None:
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in WORKBENCH_CSS
+    assert ".bp-mode-switch .q-tabs__arrow" in WORKBENCH_CSS
+    assert ".bp-mode-switch .q-tab__indicator" in WORKBENCH_CSS
+    assert "display: none !important" in WORKBENCH_CSS
 
 
 def test_workbench_cli_accepts_server_overrides() -> None:
