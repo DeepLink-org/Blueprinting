@@ -124,53 +124,47 @@ body {
 }
 
 .bp-mode-switch {
-  min-height: 79px;
-  padding: 3px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--bp-sidebar-line);
   border-radius: 8px;
   background: rgba(15, 23, 42, .78);
 }
 
-.bp-mode-switch .q-tabs__content {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  overflow: visible !important;
-  transform: none !important;
-}
-
-.bp-mode-switch .q-tab {
+.bp-mode-switch .bp-mode-button {
   width: 100%;
   min-width: 0;
-  min-height: 34px;
-  padding: 0 5px;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 6px;
   color: var(--bp-sidebar-muted);
   border: 1px solid transparent;
   border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
   font-size: 11px;
 }
 
-.bp-mode-switch .q-tabs__arrow {
-  display: none !important;
-}
-
-.bp-mode-switch .q-tab__indicator {
-  display: none !important;
-}
-
-.bp-mode-switch .q-tab__content {
-  flex-direction: row;
+.bp-mode-switch .bp-mode-button .q-btn__content {
   justify-content: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
-.bp-mode-switch .q-tab--active {
+.bp-mode-switch .bp-mode-button .q-icon {
+  font-size: 18px;
+}
+
+.bp-mode-switch .bp-mode-button--active {
   color: #dbeafe;
   border-color: rgba(96, 165, 250, .18);
   background: rgba(37, 99, 235, .18);
 }
 
-.bp-mode-switch .q-tab--active .q-icon {
+.bp-mode-switch .bp-mode-button--active .q-icon {
   color: #60a5fa;
 }
 

@@ -178,9 +178,10 @@ def test_workbench_cli_defaults_to_local_only() -> None:
 
 def test_sidebar_mode_switch_uses_a_non_scrolling_two_by_two_grid() -> None:
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in WORKBENCH_CSS
-    assert ".bp-mode-switch .q-tabs__arrow" in WORKBENCH_CSS
-    assert ".bp-mode-switch .q-tab__indicator" in WORKBENCH_CSS
-    assert "display: none !important" in WORKBENCH_CSS
+    assert ".bp-mode-switch .bp-mode-button" in WORKBENCH_CSS
+    assert ".bp-mode-switch .bp-mode-button--active" in WORKBENCH_CSS
+    assert "q-tabs__arrow" not in WORKBENCH_CSS
+    assert "q-tab__indicator" not in WORKBENCH_CSS
 
 
 def test_workbench_cli_accepts_server_overrides() -> None:
