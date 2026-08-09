@@ -6,7 +6,7 @@
 
 ### Semantic domain
 
-`ModelIR` represents tensor and scalar values, typed operations, regions, dataflow, state roles, and effects. It can represent training and inference semantics, symbolic dimensions, parameters, activations, optimizer state, and KV-cache state where known.
+`ModelIR` represents tensor values, typed operations, explicit dataflow, state roles, and effects. It can represent training and inference semantics, symbolic dimensions, parameters, activations, optimizer state, and KV-cache state where known. Semantic regions remain a future contract rather than a current field.
 
 ### Core entities
 
@@ -14,9 +14,8 @@
 ModelIR
 ├── values: ModelValue[]
 ├── operations: ModelOperation[]
-├── regions: SemanticRegion[]
 ├── inputs / outputs
-├── extensions
+├── attributes
 └── header
 ```
 
@@ -28,7 +27,7 @@ Operations explicitly reference input and output values. Effects such as paramet
 
 ### Well-formedness
 
-The verifier checks unique IDs, definition/use closure, type compatibility, region ownership, input/output reachability, effect ordering, symbolic-domain validity, and deterministic extensions.
+The current structural verifier checks unique IDs, definition/use closure, input/output references, SSA single definition, target-dialect exclusion, and reserved attributes. Cross-operation type/shape compatibility, region ownership, complete effect ordering, and numerical references still require independent checkers or future verifier work.
 
 ### Transformations
 
@@ -44,12 +43,11 @@ Allowed passes include import, shape/type inference, canonicalization, decomposi
 
 ```text
 DistributedTaskIR
-├── meshes: LogicalMesh[]
-├── ranks: LogicalRank[]
+├── mesh: LogicalMesh
 ├── values: DistributedValue[]
-├── tasks: ComputeTask | CollectiveTask | P2PTask | ReshardTask
-├── dependencies
-├── memory_facts
+├── tasks: DistributedTask[]
+├── inputs / outputs
+├── attributes
 └── lineage to ModelIR
 ```
 
@@ -61,7 +59,7 @@ This IR cannot name CUDA, ROCm, LPU, NCCL, physical routes, physical device IDs,
 
 ### Well-formedness
 
-The verifier checks mesh and rank membership, shard reconstruction, ownership, communication matching, message-volume conservation, reshard completeness, cross-rank dependency closure, and effect order.
+The current structural verifier checks mesh and rank membership, sharding rank and axes, ownership, task/value references, DAG order, and local communication-metadata legality. Shard reconstruction, collective matching, message-volume conservation, reshard completeness, and cross-rank semantic closure remain target capabilities for observers and conformance checkers.
 
 ### Transformations
 
@@ -83,8 +81,8 @@ Model linear(x, w)
 
 The current Transformer frontend emits one coarse decoder-training `ModelIR` operation. `DistributeTransformerTrainingPass` expands it into typed primitive invocations and a local TP task DAG with explicit collectives, recomputation phases, and aggregate block memory facts.
 
-The current graph models one local Transformer block conservatively. Full-model PP/DP graphs, cross-stage values, richer topology, inference regions, and KV-cache distribution remain planned.
+The current training graph models one local Transformer block conservatively. Static inference already implements separate prefill/decode phases, KV-cache state and values, and local TP distribution; full-model PP/DP graphs, cross-stage values, richer topology, and inference regions remain planned.
 
 ## Profiler and verification checkpoint
 
-At `ModelIR`, observers can check shapes, types, effects, and optional numerical references. At `DistributedTaskIR`, they can check shard reconstruction, per-rank work, communication matching, and volume conservation. Neither checkpoint may introduce target duration.
+At `ModelIR`, observers can add shape, type, effect, and optional numerical-reference checks. At `DistributedTaskIR`, they can add shard reconstruction, per-rank work, communication matching, and volume-conservation checks; these capabilities must not be inferred from the current structural verifier. Neither checkpoint may introduce target duration.

@@ -16,6 +16,9 @@ from typing import Any
 
 from blueprinting.analysis import (
     CalibrationMode,
+    CostQueryContext,
+    CostResolver,
+    EstimateUncertainty,
     InferenceCostProvider,
     InferencePhaseEstimate,
     estimate_inference_phase,
@@ -184,6 +187,17 @@ class _DerivedPhase:
 
 
 def _task_reports(plan: PortablePlanIR, estimate: InferencePhaseEstimate) -> tuple[TaskReport, ...]:
+    def uncertainty_report(uncertainty: EstimateUncertainty) -> FrozenDict:
+        return FrozenDict(
+            {
+                "sample_count": uncertainty.sample_count,
+                "standard_deviation_seconds": uncertainty.standard_deviation_seconds,
+                "lower_bound_seconds": uncertainty.lower_bound_seconds,
+                "upper_bound_seconds": uncertainty.upper_bound_seconds,
+                "confidence": uncertainty.confidence,
+            }
+        )
+
     return tuple(
         TaskReport(
             task_id=str(task.id),
@@ -205,7 +219,12 @@ def _task_reports(plan: PortablePlanIR, estimate: InferencePhaseEstimate) -> tup
             analytical_seconds=task_estimate.analytical_seconds,
             evidence_provider=task_estimate.evidence_provider,
             evidence_revision=task_estimate.evidence_revision,
+            evidence_source_revision=task_estimate.evidence_source_revision,
+            evidence_record_ids=task_estimate.evidence_record_ids,
             evidence_match=task_estimate.evidence_match,
+            evidence_method=task_estimate.evidence_method,
+            evidence_uncertainty=uncertainty_report(task_estimate.evidence_uncertainty),
+            evidence_assumptions=task_estimate.evidence_assumptions,
         )
         for task, task_estimate in zip(plan.tasks, estimate.tasks)
     )
@@ -219,13 +238,21 @@ class InferenceAnalysisService:
         analyses: AnalysisStore | None = None,
         *,
         cost_provider: InferenceCostProvider | None = None,
+        cost_resolver: CostResolver | None = None,
+        cost_context: CostQueryContext = CostQueryContext(),
     ) -> None:
+        if cost_provider is not None and cost_resolver is not None:
+            raise ValueError("cost_provider and cost_resolver are mutually exclusive")
+        if not isinstance(cost_context, CostQueryContext):
+            raise TypeError("cost_context must be CostQueryContext")
         self._manager = PassManager(analyses=analyses)
         self._pipeline = PassPipeline.of(
             DistributeTransformerInferencePass(),
             PlanTransformerInferencePass(),
         )
         self._cost_provider = cost_provider
+        self._cost_resolver = cost_resolver
+        self._cost_context = cost_context
 
     def analyze(self, draft: InferenceAnalysisDraft) -> InferenceAnalysisOutcome:
         try:
@@ -333,6 +360,8 @@ class InferenceAnalysisService:
             draft.calibration_mode,
             network_binding=network_binding,
             cost_provider=self._cost_provider,
+            cost_resolver=self._cost_resolver,
+            cost_context=self._cost_context,
         )
         return _DerivedPhase(session.fingerprint, plan, estimate, pipeline.checkpoints)
 
@@ -507,6 +536,7 @@ class InferenceAnalysisService:
                 "hardware_revision": hardware.evidence_revision,
                 "mode": draft.calibration_mode.value,
                 "cost_provider_revision": self._cost_provider.revision if self._cost_provider is not None else "none",
+                "cost_resolver_revision": self._cost_resolver.revision if self._cost_resolver is not None else "none",
                 "revisions": FrozenDict(evidence_revisions),
             }
         )
@@ -555,7 +585,7 @@ class InferenceAnalysisService:
                 "replicas 只参与映射合法性与 world-size 记账；当前报告是单 replica cohort latency，不估算跨 replica serving capacity。",
                 "当前 workload dialect 支持 dense multi-head attention 与非 gated MLP；embedding、LM head 和 sampler 尚未建模。",
                 "PortablePlanIR 尚未绑定 attention implementation；working memory 使用未融合 score materialization 的保守上界。",
-                "除非提供 Blueprinting cost provider，组件耗时使用共享 system profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
+                "除非提供 Blueprinting cost resolver 或 legacy provider，组件耗时使用共享 system profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
             ),
         )
         return InferenceAnalysisOutcome(draft.fingerprint, diagnostics, report)

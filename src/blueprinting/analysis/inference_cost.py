@@ -12,7 +12,7 @@ from blueprinting.workload import TransformerModelSpec
 from ..synthesizer.bindings import InferencePhase
 from ..synthesizer.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
 from ..system import SystemProfile
-from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject
+from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject, EstimateUncertainty
 from .cost_model import CalibrationMode
 from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery
 
@@ -31,6 +31,8 @@ class InferenceTaskEstimate:
     evidence_record_ids: tuple[str, ...]
     evidence_match: str
     evidence_method: str
+    evidence_uncertainty: EstimateUncertainty
+    evidence_assumptions: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -245,6 +247,8 @@ def _task_estimate(
     record_ids: tuple[str, ...] = ()
     match = mode.value
     method = "analytical"
+    uncertainty = EstimateUncertainty()
+    assumptions: tuple[str, ...] = ()
     total_seconds = analytical_seconds
     if cost_resolver is not None:
         resolution = cost_resolver.resolve(
@@ -269,6 +273,8 @@ def _task_estimate(
         record_ids = evidence.raw_record_ids
         match = evidence.match.value
         method = evidence.method.value
+        uncertainty = evidence.uncertainty
+        assumptions = evidence.assumptions
     elif cost_provider is not None:
         evidence = cost_provider.resolve(
             inference_evidence_query_for(
@@ -302,6 +308,8 @@ def _task_estimate(
         evidence_record_ids=record_ids,
         evidence_match=match,
         evidence_method=method,
+        evidence_uncertainty=uncertainty,
+        evidence_assumptions=assumptions,
     )
 
 

@@ -472,7 +472,9 @@ def _tp_communication(
     message = elements * bytes_per_element
     reduction_operations = elements * (tp - 1) // tp if tp > 1 else 0
     memory = 2 * message if tp > 1 else 0
-    split = execution.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER
+    # A size-one TP mesh cannot shard a sequence.  Keep the two communication
+    # policies semantically equivalent instead of charging phantom shard buffers.
+    split = tp > 1 and execution.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER
 
     forward_comm = None
     gradient_comm = None
@@ -533,8 +535,7 @@ def _tp_communication(
 
 def _build_layers(model: TransformerModelSpec, execution: _TrainingContext) -> tuple[_Layer, ...]:
     tp = execution.tensor_parallel
-    if model.hidden_size % tp or model.feedforward_size % tp or model.attention_heads % tp:
-        raise ValueError("hidden, feedforward, and attention heads must divide tensor parallelism")
+    execution.mapping.validate_model(model)
 
     full_recompute = execution.recompute is RecomputePolicy.FULL
     attention_recompute = execution.recompute in {RecomputePolicy.FULL, RecomputePolicy.ATTENTION}

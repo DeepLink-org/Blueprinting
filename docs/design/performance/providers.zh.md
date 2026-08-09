@@ -168,6 +168,8 @@ estimate = estimate_inference_phase(
 )
 ```
 
+Application 入口同样接受 `cost_resolver` 与 `cost_context`，因此导入 database 的证据不需要绕过 `InferenceAnalysisService`。Legacy `InferenceCostProvider` 仍作为互斥的兼容 seam 保留。Resolver 返回的 provider/source revision、raw record ID、method、match、assumption 与逐 task uncertainty 会进入 application task report；在没有相关性模型时，service 不会擅自合成 phase-level variance。
+
 Inference task query 直接从 canonical `PlanTask.workload` 推导；GEMM dimension 与 local attention-head dimension 来自 model 和 TP facts。Tensor-parallel collective 与 pipeline P2P 使用同一个 resolver。所有 task 都必须被已安装的 provider 覆盖——通常是 exact database 后接 roofline——unknown task 不会被静默变成零。
 
 ## 已实现边界与后续工作

@@ -5,7 +5,20 @@ from pathlib import Path
 
 import pytest
 
+from blueprinting.analysis import (
+    CalibrationMode,
+    CostResolver,
+    CostSubject,
+    EstimateMethod,
+    EvidenceProvenance,
+    PerformanceDatabase,
+    PerformanceDatabaseProvider,
+    PerformanceRecord,
+    RooflineCostProvider,
+)
 from blueprinting.application import BlueprintingService, InferenceAnalysisDraft
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.system import SystemProfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,3 +120,68 @@ def test_request_past_model_context_returns_a_structured_diagnostic():
     assert not outcome.ok
     assert outcome.diagnostics[0].code == "inference.configuration.invalid"
     assert "cannot exceed" in outcome.diagnostics[0].message
+
+
+def test_service_routes_resolver_evidence_and_uncertainty_to_task_reports():
+    draft = _draft(generated_tokens=2)
+    hardware = SystemProfile.from_mapping(
+        draft.hardware_name,
+        dict(draft.hardware_data.items()),
+        datatype="float16",
+    )
+    provenance = EvidenceProvenance(
+        source="fixture-simulator",
+        source_revision="sim-r1",
+        importer="fixture-importer-v1",
+        data_digest="fixture-data",
+        method=EstimateMethod.SIMULATED,
+    )
+    records = tuple(
+        PerformanceRecord(
+            record_id=f"attention-{index}",
+            subject=CostSubject.OPERATOR,
+            operation="attention_core",
+            hardware=hardware.name,
+            datatype=hardware.datatype,
+            seconds=seconds,
+            selector=FrozenDict({"semantic_operation": "attention_core"}),
+            provenance=provenance,
+        )
+        for index, seconds in enumerate((0.001, 0.003), start=1)
+    )
+    database_provider = PerformanceDatabaseProvider(PerformanceDatabase("application", records))
+    resolver = CostResolver(
+        (
+            database_provider,
+            RooflineCostProvider(hardware, mode=CalibrationMode.SYSTEM_EVIDENCE),
+        )
+    )
+
+    outcome = BlueprintingService(inference_cost_resolver=resolver).analyze_inference(draft)
+
+    assert outcome.ok
+    assert outcome.report is not None
+    attention = next(task for task in outcome.report.tasks if task.source_layer == "attention.core")
+    fallback = next(task for task in outcome.report.tasks if task.source_layer == "attention.input_norm")
+    assert attention.evidence_provider == database_provider.name
+    assert attention.evidence_source_revision == "sim-r1"
+    assert attention.evidence_record_ids == ("attention-1", "attention-2")
+    assert attention.evidence_method == "simulated"
+    assert attention.evidence_uncertainty["sample_count"] == 2
+    assert attention.evidence_uncertainty["standard_deviation_seconds"] == pytest.approx(0.001)
+    assert attention.evidence_assumptions
+    assert fallback.evidence_method == "analytical"
+    assert outcome.report.evidence["cost_resolver_revision"] == resolver.revision
+
+
+def test_service_rejects_legacy_provider_and_resolver_together():
+    draft = _draft(generated_tokens=1)
+    hardware = SystemProfile.from_mapping(
+        draft.hardware_name,
+        dict(draft.hardware_data.items()),
+        datatype="float16",
+    )
+    resolver = CostResolver((RooflineCostProvider(hardware),))
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        BlueprintingService(inference_cost_provider=object(), inference_cost_resolver=resolver)

@@ -27,6 +27,8 @@ from blueprinting.application import (
 )
 
 from .catalog import ConfigCatalog, default_catalog
+from .chrome_trace import perfetto_open_javascript, portable_projection_trace_json
+from .float_analysis import FloatAnalysisPanel
 from .nicegui_theme import METRIC_COLORS, WORKBENCH_CSS
 from .presentation import (
     analysis_metrics,
@@ -74,6 +76,7 @@ _BOTTLENECK_LABELS = {
 class WorkbenchMode(Enum):
     ANALYSIS = "analysis"
     SWEEP = "sweep"
+    FLOAT = "float"
 
 
 def _positive_int(value: Any, label: str) -> int:
@@ -605,6 +608,7 @@ class BlueprintingWorkbench:
         self.batch_pp_filter: Any | None = None
         self.batch_dp_filter: Any | None = None
         self.batch_grid: Any | None = None
+        self.float_panel: FloatAnalysisPanel | None = None
 
     def build(self) -> None:
         ui.add_css(WORKBENCH_CSS)
@@ -640,6 +644,11 @@ class BlueprintingWorkbench:
                         "批量探索",
                         icon="scatter_plot",
                     ).mark("mode-sweep")
+                    self.float_mode_tab = ui.tab(
+                        WorkbenchMode.FLOAT.value,
+                        "浮点分析",
+                        icon="calculate",
+                    ).mark("mode-float")
                 ui.separator().classes("bp-sidebar-rule")
                 self.sidebar_controls = ui.column().classes("w-full gap-2")
                 self.sidebar_summary = ui.column().classes("bp-sidebar-summary w-full gap-2")
@@ -648,7 +657,7 @@ class BlueprintingWorkbench:
                     with ui.row().classes("items-center gap-2"):
                         ui.element("span").classes("bp-service-dot")
                         ui.label("本地服务可用").classes("bp-sidebar-meta")
-                    ui.label("Portable plan · Analytical evidence").classes("bp-sidebar-meta bp-mono")
+                    ui.label("Formal plan · Numerical evidence").classes("bp-sidebar-meta bp-mono")
                     ui.button("Legacy 工具", icon="history", on_click=self.legacy_dialog.open).props(
                         "flat no-caps align=left"
                     ).classes("bp-sidebar-legacy w-full")
@@ -693,7 +702,7 @@ class BlueprintingWorkbench:
                     ui.label("Calculon / Streamlit Legacy").classes("bp-card-title")
                     ui.label("旧工具保持隔离，不参与 Blueprinting 主分析路径。 ").classes("bp-card-copy")
             ui.separator().classes("my-2")
-            ui.label("需要旧 Calculon 或浮点工具时，请单独启动：").classes("text-sm")
+            ui.label("需要旧 Calculon 工具时，请单独启动：").classes("text-sm")
             ui.code("uv run streamlit run streamlit_app.py", language="bash").classes("bp-code")
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.link("打开 localhost:8501", "http://127.0.0.1:8501", new_tab=True).classes("text-secondary")
@@ -706,9 +715,9 @@ class BlueprintingWorkbench:
         self.mode = WorkbenchMode(str(event.value))
         self.local_error = None
         self.config_dialog.close()
-        if self.form is not None:
+        if self.form is not None and self.mode is not WorkbenchMode.FLOAT:
             self.form.set_mode(self.mode)
-            self._render_sidebar_controls()
+        self._render_sidebar_controls()
         self._render_workspace()
 
     def _ensure_form(self, host: Any) -> None:
@@ -728,7 +737,7 @@ class BlueprintingWorkbench:
             self.form.root.move(self.drawer_form_host)
 
     def _render_sidebar_controls(self) -> None:
-        if self.sidebar_controls is None or self.form is None:
+        if self.sidebar_controls is None:
             return
         self.sidebar_controls.clear()
         self.quick_controls = []
@@ -738,6 +747,15 @@ class BlueprintingWorkbench:
         self.quick_pp = None
         self.quick_dp = None
         self.quick_calibration = None
+        if self.mode is WorkbenchMode.FLOAT:
+            with self.sidebar_controls:
+                ui.label("NUMERIC CONTROLS").classes("bp-sidebar-kicker")
+                with ui.element("section").classes("bp-sidebar-controls-card"):
+                    ui.label("浮点格式").classes("bp-sidebar-title")
+                    ui.label("格式位宽、编码位和观察范围在主视图中交互调整。 ").classes("bp-sidebar-meta")
+            return
+        if self.form is None:
+            return
         with self.sidebar_controls:
             ui.label("CASESET CONTROLS" if self.mode is WorkbenchMode.SWEEP else "CASE CONTROLS").classes(
                 "bp-sidebar-kicker"
@@ -922,6 +940,9 @@ class BlueprintingWorkbench:
         with self.workspace:
             if self.busy:
                 self._render_loading()
+            elif self.mode is WorkbenchMode.FLOAT:
+                self.float_panel = FloatAnalysisPanel()
+                self.float_panel.build()
             elif self.mode is WorkbenchMode.ANALYSIS and self.analysis_outcome is not None:
                 self._render_analysis_result()
             elif self.mode is WorkbenchMode.SWEEP and self.sweep_report is not None:
@@ -935,6 +956,12 @@ class BlueprintingWorkbench:
         if self.sidebar_summary is None:
             return
         self.sidebar_summary.clear()
+        if self.mode is WorkbenchMode.FLOAT:
+            with self.sidebar_summary:
+                ui.label("NUMERIC STATUS").classes("bp-sidebar-kicker")
+                ui.label("交互分析").classes("bp-sidebar-title")
+                ui.label("当前视图不运行 workload derivation。 ").classes("bp-sidebar-meta")
+            return
         with self.sidebar_summary:
             ui.label("CASESET STATUS" if self.mode is WorkbenchMode.SWEEP else "CASE STATUS").classes(
                 "bp-sidebar-kicker"
@@ -980,6 +1007,8 @@ class BlueprintingWorkbench:
         if self.sidebar_action_host is None:
             return
         self.sidebar_action_host.clear()
+        if self.mode is WorkbenchMode.FLOAT:
+            return
         if self.form is None:
             return
 
@@ -1191,6 +1220,7 @@ class BlueprintingWorkbench:
         self._set_quick_controls_busy(True)
         self.analysis_mode_tab.disable()
         self.sweep_mode_tab.disable()
+        self.float_mode_tab.disable()
         self.config_dialog.close()
         self._render_workspace()
         try:
@@ -1209,6 +1239,7 @@ class BlueprintingWorkbench:
             self._set_quick_controls_busy(False)
             self.analysis_mode_tab.enable()
             self.sweep_mode_tab.enable()
+            self.float_mode_tab.enable()
             self._render_workspace()
 
     async def run_sweep(self) -> None:
@@ -1230,6 +1261,7 @@ class BlueprintingWorkbench:
         self._set_quick_controls_busy(True)
         self.analysis_mode_tab.disable()
         self.sweep_mode_tab.disable()
+        self.float_mode_tab.disable()
         self.config_dialog.close()
         self.progress_timer.activate()
         self._render_workspace()
@@ -1258,6 +1290,7 @@ class BlueprintingWorkbench:
             self._set_quick_controls_busy(False)
             self.analysis_mode_tab.enable()
             self.sweep_mode_tab.enable()
+            self.float_mode_tab.enable()
             self._render_workspace()
 
     def _render_loading(self) -> None:
@@ -1454,6 +1487,8 @@ class BlueprintingWorkbench:
                 ).classes("w-full bp-grid").style("height: 430px")
 
         projection = timeline_summary(report)
+        trace_filename = f"portable-projection-{report.plan_digest[:12]}.json"
+        trace_json = portable_projection_trace_json(report)
         with evidence_surface, ui.element("section").classes("bp-evidence-section"):
             with ui.row().classes("bp-chain-header w-full items-start justify-between gap-3"):
                 with ui.column().classes("gap-0"):
@@ -1464,6 +1499,17 @@ class BlueprintingWorkbench:
                 with ui.row().classes("gap-1"):
                     ui.label("BLOCK SCOPE").classes("bp-fidelity-tag bp-mono")
                     ui.label("DEPENDENCY PROJECTION").classes("bp-fidelity-tag bp-mono")
+            with ui.row().classes("items-center gap-2"):
+                ui.button("在 Perfetto 中打开", icon="open_in_new").props("outline dense no-caps").classes(
+                    "bp-secondary-action"
+                ).mark("open-perfetto").on(
+                    "click",
+                    js_handler=perfetto_open_javascript(
+                        trace_json,
+                        title=f"Blueprinting portable projection · {report.plan_digest[:12]}",
+                        filename=trace_filename,
+                    ),
+                )
             with ui.row().classes("bp-timeline-legend items-center gap-4"):
                 for engine, label in (("matrix", "Matrix"), ("vector", "Vector"), ("collective", "Collective")):
                     with ui.row().classes("items-center gap-1"):

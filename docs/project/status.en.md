@@ -21,6 +21,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Typed Transformer training workload accounting | **Implemented** | exact block operations, bytes, collectives, recomputation, and phases |
 | Static Transformer inference phase planning | **Implemented slice** | independently verified prefill/decode plans, KV capacity, and decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path reaches `PortablePlanIR` |
+| Portable dependency-projection Chrome Trace export | **Implemented presentation adapter** | the workbench can open it in Perfetto through a PING/PONG bridge; metadata explicitly says `executable=false`, and the export is not a `TimelineBundle` |
 | Versioned compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` and two analytical estimate modes |
 | Normalized task-cost resolution and performance-data ingestion | **Implemented slice** | immutable query/result/store, ordered resolver, roofline fallback, generic simulator tables, Vidur profiles, and four AIConfigurator table families |
 | Vidur raw component-profile alignment | **Implemented experiment** | exact-key CSV lookup after independent lowering/costing, with component coverage and non-cancelling error attribution |

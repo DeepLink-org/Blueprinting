@@ -6,7 +6,7 @@
 
 ### 语义域
 
-`ModelIR` 表示 tensor/scalar value、typed operation、region、dataflow、state role 和 effect。它可以表示 training/inference semantic、symbolic dimension、parameter、activation、optimizer state，以及已知情况下的 KV-cache state。
+`ModelIR` 表示 tensor value、typed operation、显式 dataflow、state role 和 effect。它可以表示 training/inference semantic、symbolic dimension、parameter、activation、optimizer state，以及已知情况下的 KV-cache state。Semantic region 仍是后续 contract，不是当前字段。
 
 ### 核心 Entity
 
@@ -14,9 +14,8 @@
 ModelIR
 ├── values: ModelValue[]
 ├── operations: ModelOperation[]
-├── regions: SemanticRegion[]
 ├── inputs / outputs
-├── extensions
+├── attributes
 └── header
 ```
 
@@ -28,7 +27,7 @@ Operation 显式引用 input/output value。Parameter update、random state、mu
 
 ### Well-formedness
 
-Verifier 检查 unique ID、definition/use closure、type compatibility、region ownership、input/output reachability、effect ordering、symbolic-domain validity 和 deterministic extension。
+当前 structural verifier 检查 unique ID、definition/use closure、input/output reference、SSA single definition、target dialect exclusion 与 reserved attributes。Operation 间 type/shape compatibility、region ownership、完整 effect ordering 与 numerical reference 仍需独立 checker 或后续 verifier 实现。
 
 ### Transformation
 
@@ -44,12 +43,11 @@ Verifier 检查 unique ID、definition/use closure、type compatibility、region
 
 ```text
 DistributedTaskIR
-├── meshes: LogicalMesh[]
-├── ranks: LogicalRank[]
+├── mesh: LogicalMesh
 ├── values: DistributedValue[]
-├── tasks: ComputeTask | CollectiveTask | P2PTask | ReshardTask
-├── dependencies
-├── memory_facts
+├── tasks: DistributedTask[]
+├── inputs / outputs
+├── attributes
 └── lineage to ModelIR
 ```
 
@@ -61,7 +59,7 @@ Communication operation 保留 logical semantic：participant、collective kind�
 
 ### Well-formedness
 
-Verifier 检查 mesh/rank membership、shard reconstruction、ownership、communication matching、message-volume conservation、reshard completeness、cross-rank dependency closure 和 effect order。
+当前 structural verifier 检查 mesh/rank membership、sharding rank/axis、ownership、task/value reference、DAG 顺序和 communication metadata 的局部合法性。Shard reconstruction、collective matching、message-volume conservation、reshard completeness 与 cross-rank semantic closure 仍是 observer/conformance checker 的目标能力。
 
 ### Transformation
 
@@ -83,8 +81,8 @@ Model linear(x, w)
 
 当前 Transformer frontend 输出一个 coarse decoder-training `ModelIR` operation。`DistributeTransformerTrainingPass` 把它展开为 typed primitive invocation 和 local TP task DAG，并包含显式 collective、recomputation phase 和 aggregate block memory fact。
 
-当前 graph 以保守方式建模一个 local Transformer block。Full-model PP/DP graph、cross-stage value、更丰富 topology、inference region 和 KV-cache distribution 仍在规划中。
+当前 training graph 以保守方式建模一个 local Transformer block。静态 inference 已实现独立 prefill/decode phase、KV-cache state/value 与 local TP distribution；full-model PP/DP graph、cross-stage value、更丰富 topology 和 inference region 仍在规划中。
 
 ## Profiler 与 Verification Checkpoint
 
-在 `ModelIR`，observer 可以检查 shape、type、effect 和可选 numerical reference。在 `DistributedTaskIR`，它可以检查 shard reconstruction、per-rank work、communication matching 和 volume conservation。两个 checkpoint 都不能引入 target duration。
+在 `ModelIR`，observer 可以补充检查 shape、type、effect 和可选 numerical reference。在 `DistributedTaskIR`，observer 可以补充检查 shard reconstruction、per-rank work、communication matching 和 volume conservation；这些能力不能从当前 structural verifier 自动推断。两个 checkpoint 都不能引入 target duration。

@@ -19,7 +19,7 @@ TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMapp
 
 图中的红色边界是有意保留的。`SystemProfile` 只在 `PortablePlanIR` 之后被 derived estimate 消费；它既不是隐式 target binding，也不意味着系统已经能够生成 `ConcretePlanIR`。
 
-当前切片只覆盖 decoder-only training 的 block scope。完整模型的 PP/DP task graph、推理 prefill/decode、中间 buffer lifetime、target legalization 和物理调度仍属于后续工作。
+本页切片覆盖 decoder-only training 的 block scope；仓库另有已实现的静态 inference prefill/decode phase slice。完整模型的 PP/DP task graph、完整中间 buffer lifetime、target legalization 和物理调度仍属于后续工作。
 
 ## 强类型语义导入
 
@@ -27,7 +27,7 @@ TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMapp
 
 Physical network tier 的选择被刻意排除。只有在用 `SystemProfile` 评估 portable plan 时才会提供 `NetworkTierBinding`；改变它不能改变 model、distributed 或 portable-plan digest。
 
-Importer 会在 pass 运行前拒绝非法维度、head 不可整除、错误并行拓扑以及互相矛盾的 workload facts。随后 `build_transformer_model_ir()` 创建一个粗粒度、target-neutral 的 `transformer.decoder_training` operation。这个 snapshot 中不存在 target 名称、峰值性能、kernel ID 或 latency。
+Importer 会在 pass 运行前拒绝非法维度、TP 不可整除、RS+AG 下不可等分的 sequence dimension、错误并行拓扑以及互相矛盾的 workload/strategy facts。TP=1 时 AR 与 RS+AG 具有相同的本地 work/memory 语义。随后 `build_transformer_model_ir()` 创建一个粗粒度、target-neutral 的 `transformer.decoder_training` operation。这个 snapshot 中不存在 target 名称、峰值性能、kernel ID 或 latency。
 
 ## 静态工作量推导
 
@@ -47,14 +47,14 @@ Importer 会在 pass 运行前拒绝非法维度、head 不可整除、错误并
 - 分布式边界 value 与 sharding；
 - 从每个 task/value 回到 model source 的稳定 lineage。
 
-当前 block 内依赖采用保守串行链。这是正确性基线，并不意味着 target 不能并发执行。Physical queue、route、collective algorithm 与 overlap 在本层被禁止，因为它们依赖 target 和 deployment 信息。
+当前 block 按 forward、recompute、backward、optimizer 建立显式、保守的阶段顺序，阶段内仍采用串行链。外部 block output 由 forward 终点产生，optimizer 只表示后续训练 work，不能冒充 activation producer。这是阶段级正确性基线，并不意味着 target 不能并发执行；primitive 级 activation/gradient SSA 和精确 lifetime 尚未物化。Physical queue、route、collective algorithm 与 overlap 在本层被禁止，因为它们依赖 target 和 deployment 信息。
 
 Pass 必须保持工作负载语义，并满足以下检查：
 
 1. logical mesh 大小与 strategy 一致；
 2. 每个 rank 与 dependency 都能解析；
-3. shard specification 能重构逻辑边界 tensor；
-4. collective participant、reduction semantic 和 message volume 合法；
+3. shard specification 的 rank、mesh axis、ownership 与引用合法；
+4. collective participant、reduction semantic 与非负 message volume structurally well-formed；
 5. 输出记录 source `ModelIR` digest。
 
 ## 可移植计划推导
@@ -92,7 +92,7 @@ Observer 可以把这些 facts 与 framework trace 或 reference model 对比并
 | 逻辑 mapping contract | `src/blueprinting/mapping/transformer.py` | boundary 与 validation tests |
 | Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation 与 calibration tests |
 | 工作量代数 | `src/blueprinting/synthesizer/dialects/transformer/training.py` | `tests/validation/test_calculon.py` |
-| 两个 derivation pass | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation 与 calibration tests |
+| 两个 derivation pass | `src/blueprinting/synthesizer/lowering/transformer.py` | `tests/synthesizer/test_transformer_training.py` 与 calibration tests |
 | 事务与 checkpoint | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
 | Evidence-derived estimate | `src/blueprinting/analysis/cost_model.py` | validation tests |
 | Calculon/SeqSel oracle gate | `src/blueprinting/validation/calculon.py` | `tests/validation/test_calculon.py` |
