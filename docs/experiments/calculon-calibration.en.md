@@ -139,7 +139,12 @@ The two largest seqsel cases err in the same direction. The next investigation s
 uv run python examples/calculon_calibration.py
 uv run python examples/calculon_calibration.py \
   --output examples/calculon_calibration_result.json
+
+# Run the mandatory training and inference baseline gate used by CI.
+uv run pytest -m baseline_regression tests/regression
 ```
+
+The original eight parametrized training regressions remain in `tests/compiler/test_calculon_calibration.py`. The repository-level gate additionally runs all eight cases as one experiment and evaluates `data/validation/baseline_regression_contract.json`: workload and Calculon equivalence, memory, paper-error budgets, evidence revision, case identity, aggregate goldens, and every `PortablePlanIR` digest are frozen together. Updating a golden is a reviewed contract change; the gate has no automatic accept-current-output mode.
 
 Implementation map:
 
@@ -148,5 +153,6 @@ Implementation map:
 - `compiler/lowering/transformer.py`: the two canonical derivation passes;
 - `compiler/analysis/cost_model.py`: peak-only and evidence-backed views;
 - `compiler/experiments/calculon.py`: oracle adapter, audit, and report.
+- `compiler/experiments/regression.py`: strict cross-domain baseline gate and diagnostics.
 
 This is the repository's single Blueprinting/Calculon calibration path. Future comparisons must keep oracle data unavailable until workload construction and estimation complete. See [Transformer workload derivation](../design/passes/transformer.md) for the internal transformation contracts and [performance evidence](../design/performance/index.md) for the intended provider migration.

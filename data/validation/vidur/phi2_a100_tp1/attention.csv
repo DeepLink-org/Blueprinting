@@ -1,0 +1,5 @@
+n_embd,n_q_head,n_kv_head,block_size,num_tensor_parallel_workers,max_model_len,batch_size,prefill_chunk_size,kv_cache_size,is_prefill,attention_backend,time_stats.attn_prefill.median,time_stats.attn_decode.median
+2560,32,32,16,1,4096,1,0,32,False,AttentionBackend.FLASH_ATTENTION,,0.009000000000000001
+2560,32,32,16,1,4096,1,0,128,False,AttentionBackend.FLASH_ATTENTION,,0.012
+2560,32,32,16,1,4096,1,128,0,True,AttentionBackend.FLASH_ATTENTION,0.014,
+2560,32,32,16,1,4096,1,128,0,True,AttentionBackend.FLASH_ATTENTION,0.014,

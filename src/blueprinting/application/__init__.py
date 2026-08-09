@@ -13,6 +13,13 @@ from .analysis import (
     SweepRequest,
     TaskReport,
 )
+from .inference import (
+    DecodeStepReport,
+    InferenceAnalysisDraft,
+    InferenceAnalysisOutcome,
+    InferenceAnalysisReport,
+    InferenceAnalysisService,
+)
 
 __all__ = [
     "AnalysisDiagnostic",
@@ -21,6 +28,11 @@ __all__ = [
     "AnalysisReport",
     "BlueprintingService",
     "DiagnosticLevel",
+    "DecodeStepReport",
+    "InferenceAnalysisDraft",
+    "InferenceAnalysisOutcome",
+    "InferenceAnalysisReport",
+    "InferenceAnalysisService",
     "IRStageReport",
     "SweepCase",
     "SweepReport",

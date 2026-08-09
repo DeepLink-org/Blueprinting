@@ -1,0 +1,3 @@
+n_embd,n_expanded_embd,n_head,n_kv_head,vocab_size,use_gated_mlp,num_tokens,num_tensor_parallel_workers,time_stats.input_layernorm.median,time_stats.attn_pre_proj.median,time_stats.attn_rope.median,time_stats.attn_post_proj.median,time_stats.mlp_up_proj.median,time_stats.mlp_act.median,time_stats.mlp_down_proj.median,time_stats.add.median
+2560,10240,32,32,51200,False,128,1,0.008,0.043000000000000003,0.006,0.017,0.0505,0.005,0.054,0.004
+2560,10240,32,32,51200,False,1,1,0.007,0.03,0.004,0.014,0.038,0.002,0.039,0.004

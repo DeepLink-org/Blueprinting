@@ -76,9 +76,9 @@ Planner 可以优化 expected latency、conservative bound 或 risk-adjusted obj
 
 ## 当前实现边界
 
-仓库当前提供强类型 `HardwareProfile`、peak-only 与 system-evidence efficiency curve、block/iteration estimate，以及可审计的 Calculon experiment。这些组成一条已实现 validation adapter，但尚不是通用 architecture-exploration evidence service。
+仓库当前提供强类型 `HardwareProfile`、peak-only 与 system-evidence efficiency curve、block/iteration estimate，以及可审计的 Calculon experiment。Static inference 进一步区分可参与估算的 `InferenceCostProvider.resolve()` 与只读的 `InferenceBaseline.lookup()`；Vidur 只实现后者，并在 Blueprinting lowering 和 costing 全部完成后由 post-hoc experiment 使用。这些是已实现的 validation slice，但尚不是通用 architecture-exploration evidence service。
 
-Normalized request/result protocol、provider registry、evidence store、uncertainty model、discrete-event simulator、observation ingestion 与 calibration service 仍属于目标架构。它们应先包裹、再替代对 `HardwareProfile` 的直接耦合，而不改变 `PortablePlanIR`。
+通用 normalized request/result protocol、resolver/registry、evidence store、uncertainty model、discrete-event simulator、observation ingestion 与 calibration service 仍属于目标架构。Inference protocol 是迁移 seam，不是最终 universal schema。通用 contract 应先包裹、再替代对 `HardwareProfile` 的直接耦合，而不改变 `PortablePlanIR`，也不允许 comparison oracle 进入推导。
 
 ## 设计不变量
 

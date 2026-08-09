@@ -1,0 +1,59 @@
+{
+  "schema": "blueprinting.vidur-validation-slice.v1",
+  "source": {
+    "repository": "https://github.com/microsoft/vidur",
+    "revision": "8383d2935bc62723a212090baa9f98ada206fc14",
+    "license": "MIT",
+    "license_file": "LICENSE.vidur"
+  },
+  "selection": {
+    "model": "microsoft/phi-2",
+    "hardware": "a100",
+    "datatype": "float16",
+    "tensor_parallel": 1,
+    "attention_backend": "AttentionBackend.FLASH_ATTENTION",
+    "block_size": 16,
+    "cases": [
+      {"phase": "decode", "batch_size": 1, "context_tokens": 33},
+      {"phase": "decode", "batch_size": 1, "context_tokens": 129},
+      {"phase": "prefill", "batch_size": 1, "context_tokens": 128}
+    ],
+    "transformation": "Exact row filtering and column projection only; numeric values are unchanged. Duplicate selected upstream rows are retained."
+  },
+  "blueprinting": {
+    "model": {
+      "name": "microsoft/phi-2",
+      "hidden_size": 2560,
+      "feedforward_size": 10240,
+      "sequence_length": 4096,
+      "attention_heads": 32,
+      "attention_head_size": 80,
+      "block_count": 32
+    },
+    "execution": {
+      "world_size": 1,
+      "tensor_parallel": 1,
+      "pipeline_parallel": 1,
+      "replicas": 1,
+      "datatype": "float16",
+      "tensor_parallel_network": 0,
+      "pipeline_parallel_network": 0
+    },
+    "hardware": {
+      "name": "a100_80g",
+      "profile": "data/systems/a100_80g.json"
+    }
+  },
+  "files": {
+    "attention.csv": {
+      "upstream_path": "data/profiling/compute/a100/microsoft/phi-2/attention.csv",
+      "upstream_git_blob": "56c1d8c06ce1f08336fe4e82f445ec1249f5ca71",
+      "sha256": "3c1b7a28425484f9008307a5e63e9a92e52156d3d6734f2ce8f4a30f83fefb3f"
+    },
+    "mlp.csv": {
+      "upstream_path": "data/profiling/compute/a100/microsoft/phi-2/mlp.csv",
+      "upstream_git_blob": "5db2fe4390c7fe2a46e545ab8703f3fc37617a7e",
+      "sha256": "9271dd3a390d1d1e27489f8ea207ba41ee28e42e4da9df14c7924066f4373256"
+    }
+  }
+}

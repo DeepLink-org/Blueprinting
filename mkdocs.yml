@@ -52,11 +52,13 @@ nav:
   - Models and Simulation:
       - Hardware Architecture Model: modeling/hardware.md
       - Workload and Mapping Model: modeling/workload.md
+      - Inference Planning and Serving Simulation: modeling/inference.md
       - Performance Evidence and Cost Models: design/performance/index.md
       - Performance Database: design/performance/database.md
       - Simulation and Calibration: design/performance/simulation.md
   - Experiments:
       - Calculon Calibration: experiments/calculon-calibration.md
+      - Vidur Raw Component-Profile Alignment: experiments/vidur-baseline.md
   - Formal Analysis Foundations:
       - Formal Analysis Architecture: design/index.md
       - Derivation and Verification Model: design/compilation-model.md
@@ -107,11 +109,13 @@ plugins:
             Models and Simulation: 模型与仿真
             Hardware Architecture Model: 硬件架构模型
             Workload and Mapping Model: 工作负载与映射模型
+            Inference Planning and Serving Simulation: 推理规划与 Serving 仿真
             Performance Evidence and Cost Models: 性能证据与 Cost Model
             Performance Database: 性能数据库
             Simulation and Calibration: 仿真与校准
             Experiments: 实验
             Calculon Calibration: Calculon 校准
+            Vidur Raw Component-Profile Alignment: Vidur 原始组件 Profile 对齐
             Formal Analysis Foundations: 形式化分析基础
             Formal Analysis Architecture: 形式化分析架构
             Derivation and Verification Model: 推导与验证模型
