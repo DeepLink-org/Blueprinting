@@ -35,7 +35,7 @@ def run_workbench(
         port=port,
         title="Blueprinting · Architecture Workbench",
         favicon="🧭",
-        dark=True,
+        dark=False,
         language="zh-CN",
         show=show,
         reload=reload,
