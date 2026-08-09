@@ -16,7 +16,7 @@ from enum import Enum
 from itertools import product
 from typing import TYPE_CHECKING, Any
 
-from blueprinting.compiler.analysis import CalibrationMode, HardwareProfile, estimate_iteration
+from blueprinting.analysis import CalibrationMode, HardwareProfile, estimate_iteration
 from blueprinting.compiler.codec import content_digest
 from blueprinting.compiler.errors import (
     CompilerError,
@@ -37,7 +37,7 @@ from blueprinting.compiler.passes import AnalysisStore, PassManager, PassPipelin
 LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from blueprinting.compiler.analysis import InferenceCostProvider
+    from blueprinting.analysis import InferenceCostProvider
 
     from .inference import InferenceAnalysisDraft, InferenceAnalysisOutcome, InferenceAnalysisService
 

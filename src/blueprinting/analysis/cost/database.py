@@ -8,8 +8,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import cached_property
 
-from ...codec import canonical_dumps, canonical_loads, content_digest, record_type
-from ...frozen import FrozenDict
+from ...compiler.codec import canonical_dumps, canonical_loads, content_digest, record_type
+from ...compiler.frozen import FrozenDict
 from .protocol import (
     CostEstimate,
     CostProvider,
@@ -21,6 +21,8 @@ from .protocol import (
     EstimateUncertainty,
     InvalidCostEvidenceError,
 )
+
+# Keep the legacy codec namespace as a stable serialized identity.
 
 
 @record_type("compiler.analysis.cost.provenance.v1")

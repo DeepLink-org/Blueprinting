@@ -149,9 +149,9 @@ The original eight parametrized training regressions remain in `tests/compiler/t
 Implementation map:
 
 - `compiler/models/transformer.py`: typed frontend and execution facts;
-- `compiler/analysis/transformer_workload.py`: static operation/byte analysis;
+- `analysis/transformer_workload.py`: static operation/byte analysis;
 - `compiler/lowering/transformer.py`: the two canonical derivation passes;
-- `compiler/analysis/cost_model.py`: peak-only and evidence-backed views;
+- `analysis/cost_model.py`: peak-only and evidence-backed views;
 - `compiler/experiments/calculon.py`: oracle adapter, audit, and report.
 - `compiler/experiments/regression.py`: strict cross-domain baseline gate and diagnostics.
 

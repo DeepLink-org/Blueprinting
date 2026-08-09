@@ -13,8 +13,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from ...codec import content_digest, enum_type, record_type
-from ...frozen import FrozenDict
+from ...compiler.codec import content_digest, enum_type, record_type
+from ...compiler.frozen import FrozenDict
+
+# Keep the legacy codec namespace as a stable serialized identity.
 
 
 class CostModelError(RuntimeError):

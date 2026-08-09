@@ -123,7 +123,7 @@ bindings/session ───┘          │
                     observation / calibration
 ```
 
-The current code lives under the historical package path `src/blueprinting/compiler/`. The path describes the implementation technique and remains for compatibility; new frontends, targets, providers, and emitters extend this one semantic foundation rather than creating a parallel analysis stack.
+The canonical IR, binding, pass, and lowering infrastructure lives under `src/blueprinting/compiler/`. The analytical subsystem is a sibling package at `src/blueprinting/analysis/`: the compiler materializes explicit workload and plan facts, while analysis evaluates those facts against analytical models and external evidence. Analysis may depend on canonical compiler contracts; callers must not treat cost evidence as an implicit lowering decision.
 
 ## Current source map
 
@@ -133,7 +133,8 @@ The current code lives under the historical package path `src/blueprinting/compi
 | Canonical formal representations (`*IR`) | `compiler/ir/` | Implemented contracts |
 | Bindings and sessions | `compiler/{bindings,session}.py` | Implemented |
 | Analysis/transformation transactions | `compiler/passes/base.py` | Implemented |
-| Transformer frontend and workload analysis | `compiler/models/`, `compiler/analysis/` | Implemented slice |
+| Transformer frontend | `compiler/models/` | Implemented slice |
+| Workload and cost analysis | `analysis/` | Implemented slice |
 | Transformer derivation passes | `compiler/lowering/transformer.py` | Implemented through portable plan |
-| Current hardware evidence adapter | `compiler/analysis/cost_model.py` | Implemented slice |
+| Current hardware evidence adapter | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
 | Architecture model/search, evidence service, simulation, emission | Accepted boundaries | Planned |

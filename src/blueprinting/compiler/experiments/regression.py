@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..analysis import HardwareProfile, VidurProfileBaseline
+from ...analysis import HardwareProfile, VidurProfileBaseline
 from ..bindings import InferencePhase
 from ..models import TransformerInferenceExecutionSpec, TransformerModelSpec
 from .calculon import CalculonExperimentReport, discover_seqsel_tab5_cases, run_calculon_experiment

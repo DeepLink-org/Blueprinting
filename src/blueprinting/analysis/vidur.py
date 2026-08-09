@@ -13,9 +13,9 @@ import math
 import statistics
 from pathlib import Path
 
-from ..bindings import InferencePhase
-from ..codec import content_digest
-from ..frozen import FrozenDict
+from ..compiler.bindings import InferencePhase
+from ..compiler.codec import content_digest
+from ..compiler.frozen import FrozenDict
 from .cost.database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .cost.protocol import CostSubject, EstimateMethod
 from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult

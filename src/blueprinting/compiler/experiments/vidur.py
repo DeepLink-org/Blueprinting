@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ..analysis import (
+from ...analysis import (
     CalibrationMode,
     HardwareProfile,
     InferenceBaseline,

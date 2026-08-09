@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..bindings import InferencePhase
-from ..codec import record_type
-from ..ir import CollectiveKind
-from ..models.transformer import TransformerModelSpec
-from ..models.transformer_inference import TransformerInferenceExecutionSpec
+from ..compiler.bindings import InferencePhase
+from ..compiler.codec import record_type
+from ..compiler.ir import CollectiveKind
+from ..compiler.models.transformer import TransformerModelSpec
+from ..compiler.models.transformer_inference import TransformerInferenceExecutionSpec
 from .transformer_workload import EngineKind, PhaseWork
+
+# Keep the legacy codec namespace as a stable serialized identity.
 
 
 @record_type("compiler.analysis.inference_invocation.v1")

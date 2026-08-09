@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.compiler.analysis.cost_model import CalibrationMode, HardwareProfile, estimate_iteration
-from blueprinting.compiler.analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
+from blueprinting.analysis.cost_model import CalibrationMode, HardwareProfile, estimate_iteration
+from blueprinting.analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
 from blueprinting.compiler.experiments import discover_seqsel_tab5_cases, run_calculon_experiment
 from blueprinting.compiler.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
 from blueprinting.compiler.models import (

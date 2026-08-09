@@ -87,9 +87,9 @@ The derivation does not compensate for a discrepancy by reading a reference late
 | Concern | Source | Tests |
 |---|---|---|
 | Typed Transformer specifications | `src/blueprinting/compiler/models/transformer.py` | binding and calibration tests |
-| Workload algebra | `src/blueprinting/compiler/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
+| Workload algebra | `src/blueprinting/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
 | Two derivation passes | `src/blueprinting/compiler/lowering/transformer.py` | canonical representation and calibration tests |
 | Transaction/checkpoints | `src/blueprinting/compiler/passes/base.py` | `tests/compiler/test_pass_manager.py` |
-| Evidence-derived estimates | `src/blueprinting/compiler/analysis/cost_model.py` | calibration tests |
+| Evidence-derived estimates | `src/blueprinting/analysis/cost_model.py` | calibration tests |
 
 The [Calculon calibration experiment](../../experiments/calculon-calibration.md) is the end-to-end audit of this implemented slice.

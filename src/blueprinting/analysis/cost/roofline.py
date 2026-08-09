@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ...codec import content_digest
-from ...frozen import FrozenDict
+from ...compiler.codec import content_digest
+from ...compiler.frozen import FrozenDict
 from ..cost_model import CalibrationMode, HardwareProfile
 from .protocol import (
     CostEstimate,

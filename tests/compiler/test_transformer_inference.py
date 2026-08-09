@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.compiler.analysis import (
+from blueprinting.analysis import (
     HardwareProfile,
     InferenceCostProvider,
     InferenceEvidenceQuery,

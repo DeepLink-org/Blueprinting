@@ -11,8 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ...codec import content_digest
-from ...frozen import FrozenDict
+from ...compiler.codec import content_digest
+from ...compiler.frozen import FrozenDict
 from .database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .protocol import CostSubject, EstimateMethod
 

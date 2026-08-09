@@ -68,7 +68,7 @@ Two equally specific but different provenance groups are ambiguous. The provider
 `SimulatorPerformanceImporter` accepts CSV, JSON/JSONL, and—when the `performance-data` extra is installed—Parquet. A `TabularImportSpec` declares every mapping and the latency unit:
 
 ```python
-from blueprinting.compiler.analysis import (
+from blueprinting.analysis import (
     CostSubject,
     EstimateMethod,
     LatencyUnit,

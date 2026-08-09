@@ -70,7 +70,7 @@ mean decode-step model time = decode total / (O-1), when O > 1
 `VidurProfileBaseline.from_csv(...)` 读取用户提供的 Vidur `attention.csv` 与 compute/MLP CSV。调用者必须固定 upstream revision、hardware identity、attention backend 与 cache block size。Adapter 把输入文件和 identity 一起哈希为 baseline revision，将 Vidur 的毫秒 median 转为秒；只有 model dimension、maximum sequence length、TP、batch/token shape、phase、backend、block size 与 context 完全匹配时才返回 reference。Vidur 的 decode `kv_cache_size` 表示当前 token 写入前的长度，而 Blueprinting 的 context 表示写入后 attention 可见的长度，因此 adapter 显式使用 `vidur_kv_cache_size = context_tokens - 1`。
 
 ```python
-from blueprinting.compiler.analysis import HardwareProfile, VidurProfileBaseline
+from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
 from blueprinting.compiler.bindings import InferencePhase
 from blueprinting.compiler.experiments import VidurExperimentCase, run_vidur_experiment
 from blueprinting.compiler.models import TransformerInferenceExecutionSpec, TransformerModelSpec

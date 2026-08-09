@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pickle
 
+from blueprinting.analysis import CalibrationMode
 from blueprinting.application import AnalysisDraft, BlueprintingService, SweepRequest
-from blueprinting.compiler.analysis import CalibrationMode
 from blueprinting.compiler.frozen import FrozenDict
 from blueprinting.compiler.models import TransformerModelSpec, build_transformer_model_ir
 from blueprinting.workbench import default_catalog

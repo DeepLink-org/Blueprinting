@@ -14,6 +14,7 @@ from typing import Any
 
 from nicegui import run, ui
 
+from blueprinting.analysis import CalibrationMode
 from blueprinting.application import (
     AnalysisDiagnostic,
     AnalysisDraft,
@@ -23,7 +24,6 @@ from blueprinting.application import (
     SweepReport,
     SweepRequest,
 )
-from blueprinting.compiler.analysis import CalibrationMode
 
 from .catalog import ConfigCatalog, default_catalog
 from .nicegui_theme import METRIC_COLORS, WORKBENCH_CSS

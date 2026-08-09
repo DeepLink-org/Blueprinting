@@ -68,7 +68,7 @@ Provider 构造时会按 core identity、selector schema 与 typed selector valu
 `SimulatorPerformanceImporter` 支持 CSV、JSON/JSONL，以及安装 `performance-data` extra 后的 Parquet。`TabularImportSpec` 必须声明所有 mapping 与 latency unit：
 
 ```python
-from blueprinting.compiler.analysis import (
+from blueprinting.analysis import (
     CostSubject,
     EstimateMethod,
     LatencyUnit,

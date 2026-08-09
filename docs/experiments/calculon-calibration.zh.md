@@ -149,9 +149,9 @@ uv run pytest -m baseline_regression tests/regression
 实现映射：
 
 - `compiler/models/transformer.py`：typed frontend 与 execution facts；
-- `compiler/analysis/transformer_workload.py`：静态 operation/byte analysis；
+- `analysis/transformer_workload.py`：静态 operation/byte analysis；
 - `compiler/lowering/transformer.py`：两个 canonical derivation pass；
-- `compiler/analysis/cost_model.py`：peak-only 与 evidence-backed view；
+- `analysis/cost_model.py`：peak-only 与 evidence-backed view；
 - `compiler/experiments/calculon.py`：oracle adapter、audit 与 report。
 - `compiler/experiments/regression.py`：严格的跨域 baseline gate 与诊断。
 

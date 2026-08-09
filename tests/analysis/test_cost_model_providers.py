@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.compiler.analysis import (
+from blueprinting.analysis import (
     AIConfiguratorPerformanceImporter,
     CalibrationMode,
     CostQuery,
@@ -26,7 +26,7 @@ from blueprinting.compiler.analysis import (
     cost_query_for_inference_task,
     estimate_inference_phase,
 )
-from blueprinting.compiler.analysis.cost import InvalidCostEvidenceError
+from blueprinting.analysis.cost import InvalidCostEvidenceError
 from blueprinting.compiler.bindings import InferencePhase
 from blueprinting.compiler.frozen import FrozenDict
 from blueprinting.compiler.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass

@@ -20,10 +20,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from ..codec import content_digest, enum_type, record_type
-from ..frozen import FrozenDict
-from ..ir import CollectiveKind, PortablePlanIR
-from ..models.transformer import (
+from ..compiler.codec import content_digest, enum_type, record_type
+from ..compiler.frozen import FrozenDict
+from ..compiler.ir import CollectiveKind, PortablePlanIR
+from ..compiler.models.transformer import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,
@@ -35,6 +35,9 @@ from .transformer_workload import (
     PrimitiveInvocation,
     TrainingPhase,
 )
+
+# Codec tags are stable wire identities; the legacy namespace survives the
+# Python package move so existing snapshots and performance evidence still load.
 
 
 @enum_type("compiler.analysis.calibration_mode")

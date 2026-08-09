@@ -87,9 +87,9 @@ Observer 可以把这些 facts 与 framework trace 或 reference model 对比并
 | 关注点 | 源码 | 测试 |
 |---|---|---|
 | 强类型 Transformer specification | `src/blueprinting/compiler/models/transformer.py` | binding 与 calibration tests |
-| 工作量代数 | `src/blueprinting/compiler/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
+| 工作量代数 | `src/blueprinting/analysis/transformer_workload.py` | `tests/compiler/test_calculon_calibration.py` |
 | 两个 derivation pass | `src/blueprinting/compiler/lowering/transformer.py` | canonical representation 与 calibration tests |
 | 事务与 checkpoint | `src/blueprinting/compiler/passes/base.py` | `tests/compiler/test_pass_manager.py` |
-| Evidence-derived estimate | `src/blueprinting/compiler/analysis/cost_model.py` | calibration tests |
+| Evidence-derived estimate | `src/blueprinting/analysis/cost_model.py` | calibration tests |
 
 [Calculon 校准实验](../../experiments/calculon-calibration.md)是这条已实现纵向切片的端到端审计。

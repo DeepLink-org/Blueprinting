@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from blueprinting.compiler.analysis import (
+from blueprinting.analysis import (
     CalibrationMode,
     HardwareProfile,
     InferenceCostProvider,

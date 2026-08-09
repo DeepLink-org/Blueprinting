@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..analysis.transformer_workload import (
+from ...analysis.transformer_workload import (
     EngineKind,
     PrimitiveInvocation,
     compile_transformer_block,

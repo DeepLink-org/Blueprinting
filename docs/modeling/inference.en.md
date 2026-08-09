@@ -70,7 +70,7 @@ It is multiplied by the number of blocks in one pipeline stage. Weight storage i
 `VidurProfileBaseline.from_csv(...)` consumes user-supplied Vidur `attention.csv` and compute/MLP CSV files. The caller must pin an upstream revision, hardware identity, attention backend, and cache block size. The adapter hashes the inputs and identity into a baseline revision, converts Vidur's millisecond medians to seconds, and only returns a reference when model dimensions, maximum sequence length, TP, batch/token shape, phase, backend, block size, and context match exactly. Vidur records decode `kv_cache_size` before the current token is appended; Blueprinting records the visible context after append, so the adapter makes the explicit relation `vidur_kv_cache_size = context_tokens - 1`.
 
 ```python
-from blueprinting.compiler.analysis import HardwareProfile, VidurProfileBaseline
+from blueprinting.analysis import HardwareProfile, VidurProfileBaseline
 from blueprinting.compiler.bindings import InferencePhase
 from blueprinting.compiler.experiments import VidurExperimentCase, run_vidur_experiment
 from blueprinting.compiler.models import TransformerInferenceExecutionSpec, TransformerModelSpec

@@ -11,14 +11,16 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 
-from ..codec import enum_type, record_type
-from ..ir import CollectiveKind
-from ..models.transformer import (
+from ..compiler.codec import enum_type, record_type
+from ..compiler.ir import CollectiveKind
+from ..compiler.models.transformer import (
     RecomputePolicy,
     TensorParallelCommunication,
     TransformerExecutionSpec,
     TransformerModelSpec,
 )
+
+# Keep the legacy codec namespace as a stable serialized identity.
 
 
 @enum_type("compiler.analysis.engine_kind")

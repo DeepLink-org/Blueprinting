@@ -123,7 +123,7 @@ bindings/session ───┘          │
                     observation / calibration
 ```
 
-当前代码位于历史 package path `src/blueprinting/compiler/`。这个路径描述实现技术，并因兼容性保留；新的 frontend、target、provider 与 emitter 扩展同一语义基础，而不是创建平行 analysis stack。
+Canonical IR、binding、pass 与 lowering 基础设施位于 `src/blueprinting/compiler/`。分析子系统则是同级的 `src/blueprinting/analysis/`：compiler 产出显式 workload 与 plan facts，analysis 再用解析模型和外部证据评估这些事实。Analysis 可以依赖 canonical compiler contract，但调用方不能把 cost evidence 当作隐式 lowering 决策。
 
 ## 当前源码映射
 
@@ -133,7 +133,8 @@ bindings/session ───┘          │
 | Canonical 形式化表示（`*IR`） | `compiler/ir/` | Implemented contracts |
 | Binding 与 session | `compiler/{bindings,session}.py` | Implemented |
 | Analysis/transformation transaction | `compiler/passes/base.py` | Implemented |
-| Transformer frontend 与 workload analysis | `compiler/models/`、`compiler/analysis/` | Implemented slice |
+| Transformer frontend | `compiler/models/` | Implemented slice |
+| Workload 与 cost analysis | `analysis/` | Implemented slice |
 | Transformer derivation pass | `compiler/lowering/transformer.py` | Implemented through portable plan |
-| 当前 hardware evidence adapter | `compiler/analysis/cost_model.py` | Implemented slice |
+| 当前 hardware evidence adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
 | Architecture model/search、evidence service、simulation、emission | Accepted boundary | Planned |

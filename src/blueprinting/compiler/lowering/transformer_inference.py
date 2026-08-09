@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from ..analysis.transformer_inference import (
+from ...analysis.transformer_inference import (
     InferenceBlockMemoryFacts,
     InferenceInvocation,
     compile_transformer_inference_block,
 )
-from ..analysis.transformer_workload import EngineKind
+from ...analysis.transformer_workload import EngineKind
 from ..axes import BindingAxis
 from ..bindings import InferencePhase, WorkloadMode
 from ..frozen import FrozenDict
