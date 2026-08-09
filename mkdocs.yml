@@ -54,6 +54,7 @@ nav:
       - Workload and Mapping Model: modeling/workload.md
       - Inference Planning and Serving Simulation: modeling/inference.md
       - Performance Evidence and Cost Models: design/performance/index.md
+      - Cost Providers and Data Imports: design/performance/providers.md
       - Performance Database: design/performance/database.md
       - Simulation and Calibration: design/performance/simulation.md
   - Experiments:
@@ -111,6 +112,7 @@ plugins:
             Workload and Mapping Model: 工作负载与映射模型
             Inference Planning and Serving Simulation: 推理规划与 Serving 仿真
             Performance Evidence and Cost Models: 性能证据与 Cost Model
+            Cost Providers and Data Imports: Cost Provider 与数据导入
             Performance Database: 性能数据库
             Simulation and Calibration: 仿真与校准
             Experiments: 实验

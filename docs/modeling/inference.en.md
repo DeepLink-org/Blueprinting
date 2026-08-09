@@ -102,7 +102,7 @@ Comparison is over an explicit semantic intersection. The report contains matche
 
 There is no nearest-neighbor or hidden interpolation. An MHA workload requires equal query/KV head counts in both compute and attention records. Matching raw component-profile keys does not establish full decoder-topology equivalence: the current model spec does not yet encode norm placement, residual topology, or gated-MLP choice. The current production inference estimate remains entirely Blueprinting-owned; Vidur is an oracle for measuring where that estimate must improve.
 
-Blueprinting does not vendor the full upstream profiling corpus. A minimal MIT-licensed Phi-2/A100 validation slice is retained for offline CI, with a pinned upstream commit, source blob IDs, an explicit projection rule, and local file digests. Larger experiments keep Vidur data external. A future ingestion command should add environment manifests, units, runtime/kernel versions, and raw-record IDs before profiles enter the general performance database.
+Blueprinting does not vendor the full upstream profiling corpus. A minimal MIT-licensed Phi-2/A100 validation slice is retained for offline CI, with a pinned upstream commit, source blob IDs, an explicit projection rule, and local file digests. Larger experiments keep Vidur data external. The implemented `VidurProfileImporter` now normalizes units, creates raw-record IDs, and preserves the source revision/file digest when explicitly promoting profiles into a performance database. Full environment manifests and runtime/kernel identity remain required future evidence work where the upstream schema does not supply them.
 
 ## What the serving layer must add
 

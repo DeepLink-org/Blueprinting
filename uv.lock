@@ -364,6 +364,7 @@ all = [
     { name = "mkdocs-static-i18n", extra = ["material"] },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "plotly" },
+    { name = "pyarrow" },
     { name = "pymdown-extensions" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -402,6 +403,9 @@ legacy-ui = [
     { name = "streamlit" },
     { name = "streamlit-extras" },
 ]
+performance-data = [
+    { name = "pyarrow" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -437,6 +441,8 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'all'", specifier = ">=5.0.0" },
     { name = "plotly", marker = "extra == 'full'", specifier = ">=5.0.0" },
     { name = "psutil", specifier = ">=5.9.0" },
+    { name = "pyarrow", marker = "extra == 'all'", specifier = ">=12.0.0" },
+    { name = "pyarrow", marker = "extra == 'performance-data'", specifier = ">=12.0.0" },
     { name = "pymdown-extensions", marker = "extra == 'all'", specifier = ">=10.21.3,<11.0.0" },
     { name = "pymdown-extensions", marker = "extra == 'docs'", specifier = ">=10.21.3,<11.0.0" },
     { name = "pytest", marker = "extra == 'all'", specifier = ">=7.0.0" },
@@ -464,7 +470,7 @@ requires-dist = [
     { name = "watchdog", marker = "extra == 'all'", specifier = ">=3.0.0" },
     { name = "watchdog", marker = "extra == 'dev'", specifier = ">=3.0.0" },
 ]
-provides-extras = ["all", "dev", "docs", "full", "legacy-ui"]
+provides-extras = ["all", "dev", "docs", "full", "legacy-ui", "performance-data"]
 
 [package.metadata.requires-dev]
 dev = [

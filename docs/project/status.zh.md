@@ -22,6 +22,7 @@
 | Static Transformer inference phase planning | **Implemented slice** | 独立验证的 prefill/decode plan、KV 容量以及 decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path 到达 `PortablePlanIR` |
 | 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` 与两种 analytical estimate mode |
+| Normalized task-cost resolution 与性能数据导入 | **Implemented slice** | immutable query/result/store、ordered resolver、roofline fallback、通用 simulator 表、Vidur profile 与四类 AIConfigurator 表 |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | 独立 lowering/costing 后进行 exact-key CSV lookup，并报告 component coverage 与不可抵消的误差归因 |
 | Calculon/SeqSel workload 与 cost calibration | **Implemented experiment** | 8 case 可复现 report 与 test |
 | First-class hierarchical `ArchitectureBlueprint` | **Planned** | 已定义 component model；无 production schema/API |
@@ -31,7 +32,7 @@
 | Architecture-bound placement、schedule 与 memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` 只有通用 queue-oriented schema 与 structural verifier；producer、route/occupancy semantic 和 typed target extension 尚无 |
 | Discrete-event compute/memory/resource simulation | **Planned** | 当前结果是 analytical composition，不是 event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`、`SimulationTraceIR`、`TimelineBundle` 只有 design contract |
-| 通用 network/hardware simulator adapter | **Implemented slice / Planned** | inference cost/baseline protocol 已存在；通用 resolver、validity/uncertainty model 和 simulator adapter 尚无 |
+| 通用 network/hardware simulator adapter | **Implemented slice / Planned** | 显式 tabular ingestion 与通用 resolver 已存在；simulator execution、calibrated interpolation、contention validity 与 environment manifest 仍未实现 |
 | Bottleneck、utilization、sensitivity 与 what-if report | **Planned** | 无通用 architecture report product |
 | Energy、area、power、thermal 与 cost model | **Planned** | 已定义维度，但无 provider |
 | Multi-objective Pareto architecture search | **Planned** | 无 candidate frontier API |
@@ -61,7 +62,7 @@ TransformerModelSpec + inference mapping + request cohort
   -> phase-neutral inference ModelIR
   -> 分别绑定的 prefill/decode DistributedTaskIR
   -> 携带 KV state/capacity 的 phase-local PortablePlanIR
-  -> Blueprinting HardwareProfile/cost-provider estimate
+  -> CostResolver(exact imported evidence -> 显式 roofline fallback)
   -> optional post-hoc Vidur baseline comparison
   -> 静态 prefill / decode-step model time 与解析 memory report
 ```
@@ -84,7 +85,7 @@ TransformerModelSpec + inference mapping + request cohort
 | Transactional analysis/transformation、checkpoint、observer | **Implemented** | `passes/base.py` |
 | Transformer semantic frontend 与 workload algebra | **Implemented slice** | `models/transformer.py`、`analysis/transformer_workload.py` |
 | Distributed/portable mapping derivation | **Implemented slice** | `lowering/transformer.py` |
-| 当前 evidence adapter | **Implemented slice** | `analysis/cost_model.py` |
+| Cost protocol、resolver、roofline、database 与外部 importer | **Implemented slice** | `analysis/cost/`、`analysis/vidur.py`；仅覆盖 exact task latency，不是 plan simulation |
 | Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `models/transformer_inference.py`、`analysis/{transformer_inference,inference_cost}.py`、`lowering/transformer_inference.py`、`application/inference.py` |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
@@ -94,7 +95,7 @@ TransformerModelSpec + inference mapping + request cohort
 
 ## 验证基线
 
-当前 test suite 覆盖 binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation、Calculon calibration、prefill/decode scaling、KV 容量、static request composition 与 baseline-only Vidur comparison。独立 CI job 会在每次面向 main 的 PR 和 push 上执行 8-case Calculon/SeqSel 与 3-case 固定 Vidur gate，同时冻结 provenance、semantic policy、coverage、comparable-subtotal drift budget、不可抵消的 component error、aggregate result 与 IR digest，且不能静默重生成 golden。Vidur gate 只用于 drift detection，不是 accuracy certification。文档检查强制完整双语 page pair 与 strict site build。
+当前 test suite 覆盖 binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation、Calculon calibration、prefill/decode scaling、KV 容量、static request composition、baseline-only Vidur comparison、roofline component、exact/ambiguous database resolution、simulator unit normalization、AIConfigurator CSV/Parquet schema、显式 Vidur ingestion 与 inference resolver fallback。独立 CI job 会在每次面向 main 的 PR 和 push 上执行 8-case Calculon/SeqSel 与 3-case 固定 Vidur gate，同时冻结 provenance、semantic policy、coverage、comparable-subtotal drift budget、不可抵消的 component error、aggregate result 与 IR digest，且不能静默重生成 golden。Vidur gate 只用于 drift detection，不是 accuracy certification。文档检查强制完整双语 page pair 与 strict site build。
 
 能力升级需要端到端 product test。例如只增加 `ArchitectureBlueprint` dataclass 仍是 Contract Only；至少要构造两个不同 candidate、映射同一 workload、产生可比较 result 并保持 provenance，才能形成产品级证据。
 

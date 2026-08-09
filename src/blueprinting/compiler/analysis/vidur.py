@@ -16,6 +16,8 @@ from pathlib import Path
 from ..bindings import InferencePhase
 from ..codec import content_digest
 from ..frozen import FrozenDict
+from .cost.database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
+from .cost.protocol import CostSubject, EstimateMethod
 from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult
 
 _COMPUTE_COLUMNS = {
@@ -29,6 +31,27 @@ _COMPUTE_COLUMNS = {
     "mlp_down_projection": "time_stats.mlp_down_proj.median",
     "residual_add": "time_stats.add.median",
 }
+
+_SOURCE_LAYERS = {
+    "input_layernorm": "attention.input_norm",
+    "attention_pre_projection": "attention.qkv",
+    "attention_rope": "attention.rope",
+    "attention_post_projection": "attention.output",
+    "post_attention_layernorm": "mlp.input_norm",
+    "mlp_up_projection": "mlp.up",
+    "mlp_activation": "mlp.activation",
+    "mlp_down_projection": "mlp.down",
+    "residual_add": "mlp.residual",
+}
+
+_GEMM_PRIMITIVES = frozenset(
+    {
+        "attention_pre_projection",
+        "attention_post_projection",
+        "mlp_up_projection",
+        "mlp_down_projection",
+    }
+)
 
 
 def _read_rows(path: Path, *, required: frozenset[str], timing_columns: frozenset[str]) -> tuple[dict[str, str], ...]:
@@ -281,3 +304,271 @@ class VidurProfileBaseline:
             if matches and value is not None:
                 values.append(value)
         return tuple(values)
+
+
+def _strict_integer(row: dict[str, str], key: str, row_number: int, table: str) -> int:
+    value = _integer(row, key)
+    if value is None:
+        raise ValueError(f"Vidur {table} row {row_number} has invalid {key!r}")
+    return value
+
+
+def _strict_boolean(row: dict[str, str], key: str, row_number: int, table: str) -> bool:
+    value = _boolean(row, key)
+    if value is None:
+        raise ValueError(f"Vidur {table} row {row_number} has invalid {key!r}")
+    return value
+
+
+class VidurProfileImporter:
+    """Explicitly promote Vidur profile rows into a cost evidence database.
+
+    This is deliberately separate from :class:`VidurProfileBaseline`.  Calling
+    the importer is the policy decision that makes user-supplied profile data
+    admissible to a ``CostResolver``; baseline lookup remains post-hoc only.
+    """
+
+    IMPORTER_REVISION = "blueprinting-vidur-profile-v1"
+
+    @classmethod
+    def from_csv(
+        cls,
+        *,
+        attention_csv: str | Path,
+        compute_csv: str | Path,
+        model_name: str,
+        hardware_name: str,
+        source_revision: str,
+        datatype: str = "float16",
+        database_name: str | None = None,
+    ) -> PerformanceDatabase:
+        for name, value in (
+            ("model_name", model_name),
+            ("hardware_name", hardware_name),
+            ("source_revision", source_revision),
+            ("datatype", datatype),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be a non-empty string")
+        attention_path = Path(attention_csv)
+        compute_path = Path(compute_csv)
+        digester = hashlib.sha256()
+        for path in (attention_path, compute_path):
+            payload = path.read_bytes()
+            digester.update(path.name.encode("utf-8"))
+            digester.update(len(payload).to_bytes(8, "big"))
+            digester.update(payload)
+        data_digest = digester.hexdigest()
+        attention_rows = _read_rows(
+            attention_path,
+            required=frozenset(
+                {
+                    "n_embd",
+                    "n_q_head",
+                    "n_kv_head",
+                    "num_tensor_parallel_workers",
+                    "batch_size",
+                    "prefill_chunk_size",
+                    "kv_cache_size",
+                    "is_prefill",
+                    "attention_backend",
+                    "block_size",
+                    "max_model_len",
+                }
+            ),
+            timing_columns=frozenset(
+                {
+                    "time_stats.attn_prefill.median",
+                    "time_stats.attn_decode.median",
+                    "time_stats.attn_kv_cache_save.median",
+                }
+            ),
+        )
+        compute_rows = _read_rows(
+            compute_path,
+            required=frozenset(
+                {
+                    "n_embd",
+                    "n_expanded_embd",
+                    "n_head",
+                    "n_kv_head",
+                    "num_tensor_parallel_workers",
+                    "num_tokens",
+                    "use_gated_mlp",
+                }
+            ),
+            timing_columns=frozenset(_COMPUTE_COLUMNS.values()),
+        )
+        provenance = EvidenceProvenance(
+            source="vidur-profile",
+            source_revision=source_revision,
+            importer=cls.IMPORTER_REVISION,
+            data_digest=data_digest,
+            method=EstimateMethod.MEASURED,
+            metadata=FrozenDict(
+                {
+                    "attention_file": attention_path.name,
+                    "compute_file": compute_path.name,
+                }
+            ),
+        )
+        records = [
+            *cls._attention_records(
+                attention_rows,
+                model_name=model_name,
+                hardware_name=hardware_name,
+                datatype=datatype,
+                provenance=provenance,
+                data_digest=data_digest,
+            ),
+            *cls._compute_records(
+                compute_rows,
+                model_name=model_name,
+                hardware_name=hardware_name,
+                datatype=datatype,
+                provenance=provenance,
+                data_digest=data_digest,
+            ),
+        ]
+        return PerformanceDatabase(
+            name=database_name or f"vidur-{model_name}-{hardware_name}",
+            records=tuple(records),
+            metadata=FrozenDict(
+                {
+                    "source": "vidur-profile",
+                    "source_revision": source_revision,
+                    "data_digest": data_digest,
+                    "importer": cls.IMPORTER_REVISION,
+                }
+            ),
+        )
+
+    @classmethod
+    def _record_id(cls, data_digest: str, table: str, row_number: int, metric: str) -> str:
+        return content_digest(
+            FrozenDict(
+                {
+                    "importer": cls.IMPORTER_REVISION,
+                    "data_digest": data_digest,
+                    "table": table,
+                    "row": row_number,
+                    "metric": metric,
+                }
+            ),
+            "performance-record-id",
+        )
+
+    @classmethod
+    def _attention_records(
+        cls,
+        rows: tuple[dict[str, str], ...],
+        *,
+        model_name: str,
+        hardware_name: str,
+        datatype: str,
+        provenance: EvidenceProvenance,
+        data_digest: str,
+    ) -> tuple[PerformanceRecord, ...]:
+        records = []
+        for row_number, row in enumerate(rows, start=1):
+            prefill = _strict_boolean(row, "is_prefill", row_number, "attention")
+            batch_size = _strict_integer(row, "batch_size", row_number, "attention")
+            prefill_chunk = _strict_integer(row, "prefill_chunk_size", row_number, "attention")
+            cache_size = _strict_integer(row, "kv_cache_size", row_number, "attention")
+            phase = "prefill" if prefill else "decode"
+            query_tokens = prefill_chunk if prefill else 1
+            context_tokens = prefill_chunk if prefill else cache_size + 1
+            selector = FrozenDict(
+                {
+                    "semantic_operation": "attention_core",
+                    "phase": phase,
+                    "model_name": model_name,
+                    "model_sequence_length": _strict_integer(row, "max_model_len", row_number, "attention"),
+                    "hidden_size": _strict_integer(row, "n_embd", row_number, "attention"),
+                    "attention_heads": _strict_integer(row, "n_q_head", row_number, "attention"),
+                    "kv_heads": _strict_integer(row, "n_kv_head", row_number, "attention"),
+                    "batch_size": batch_size,
+                    "query_tokens": query_tokens,
+                    "context_tokens": context_tokens,
+                    "tensor_parallel": _strict_integer(row, "num_tensor_parallel_workers", row_number, "attention"),
+                    "block_size": _strict_integer(row, "block_size", row_number, "attention"),
+                    "implementation": row["attention_backend"],
+                }
+            )
+            metrics = (
+                (
+                    "attention_core",
+                    "time_stats.attn_prefill.median" if prefill else "time_stats.attn_decode.median",
+                    "attention.core",
+                ),
+                ("attention_kv_cache_save", "time_stats.attn_kv_cache_save.median", "attention.kv_cache"),
+            )
+            for primitive, metric, source_layer in metrics:
+                milliseconds = _milliseconds(row, metric)
+                if milliseconds is None:
+                    continue
+                record_selector = selector.to_dict()
+                record_selector["semantic_operation"] = primitive
+                record_selector["source_layer"] = source_layer
+                records.append(
+                    PerformanceRecord(
+                        record_id=cls._record_id(data_digest, "attention", row_number, metric),
+                        subject=CostSubject.OPERATOR,
+                        operation=primitive,
+                        hardware=hardware_name,
+                        datatype=datatype,
+                        seconds=milliseconds * 1e-3,
+                        selector=FrozenDict(record_selector),
+                        provenance=provenance,
+                        metadata=FrozenDict({"upstream_metric": metric}),
+                    )
+                )
+        return tuple(records)
+
+    @classmethod
+    def _compute_records(
+        cls,
+        rows: tuple[dict[str, str], ...],
+        *,
+        model_name: str,
+        hardware_name: str,
+        datatype: str,
+        provenance: EvidenceProvenance,
+        data_digest: str,
+    ) -> tuple[PerformanceRecord, ...]:
+        records = []
+        for row_number, row in enumerate(rows, start=1):
+            shared_selector = {
+                "model_name": model_name,
+                "hidden_size": _strict_integer(row, "n_embd", row_number, "compute"),
+                "feedforward_size": _strict_integer(row, "n_expanded_embd", row_number, "compute"),
+                "attention_heads": _strict_integer(row, "n_head", row_number, "compute"),
+                "kv_heads": _strict_integer(row, "n_kv_head", row_number, "compute"),
+                "tensor_parallel": _strict_integer(row, "num_tensor_parallel_workers", row_number, "compute"),
+                "num_tokens": _strict_integer(row, "num_tokens", row_number, "compute"),
+                "use_gated_mlp": _strict_boolean(row, "use_gated_mlp", row_number, "compute"),
+            }
+            for primitive, metric in _COMPUTE_COLUMNS.items():
+                milliseconds = _milliseconds(row, metric)
+                if milliseconds is None:
+                    continue
+                operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+                selector = {
+                    **shared_selector,
+                    "semantic_operation": primitive,
+                    "source_layer": _SOURCE_LAYERS[primitive],
+                }
+                records.append(
+                    PerformanceRecord(
+                        record_id=cls._record_id(data_digest, "compute", row_number, metric),
+                        subject=CostSubject.OPERATOR,
+                        operation=operation,
+                        hardware=hardware_name,
+                        datatype=datatype,
+                        seconds=milliseconds * 1e-3,
+                        selector=FrozenDict(selector),
+                        provenance=provenance,
+                        metadata=FrozenDict({"upstream_metric": metric}),
+                    )
+                )
+        return tuple(records)

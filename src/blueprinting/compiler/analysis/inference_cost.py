@@ -9,6 +9,7 @@ from ..frozen import FrozenDict
 from ..ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
 from ..models.transformer import TransformerModelSpec
 from ..models.transformer_inference import TransformerInferenceExecutionSpec
+from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject
 from .cost_model import CalibrationMode, HardwareProfile
 from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery
 from .transformer_inference import InferenceInvocation
@@ -25,7 +26,10 @@ class InferenceTaskEstimate:
     total_seconds: float
     evidence_provider: str
     evidence_revision: str
+    evidence_source_revision: str
+    evidence_record_ids: tuple[str, ...]
     evidence_match: str
+    evidence_method: str
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,106 @@ def inference_evidence_query_for(
     )
 
 
+_GEMM_PRIMITIVES = frozenset(
+    {
+        "attention_pre_projection",
+        "attention_post_projection",
+        "mlp_up_projection",
+        "mlp_down_projection",
+    }
+)
+
+
+def _merge_dimensions(base: dict[str, object], extra: FrozenDict) -> FrozenDict:
+    overlap = set(base).intersection(extra)
+    conflicts = tuple(key for key in overlap if base[key] != extra[key])
+    if conflicts:
+        raise ValueError(f"cost context conflicts with canonical workload dimensions: {sorted(conflicts)}")
+    base.update(extra)
+    return FrozenDict(base)
+
+
+def cost_query_for_inference_task(
+    task: PlanTask,
+    *,
+    hardware: HardwareProfile,
+    execution: TransformerInferenceExecutionSpec,
+    model: TransformerModelSpec,
+    batch_size: int,
+    query_tokens: int,
+    context_tokens: int,
+    context: CostQueryContext = CostQueryContext(),
+) -> CostQuery:
+    """Build a normalized cost request directly from portable workload facts."""
+
+    if not isinstance(context, CostQueryContext):
+        raise TypeError("context must be CostQueryContext")
+    invocation = _invocation_from_plan_task(task)
+    primitive = invocation.primitive
+    operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+    subject = CostSubject.COMMUNICATION if invocation.engine is EngineKind.COLLECTIVE else CostSubject.OPERATOR
+    tensor_parallel = execution.tensor_parallel
+    dimensions: dict[str, object] = {
+        "semantic_operation": primitive,
+        "source_layer": invocation.source_layer,
+        "phase": invocation.phase.value,
+        "model_name": model.name,
+        "model_sequence_length": model.sequence_length,
+        "hidden_size": model.hidden_size,
+        "feedforward_size": model.feedforward_size,
+        "attention_heads": model.attention_heads,
+        "kv_heads": model.attention_heads,
+        "local_attention_heads": model.attention_heads // tensor_parallel,
+        "local_kv_heads": model.attention_heads // tensor_parallel,
+        "head_size": model.attention_head_size,
+        "batch_size": batch_size,
+        "query_tokens": query_tokens,
+        "context_tokens": context_tokens,
+        "tensor_parallel": tensor_parallel,
+        "num_tokens": batch_size * query_tokens,
+        "use_gated_mlp": False,
+        "beam_width": 1,
+        "window_size": 0,
+        "kv_cache_datatype": execution.datatype,
+    }
+    if primitive in _GEMM_PRIMITIVES:
+        tokens = batch_size * query_tokens
+        local_hidden = model.hidden_size // tensor_parallel
+        local_feedforward = model.feedforward_size // tensor_parallel
+        m = tokens
+        if primitive == "attention_pre_projection":
+            n, k = 3 * local_hidden, model.hidden_size
+        elif primitive == "attention_post_projection":
+            n, k = model.hidden_size, local_hidden
+        elif primitive == "mlp_up_projection":
+            n, k = local_feedforward, model.hidden_size
+        else:
+            n, k = model.hidden_size, local_feedforward
+        dimensions.update({"m": m, "n": n, "k": k})
+    dimensions = _merge_dimensions(dimensions, context.dimensions_for(primitive, operation)).to_dict()
+    return CostQuery(
+        subject=subject,
+        operation=operation,
+        hardware=hardware.name,
+        datatype=execution.datatype,
+        operations=task.workload.operations,
+        read_bytes=task.workload.read_bytes,
+        write_bytes=task.workload.write_bytes,
+        message_bytes=task.workload.message_bytes,
+        participants=tensor_parallel if subject is CostSubject.COMMUNICATION else 1,
+        network_tier=invocation.network_tier or 0,
+        engine=invocation.engine.value,
+        hardware_revision=hardware.evidence_revision,
+        implementation=context.implementation_for(primitive, operation),
+        implementation_revision=context.implementation_revision_for(primitive, operation),
+        runtime=context.runtime,
+        runtime_revision=context.runtime_revision,
+        topology=context.topology,
+        power_mode=context.power_mode,
+        dimensions=FrozenDict(dimensions),
+    )
+
+
 def _task_estimate(
     task: PlanTask,
     *,
@@ -97,6 +201,8 @@ def _task_estimate(
     context_tokens: int,
     mode: CalibrationMode,
     cost_provider: InferenceCostProvider | None,
+    cost_resolver: CostResolver | None,
+    cost_context: CostQueryContext,
 ) -> InferenceTaskEstimate:
     invocation = _invocation_from_plan_task(task)
     work = invocation.work
@@ -122,9 +228,33 @@ def _task_estimate(
     analytical_seconds = hardware.processing_time(compute_seconds, memory_seconds) + network_seconds
     provider_name = "analytical-system-profile"
     revision = hardware.evidence_revision
+    source_revision = hardware.evidence_revision
+    record_ids: tuple[str, ...] = ()
     match = mode.value
+    method = "analytical"
     total_seconds = analytical_seconds
-    if cost_provider is not None:
+    if cost_resolver is not None:
+        resolution = cost_resolver.resolve(
+            cost_query_for_inference_task(
+                task,
+                model=model,
+                execution=execution,
+                hardware=hardware,
+                batch_size=batch_size,
+                query_tokens=query_tokens,
+                context_tokens=context_tokens,
+                context=cost_context,
+            )
+        )
+        evidence = resolution.estimate
+        total_seconds = evidence.seconds
+        provider_name = evidence.provider
+        revision = evidence.provider_revision
+        source_revision = evidence.source_revision
+        record_ids = evidence.raw_record_ids
+        match = evidence.match.value
+        method = evidence.method.value
+    elif cost_provider is not None:
         evidence = cost_provider.resolve(
             inference_evidence_query_for(
                 invocation,
@@ -140,7 +270,9 @@ def _task_estimate(
             total_seconds = evidence.seconds
             provider_name = evidence.provider
             revision = evidence.revision
+            source_revision = evidence.revision
             match = evidence.match
+            method = "external"
     return InferenceTaskEstimate(
         invocation=invocation,
         compute_seconds=compute_seconds,
@@ -150,7 +282,10 @@ def _task_estimate(
         total_seconds=total_seconds,
         evidence_provider=provider_name,
         evidence_revision=revision,
+        evidence_source_revision=source_revision,
+        evidence_record_ids=record_ids,
         evidence_match=match,
+        evidence_method=method,
     )
 
 
@@ -227,6 +362,8 @@ def estimate_inference_phase(
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
     *,
     cost_provider: InferenceCostProvider | None = None,
+    cost_resolver: CostResolver | None = None,
+    cost_context: CostQueryContext = CostQueryContext(),
 ) -> InferencePhaseEstimate:
     """Cost one prefill or decode phase point without queueing assumptions."""
 
@@ -241,6 +378,10 @@ def estimate_inference_phase(
         raise TypeError("portable inference plan is missing InferencePhase")
     if hardware.datatype != execution.datatype:
         raise ValueError("hardware profile datatype does not match inference execution datatype")
+    if cost_provider is not None and cost_resolver is not None:
+        raise ValueError("cost_provider and cost_resolver are mutually exclusive")
+    if not isinstance(cost_context, CostQueryContext):
+        raise TypeError("cost_context must be CostQueryContext")
     batch_size = plan.attributes.get("batch_size")
     query_tokens = plan.attributes.get("query_tokens")
     context_tokens = plan.attributes.get("context_tokens")
@@ -260,25 +401,61 @@ def estimate_inference_phase(
                 context_tokens=context_tokens,
                 mode=mode,
                 cost_provider=cost_provider,
+                cost_resolver=cost_resolver,
+                cost_context=cost_context,
             )
         )
 
     block_seconds = sum(item.total_seconds for item in task_estimates)
     transformer_seconds = block_seconds * model.block_count
     pipeline_seconds = 0.0
+    pipeline_estimate = None
     if execution.pipeline_parallel > 1:
-        try:
-            network = hardware.networks[execution.pipeline_parallel_network]
-        except IndexError as error:
-            raise ValueError(
-                f"hardware profile does not define network tier {execution.pipeline_parallel_network}"
-            ) from error
-        pipeline_seconds = (execution.pipeline_parallel - 1) * network.time(
-            "p2p",
-            _concrete_buffer_size(next(buffer for buffer in plan.buffers if buffer.id == plan.inputs[0])),
-            2,
-            mode,
-        )
+        boundary_bytes = _concrete_buffer_size(next(buffer for buffer in plan.buffers if buffer.id == plan.inputs[0]))
+        if cost_resolver is None:
+            try:
+                network = hardware.networks[execution.pipeline_parallel_network]
+            except IndexError as error:
+                raise ValueError(
+                    f"hardware profile does not define network tier {execution.pipeline_parallel_network}"
+                ) from error
+            one_hop_seconds = network.time("p2p", boundary_bytes, 2, mode)
+        else:
+            pipeline_dimensions = {
+                "semantic_operation": "p2p",
+                "phase": phase.value,
+                "model_name": model.name,
+                "batch_size": batch_size,
+                "query_tokens": query_tokens,
+                "context_tokens": context_tokens,
+                "pipeline_parallel": execution.pipeline_parallel,
+            }
+            pipeline_dimensions = _merge_dimensions(
+                pipeline_dimensions,
+                cost_context.dimensions_for("p2p", "p2p"),
+            )
+            pipeline_estimate = cost_resolver.resolve(
+                CostQuery(
+                    subject=CostSubject.COMMUNICATION,
+                    operation="p2p",
+                    hardware=hardware.name,
+                    datatype=execution.datatype,
+                    message_bytes=boundary_bytes,
+                    participants=2,
+                    network_tier=execution.pipeline_parallel_network,
+                    engine=EngineKind.COLLECTIVE.value,
+                    hardware_revision=hardware.evidence_revision,
+                    implementation=cost_context.implementation_for("p2p", "p2p"),
+                    implementation_revision=cost_context.implementation_revision_for("p2p", "p2p"),
+                    runtime=cost_context.runtime,
+                    runtime_revision=cost_context.runtime_revision,
+                    topology=cost_context.topology,
+                    power_mode=cost_context.power_mode,
+                    dimensions=pipeline_dimensions,
+                )
+            ).estimate
+            one_hop_seconds = pipeline_estimate.seconds
+        pipeline_seconds = (execution.pipeline_parallel - 1) * one_hop_seconds
 
     blocks_per_stage = model.block_count // execution.pipeline_parallel
     boundary_bytes = _concrete_buffer_size(next(buffer for buffer in plan.buffers if buffer.id == plan.inputs[0]))
@@ -291,6 +468,14 @@ def estimate_inference_phase(
     revisions = {hardware.evidence_revision: "analytical-system-profile"}
     for item in task_estimates:
         revisions[item.evidence_revision] = item.evidence_provider
+        if item.evidence_source_revision != item.evidence_revision:
+            revisions[item.evidence_source_revision] = f"source:{item.evidence_provider}"
+    if cost_resolver is not None:
+        revisions[cost_resolver.revision] = "cost-resolver-policy"
+    if pipeline_estimate is not None:
+        revisions[pipeline_estimate.provider_revision] = pipeline_estimate.provider
+        if pipeline_estimate.source_revision != pipeline_estimate.provider_revision:
+            revisions[pipeline_estimate.source_revision] = f"source:{pipeline_estimate.provider}"
     return InferencePhaseEstimate(
         mode=mode,
         phase=phase,

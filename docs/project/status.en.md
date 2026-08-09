@@ -22,6 +22,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Static Transformer inference phase planning | **Implemented slice** | independently verified prefill/decode plans, KV capacity, and decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path reaches `PortablePlanIR` |
 | Versioned compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` and two analytical estimate modes |
+| Normalized task-cost resolution and performance-data ingestion | **Implemented slice** | immutable query/result/store, ordered resolver, roofline fallback, generic simulator tables, Vidur profiles, and four AIConfigurator table families |
 | Vidur raw component-profile alignment | **Implemented experiment** | exact-key CSV lookup after independent lowering/costing, with component coverage and non-cancelling error attribution |
 | Calculon/SeqSel workload and cost calibration | **Implemented experiment** | eight-case reproducible report and tests |
 | First-class hierarchical `ArchitectureBlueprint` | **Planned** | documented component model; no production schema/API |
@@ -31,7 +32,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Architecture-bound placement, schedule, and memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` has only a generic queue-oriented schema and structural verifier; producer, route/occupancy semantics, and typed target extensions do not exist |
 | Discrete-event compute/memory/resource simulation | **Planned** | current result is analytical composition, not event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`, `SimulationTraceIR`, and `TimelineBundle` are design contracts only |
-| General network/hardware simulator adapters | **Implemented slice / Planned** | inference cost/baseline protocols exist; general resolver, validity/uncertainty model, and simulator adapters do not |
+| General network/hardware simulator adapters | **Implemented slice / Planned** | explicit tabular ingestion and a general resolver exist; simulator execution, calibrated interpolation, contention validity, and environment manifests remain planned |
 | Bottleneck, utilization, sensitivity, and what-if reports | **Planned** | no general architecture report product |
 | Energy, area, power, thermal, and cost models | **Planned** | dimensions are specified but no providers exist |
 | Multi-objective Pareto architecture search | **Planned** | no candidate frontier API |
@@ -61,7 +62,7 @@ TransformerModelSpec + inference mapping + request cohort
   -> phase-neutral inference ModelIR
   -> independently bound prefill and decode DistributedTaskIR
   -> phase-local PortablePlanIR with KV state/capacity
-  -> Blueprinting HardwareProfile/cost-provider estimate
+  -> CostResolver(exact imported evidence -> explicit roofline fallback)
   -> optional post-hoc Vidur baseline comparison
   -> static prefill / decode-step model time and analytical memory report
 ```
@@ -84,7 +85,7 @@ It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous 
 | Transactional analyses/transformations, checkpoints, observers | **Implemented** | `passes/base.py` |
 | Transformer semantic frontend and workload algebra | **Implemented slice** | `models/transformer.py`, `analysis/transformer_workload.py` |
 | Distributed and portable mapping derivations | **Implemented slice** | `lowering/transformer.py` |
-| Current evidence adapter | **Implemented slice** | `analysis/cost_model.py` |
+| Cost protocol, resolver, roofline, database, and external importers | **Implemented slice** | `analysis/cost/`, `analysis/vidur.py`; exact task latency only, not plan simulation |
 | Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `models/transformer_inference.py`, `analysis/{transformer_inference,inference_cost}.py`, `lowering/transformer_inference.py`, `application/inference.py` |
 | Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
@@ -94,7 +95,7 @@ These typed representations, verifiers, derivation transactions, and analyses ar
 
 ## Verification baseline
 
-The current test suite covers binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, Calculon calibration, prefill/decode scaling, KV capacity, static request composition, and baseline-only Vidur comparison. A dedicated CI job runs the eight-case Calculon/SeqSel and three-case pinned Vidur gates on every main-branch pull request and push. It freezes provenance, semantic policy, coverage, comparable-subtotal drift budgets, non-cancelling component errors, aggregate results, and IR digests; it cannot silently regenerate goldens. The Vidur gate is drift detection, not an accuracy certification. Documentation checks enforce complete bilingual page pairs and strict site builds.
+The current test suite covers binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, Calculon calibration, prefill/decode scaling, KV capacity, static request composition, baseline-only Vidur comparison, roofline components, exact/ambiguous database resolution, simulator unit normalization, AIConfigurator CSV/Parquet schemas, explicit Vidur ingestion, and inference resolver fallback. A dedicated CI job runs the eight-case Calculon/SeqSel and three-case pinned Vidur gates on every main-branch pull request and push. It freezes provenance, semantic policy, coverage, comparable-subtotal drift budgets, non-cancelling component errors, aggregate results, and IR digests; it cannot silently regenerate goldens. The Vidur gate is drift detection, not an accuracy certification. Documentation checks enforce complete bilingual page pairs and strict site builds.
 
 Status promotion requires an end-to-end product test. For example, introducing `ArchitectureBlueprint` as a dataclass is Contract Only; constructing two different candidates, mapping the same workload, producing comparable results, and preserving provenance is the minimum product-level evidence.
 

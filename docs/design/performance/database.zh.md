@@ -3,11 +3,11 @@
 性能数据库是 normalized query protocol 背后的版本化 evidence store。它回答一个精确问题——某个 architecture component 或合法 implementation 在明确 context 中预计如何表现——但不会把 architecture choice 或 calibration knob 隐藏在 lookup table 中。
 
 !!! note "设计状态"
-    通用 estimator 仍直接加载 `HardwareProfile`。Static inference 已区分可参与估算的 cost-provider contract 与只读 baseline contract；Vidur CSV adapter 仅属于 baseline。本页的 request/result/store 仍是已接受的通用化目标。
+    第一版通用 slice 已实现为 `CostQuery`、`CostEstimate`、`CostResolver`、`PerformanceDatabase` 与 typed provider。Static inference 已消费该 resolver；training 在 equivalence migration 前仍直接加载 `HardwareProfile`。`VidurProfileBaseline` 保持 baseline-only；独立的 `VidurProfileImporter` 才是显式 evidence promotion 路径。详见 [Cost Provider 与性能数据导入](providers.md)。
 
 ## Request Contract
 
-`EstimateRequest` 标识所有可能实质影响结果的维度：
+已实现的 `CostQuery`——更广义 `EstimateRequest` 设计的第一版 slice——标识所有可能实质影响 task-latency result 的维度：
 
 ```text
 subject identity
@@ -28,7 +28,7 @@ Optional field 是显式 unknown，而不是从 cache key 中省略的维度。P
 
 ## Result Contract
 
-`EstimateResult` 不只是一个标量：
+已实现的 `CostEstimate` 不只是一个标量：
 
 ```text
 metrics             latency, energy, bandwidth, utilization, counters
@@ -57,16 +57,15 @@ Normalization 不会抹掉 provider detail。Provider-specific payload 可以作
 
 ## Provider Protocol
 
-Provider 在概念上暴露四个操作：
+Provider 当前暴露以下 normalized operation；更丰富的 `explain()` view 仍属于后续工作：
 
 ```python
-class EstimateProvider(Protocol):
+class CostProvider(Protocol):
     @property
     def revision(self) -> str: ...
 
-    def supports(self, request: EstimateRequest) -> Support: ...
-    def estimate(self, request: EstimateRequest) -> EstimateResult: ...
-    def explain(self, result: EstimateResult) -> EvidenceTrace: ...
+    def supports(self, query: CostQuery) -> CostSupport: ...
+    def estimate(self, query: CostQuery) -> CostEstimate: ...
 ```
 
 `supports()` 在昂贵求值前报告 domain coverage 与缺失的 required field。对于同一 request/provider revision，`estimate()` 必须确定；若使用随机协议，则结果要显式记录 seed 与 stochastic protocol。
@@ -99,10 +98,10 @@ Calibration 从 observation 学习 target-wide 或 implementation-family respons
 
 现有 `HardwareProfile` 已经提供 matrix/vector throughput、memory transfer 与 collective 的有用版本化 curve。迁移应通过 provider 保持现有行为：
 
-1. 把 portable task 转换为 normalized request；
-2. 将当前 profile 包装为 analytical/system-evidence provider；
-3. 通过 resolver 复现当前 Calculon experiment；
-4. 增加 raw measurement provider 与 evidence manifest；
-5. 只有 equivalence test 通过后，才替换 estimator/profile 的直接耦合。
+1. **Static inference 已完成：**把 portable task 转换为 normalized query；
+2. **已完成：**将当前 profile 包装为 roofline/system-evidence provider；
+3. **Training 待完成：**通过 resolver 复现当前 Calculon experiment；
+4. **已实现 slice：**加入带 source revision/file digest 的 exact measured/simulated record；更完整 environment manifest 待实现；
+5. 只有 equivalence test 通过后，才替换 training estimator/profile 的直接耦合。
 
 这种分阶段 adapter 能保留已验证的 workload analysis，同时让 provenance、uncertainty 与未来 hardware simulator 成为 first-class capability。

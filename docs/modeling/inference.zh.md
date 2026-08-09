@@ -102,7 +102,7 @@ Comparison 只发生在显式 semantic intersection 上。Report 给出 matched 
 
 Adapter 不做 nearest-neighbor 或隐藏插值。MHA workload 还要求 compute 与 attention record 的 query/KV head 数相等。Raw component-profile key 匹配并不证明完整 decoder topology 等价：当前 model spec 还没有编码 norm placement、residual topology 与 gated-MLP choice。Production inference estimate 完全由 Blueprinting 自己产生；Vidur 只是衡量这套机制还应在哪里改进的 oracle。
 
-Blueprinting 不复制完整 upstream profiling corpus。仓库只保留一份 MIT-licensed Phi-2/A100 最小 validation slice，用于离线 CI，并固定 upstream commit、source blob ID、显式 projection rule 与本地文件 digest；更大规模实验继续让 Vidur 数据保持外部依赖。未来 ingestion command 应在 profile 进入通用性能数据库前补齐 environment manifest、unit、runtime/kernel version 与 raw-record ID。
+Blueprinting 不复制完整 upstream profiling corpus。仓库只保留一份 MIT-licensed Phi-2/A100 最小 validation slice，用于离线 CI，并固定 upstream commit、source blob ID、显式 projection rule 与本地文件 digest；更大规模实验继续让 Vidur 数据保持外部依赖。已实现的 `VidurProfileImporter` 会在用户显式把 profile 晋升为性能数据库 evidence 时规范化 unit、创建 raw-record ID，并保留 source revision/file digest。对于 upstream schema 没有提供的字段，完整 environment manifest 与 runtime/kernel identity 仍是后续必须补齐的 evidence 工作。
 
 ## Serving 层还必须增加什么
 

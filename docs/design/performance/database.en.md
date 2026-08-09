@@ -3,11 +3,11 @@
 The performance database is a revisioned evidence store behind a normalized query protocol. It answers a precise question—how an architecture component or legal implementation is expected to behave in a declared context—without hiding architecture choices or calibration knobs inside a lookup table.
 
 !!! note "Design status"
-    The general estimator still loads `HardwareProfile` directly. Static inference now distinguishes an admissible cost-provider contract from a read-only baseline contract; the Vidur CSV adapter is baseline-only. The request/result/store design on this page remains the accepted generalization target.
+    The first general slice is implemented as `CostQuery`, `CostEstimate`, `CostResolver`, `PerformanceDatabase`, and typed providers. Static inference consumes that resolver; training still loads `HardwareProfile` directly pending equivalence migration. `VidurProfileBaseline` remains baseline-only, while the separate `VidurProfileImporter` is an explicit evidence-promotion path. See [Cost Providers and Performance-Data Imports](providers.md).
 
 ## Request contract
 
-An `EstimateRequest` identifies all dimensions that may materially affect a result:
+The implemented `CostQuery`—the first slice of the broader `EstimateRequest` design—identifies dimensions that may materially affect a task-latency result:
 
 ```text
 subject identity
@@ -28,7 +28,7 @@ Optional fields are explicit unknowns, not omitted cache-key dimensions. Provide
 
 ## Result contract
 
-An `EstimateResult` contains more than a scalar:
+The implemented `CostEstimate` contains more than a scalar:
 
 ```text
 metrics             latency, energy, bandwidth, utilization, counters
@@ -57,16 +57,15 @@ Every raw sample records units, warm-up, repetition count, synchronization metho
 
 ## Provider protocol
 
-A provider exposes four operations conceptually:
+A provider currently exposes the following normalized operations; a richer `explain()` view remains planned:
 
 ```python
-class EstimateProvider(Protocol):
+class CostProvider(Protocol):
     @property
     def revision(self) -> str: ...
 
-    def supports(self, request: EstimateRequest) -> Support: ...
-    def estimate(self, request: EstimateRequest) -> EstimateResult: ...
-    def explain(self, result: EstimateResult) -> EvidenceTrace: ...
+    def supports(self, query: CostQuery) -> CostSupport: ...
+    def estimate(self, query: CostQuery) -> CostEstimate: ...
 ```
 
 `supports()` reports domain coverage and required missing fields before expensive evaluation. `estimate()` is deterministic for a request and provider revision unless the result explicitly records a seed and stochastic protocol.
@@ -99,10 +98,10 @@ Forbidden inputs include a benchmark case ID, comparison-oracle total time, or a
 
 The existing `HardwareProfile` already supplies useful versioned curves for matrix/vector throughput, memory transfer, and collectives. Migration should preserve its behavior behind providers:
 
-1. convert portable tasks into normalized requests;
-2. wrap the current profile as an analytical/system-evidence provider;
-3. reproduce the current Calculon experiment through the resolver;
-4. add a raw measurement provider and evidence manifests;
-5. replace direct estimator/profile coupling only after equivalence tests pass.
+1. **Done for static inference:** convert portable tasks into normalized queries;
+2. **Done:** wrap the current profile as a roofline/system-evidence provider;
+3. **Pending for training:** reproduce the current Calculon experiment through the resolver;
+4. **Implemented slice:** add exact measured/simulated records with source revisions and file digests; richer environment manifests remain pending;
+5. replace training estimator/profile coupling only after equivalence tests pass.
 
 This staged adapter keeps the validated workload analysis intact while making provenance, uncertainty, and future hardware simulators first-class.
