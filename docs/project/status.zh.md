@@ -19,8 +19,10 @@
 | 硬件探索能力 | 状态 | 当前证据或差距 |
 |---|---|---|
 | Typed Transformer training workload accounting | **Implemented** | 精确 block operation、byte、collective、recomputation 与 phase |
+| Static Transformer inference phase planning | **Implemented slice** | 独立验证的 prefill/decode plan、KV 容量以及 decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path 到达 `PortablePlanIR` |
 | 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` 与两种 analytical estimate mode |
+| Vidur raw component-profile 对齐 | **Implemented experiment** | 独立 lowering/costing 后进行 exact-key CSV lookup，并报告 component coverage 与不可抵消的误差归因 |
 | Calculon/SeqSel workload 与 cost calibration | **Implemented experiment** | 8 case 可复现 report 与 test |
 | First-class hierarchical `ArchitectureBlueprint` | **Planned** | 已定义 component model；无 production schema/API |
 | Hardware design variable 与 constraint-aware candidate generation | **Planned** | 无 design-space generator 或 search session |
@@ -29,7 +31,7 @@
 | Architecture-bound placement、schedule 与 memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` 只有通用 queue-oriented schema 与 structural verifier；producer、route/occupancy semantic 和 typed target extension 尚无 |
 | Discrete-event compute/memory/resource simulation | **Planned** | 当前结果是 analytical composition，不是 event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`、`SimulationTraceIR`、`TimelineBundle` 只有 design contract |
-| Network/hardware simulator adapter | **Planned** | normalized provider protocol 只有文档设计 |
+| 通用 network/hardware simulator adapter | **Implemented slice / Planned** | inference cost/baseline protocol 已存在；通用 resolver、validity/uncertainty model 和 simulator adapter 尚无 |
 | Bottleneck、utilization、sensitivity 与 what-if report | **Planned** | 无通用 architecture report product |
 | Energy、area、power、thermal 与 cost model | **Planned** | 已定义维度，但无 provider |
 | Multi-objective Pareto architecture search | **Planned** | 无 candidate frontier API |
@@ -44,7 +46,7 @@
 
 ## 已贯通分析路径
 
-当前可运行切片是：
+当前存在两条可运行切片：
 
 ```text
 TransformerModelSpec + TransformerExecutionSpec
@@ -54,15 +56,23 @@ TransformerModelSpec + TransformerExecutionSpec
   -> PortablePlanIR
   -> HardwareProfile analytical estimate
   -> Calculon / paper comparison report
+
+TransformerModelSpec + inference mapping + request cohort
+  -> phase-neutral inference ModelIR
+  -> 分别绑定的 prefill/decode DistributedTaskIR
+  -> 携带 KV state/capacity 的 phase-local PortablePlanIR
+  -> Blueprinting HardwareProfile/cost-provider estimate
+  -> optional post-hoc Vidur baseline comparison
+  -> 静态 prefill / decode-step model time 与解析 memory report
 ```
 
 `PassManager` 验证每次 staged derivation 并暴露 immutable checkpoint。`HardwareProfile` 在 portable plan 后提供 evidence。当前路径尚未构造 architecture hierarchy、绑定 physical resource、执行 discrete-event simulation 或搜索 hardware candidate。
 
 ## 当前结果可以声称什么
 
-仓库可以声称：选定 Transformer training workload 被分解为可审计 target-neutral work，并在不使用 case-specific timing coefficient 的前提下与一个版本化 system evidence profile 比较；系统也提供了后续 simulation correlation 所需的 stable identity、verifier gate 与 pass-level checkpoint hook。
+仓库可以声称：选定 Transformer training workload 被分解为可审计 target-neutral work，并在不使用 case-specific timing coefficient 的前提下与一个版本化 system evidence profile 比较；系统也可以编译 dense-MHA inference 的 prefill/decode phase point、推导 KV 容量，并以显式 evidence provenance 组合 homogeneous request cohort。系统提供了后续 simulation correlation 所需的 stable identity、verifier gate 与 pass-level checkpoint hook。
 
-当前还不能声称 Blueprinting 已经探索 compute/memory/interconnect parameter、预测 NoC/network contention、建模 energy/area/cost、构造合法 concrete hardware schedule、产生 sensitivity/Pareto result，或用真实 GPU/LPU observation 闭合 calibration loop。
+当前还不能声称 serving-system SLO accuracy：arrival、queueing、continuous batching、scheduler overhead、contention 与 tail distribution 均未实现。也不能声称 Blueprinting 已经探索 compute/memory/interconnect parameter、预测 NoC 行为、建模 energy/area/cost、构造合法 concrete hardware schedule、产生 sensitivity/Pareto result，或用真实 GPU/LPU observation 闭合 calibration loop。
 
 ## 工程基础
 
@@ -75,13 +85,16 @@ TransformerModelSpec + TransformerExecutionSpec
 | Transformer semantic frontend 与 workload algebra | **Implemented slice** | `models/transformer.py`、`analysis/transformer_workload.py` |
 | Distributed/portable mapping derivation | **Implemented slice** | `lowering/transformer.py` |
 | 当前 evidence adapter | **Implemented slice** | `analysis/cost_model.py` |
+| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `models/transformer_inference.py`、`analysis/{transformer_inference,inference_cost}.py`、`lowering/transformer_inference.py`、`application/inference.py` |
+| Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
+| 外部 baseline 回归门禁 | **Implemented** | `data/validation/` 下的冻结 contract 与带许可证离线 fixture、`experiments/regression.py`、`.github/workflows/quality.yml` |
 
 这些 typed representation、verifier、derivation transaction 与 analysis 构成 hardware exploration 的形式化基础。新的 architecture model、simulator provider 与 analysis product 应扩展这一份 semantic foundation，而不是建立平行 workload truth。
 
 ## 验证基线
 
-当前 test suite 覆盖 binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation 与 Calculon calibration result。文档检查强制完整双语 page pair 与 strict site build。
+当前 test suite 覆盖 binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation、Calculon calibration、prefill/decode scaling、KV 容量、static request composition 与 baseline-only Vidur comparison。独立 CI job 会在每次面向 main 的 PR 和 push 上执行 8-case Calculon/SeqSel 与 3-case 固定 Vidur gate，同时冻结 provenance、semantic policy、coverage、comparable-subtotal drift budget、不可抵消的 component error、aggregate result 与 IR digest，且不能静默重生成 golden。Vidur gate 只用于 drift detection，不是 accuracy certification。文档检查强制完整双语 page pair 与 strict site build。
 
 能力升级需要端到端 product test。例如只增加 `ArchitectureBlueprint` dataclass 仍是 Contract Only；至少要构造两个不同 candidate、映射同一 workload、产生可比较 result 并保持 provenance，才能形成产品级证据。
 

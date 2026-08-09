@@ -19,8 +19,10 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Hardware-exploration capability | Status | Current evidence or gap |
 |---|---|---|
 | Typed Transformer training workload accounting | **Implemented** | exact block operations, bytes, collectives, recomputation, and phases |
+| Static Transformer inference phase planning | **Implemented slice** | independently verified prefill/decode plans, KV capacity, and decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path reaches `PortablePlanIR` |
 | Versioned compute/memory/network efficiency profile | **Implemented adapter** | `HardwareProfile` and two analytical estimate modes |
+| Vidur raw component-profile alignment | **Implemented experiment** | exact-key CSV lookup after independent lowering/costing, with component coverage and non-cancelling error attribution |
 | Calculon/SeqSel workload and cost calibration | **Implemented experiment** | eight-case reproducible report and tests |
 | First-class hierarchical `ArchitectureBlueprint` | **Planned** | documented component model; no production schema/API |
 | Hardware design variables and constraint-aware candidate generation | **Planned** | no design-space generator or search session |
@@ -29,7 +31,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Architecture-bound placement, schedule, and memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` has only a generic queue-oriented schema and structural verifier; producer, route/occupancy semantics, and typed target extensions do not exist |
 | Discrete-event compute/memory/resource simulation | **Planned** | current result is analytical composition, not event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`, `SimulationTraceIR`, and `TimelineBundle` are design contracts only |
-| Network/hardware simulator adapters | **Planned** | normalized provider protocol is documented only |
+| General network/hardware simulator adapters | **Implemented slice / Planned** | inference cost/baseline protocols exist; general resolver, validity/uncertainty model, and simulator adapters do not |
 | Bottleneck, utilization, sensitivity, and what-if reports | **Planned** | no general architecture report product |
 | Energy, area, power, thermal, and cost models | **Planned** | dimensions are specified but no providers exist |
 | Multi-objective Pareto architecture search | **Planned** | no candidate frontier API |
@@ -44,7 +46,7 @@ The five current IR classes use `1.0.0` as an internal canonical serialization v
 
 ## Connected analysis path
 
-The current runnable slice is:
+The current runnable slices are:
 
 ```text
 TransformerModelSpec + TransformerExecutionSpec
@@ -54,15 +56,23 @@ TransformerModelSpec + TransformerExecutionSpec
   -> PortablePlanIR
   -> HardwareProfile analytical estimate
   -> Calculon / paper comparison report
+
+TransformerModelSpec + inference mapping + request cohort
+  -> phase-neutral inference ModelIR
+  -> independently bound prefill and decode DistributedTaskIR
+  -> phase-local PortablePlanIR with KV state/capacity
+  -> Blueprinting HardwareProfile/cost-provider estimate
+  -> optional post-hoc Vidur baseline comparison
+  -> static prefill / decode-step model time and analytical memory report
 ```
 
 `PassManager` verifies each staged derivation and exposes immutable checkpoints. `HardwareProfile` supplies evidence after the portable plan. The path does not yet construct an architecture hierarchy, bind physical resources, execute a discrete-event simulation, or search hardware candidates.
 
 ## What the current result can claim
 
-The repository can claim that selected Transformer training workloads are decomposed into auditable target-neutral work and compared against one versioned system evidence profile without case-specific timing coefficients. It also provides the stable identities, verifier gates, and pass-level checkpoint hooks needed for later simulation correlation.
+The repository can claim that selected Transformer training workloads are decomposed into auditable target-neutral work and compared against one versioned system evidence profile without case-specific timing coefficients. It can also compile dense-MHA inference prefill and decode phase points, derive KV capacity, and compose a homogeneous request cohort with explicit evidence provenance. It provides the stable identities, verifier gates, and pass-level checkpoint hooks needed for later simulation correlation.
 
-It cannot yet claim that Blueprinting explores compute/memory/interconnect parameters, predicts NoC or network contention, models energy/area/cost, constructs a legal concrete hardware schedule, produces sensitivity/Pareto results, or closes a calibration loop on real GPU/LPU observations.
+It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous batching, scheduler overhead, contention, and tail distributions are absent. Nor can it yet claim that Blueprinting explores compute/memory/interconnect parameters, predicts NoC behavior, models energy/area/cost, constructs a legal concrete hardware schedule, produces sensitivity/Pareto results, or closes a calibration loop on real GPU/LPU observations.
 
 ## Engineering foundation
 
@@ -75,13 +85,16 @@ It cannot yet claim that Blueprinting explores compute/memory/interconnect param
 | Transformer semantic frontend and workload algebra | **Implemented slice** | `models/transformer.py`, `analysis/transformer_workload.py` |
 | Distributed and portable mapping derivations | **Implemented slice** | `lowering/transformer.py` |
 | Current evidence adapter | **Implemented slice** | `analysis/cost_model.py` |
+| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `models/transformer_inference.py`, `analysis/{transformer_inference,inference_cost}.py`, `lowering/transformer_inference.py`, `application/inference.py` |
+| Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
 | Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
+| External-baseline regression gate | **Implemented** | frozen contract and licensed offline fixtures under `data/validation/`; `experiments/regression.py`; `.github/workflows/quality.yml` |
 
 These typed representations, verifiers, derivation transactions, and analyses are the formal foundation for hardware exploration. New architecture models, simulator providers, and analysis products should extend this one semantic foundation rather than establish parallel workload truth.
 
 ## Verification baseline
 
-The current test suite covers binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, and the Calculon calibration results. Documentation checks enforce complete bilingual page pairs and strict site builds.
+The current test suite covers binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, Calculon calibration, prefill/decode scaling, KV capacity, static request composition, and baseline-only Vidur comparison. A dedicated CI job runs the eight-case Calculon/SeqSel and three-case pinned Vidur gates on every main-branch pull request and push. It freezes provenance, semantic policy, coverage, comparable-subtotal drift budgets, non-cancelling component errors, aggregate results, and IR digests; it cannot silently regenerate goldens. The Vidur gate is drift detection, not an accuracy certification. Documentation checks enforce complete bilingual page pairs and strict site builds.
 
 Status promotion requires an end-to-end product test. For example, introducing `ArchitectureBlueprint` as a dataclass is Contract Only; constructing two different candidates, mapping the same workload, producing comparable results, and preserving provenance is the minimum product-level evidence.
 

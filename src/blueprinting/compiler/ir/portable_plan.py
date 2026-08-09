@@ -390,6 +390,7 @@ class PortablePlanIR(CanonicalIRMixin):
                 not in {
                     PlanBufferRole.CONSTANT,
                     PlanBufferRole.STATE,
+                    PlanBufferRole.WORKSPACE,
                 }
             ):
                 bag.error("buffer.missing_producer", "non-input buffer requires a producer", *path, "producer")

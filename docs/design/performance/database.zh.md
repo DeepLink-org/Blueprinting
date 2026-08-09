@@ -3,7 +3,7 @@
 性能数据库是 normalized query protocol 背后的版本化 evidence store。它回答一个精确问题——某个 architecture component 或合法 implementation 在明确 context 中预计如何表现——但不会把 architecture choice 或 calibration knob 隐藏在 lookup table 中。
 
 !!! note "设计状态"
-    当前仓库仍直接加载 `HardwareProfile`。本页定义的 request/result/store 是已接受的迁移目标。
+    通用 estimator 仍直接加载 `HardwareProfile`。Static inference 已区分可参与估算的 cost-provider contract 与只读 baseline contract；Vidur CSV adapter 仅属于 baseline。本页的 request/result/store 仍是已接受的通用化目标。
 
 ## Request Contract
 

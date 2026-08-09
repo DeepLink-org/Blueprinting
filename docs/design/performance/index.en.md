@@ -76,9 +76,9 @@ This does not mean every stage is assigned a wall-clock duration. Early stages a
 
 ## Current implementation boundary
 
-The repository currently provides a typed `HardwareProfile`, peak-only and system-evidence efficiency curves, block/iteration estimates, and an auditable Calculon experiment. These form an implemented validation adapter, not yet a general architecture-exploration evidence service.
+The repository currently provides a typed `HardwareProfile`, peak-only and system-evidence efficiency curves, block/iteration estimates, and an auditable Calculon experiment. Static inference additionally separates an admissible `InferenceCostProvider.resolve()` contract from a read-only `InferenceBaseline.lookup()` contract. Vidur implements only the latter and is consumed by a post-hoc experiment after Blueprinting lowering and costing. These are implemented validation slices, not yet a general architecture-exploration evidence service.
 
-The normalized request/result protocol, provider registry, evidence store, uncertainty model, discrete-event simulator, observation ingestion, and calibration service are target architecture. Their contracts should wrap and then replace direct `HardwareProfile` coupling without changing `PortablePlanIR`.
+The general normalized request/result protocol, resolver/registry, evidence store, uncertainty model, discrete-event simulator, observation ingestion, and calibration service remain target architecture. The inference protocols are migration seams, not the final universal schema. Those general contracts should wrap and then replace direct `HardwareProfile` coupling without changing `PortablePlanIR` or allowing a comparison oracle into derivation.
 
 ## Design invariants
 

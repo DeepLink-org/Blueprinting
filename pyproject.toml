@@ -130,6 +130,7 @@ features = ["dev", "full"]
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
 test-cov = "pytest --cov=blueprinting --cov-report=term-missing {args:tests}"
+baseline-regression = "pytest -m baseline_regression {args:tests/regression}"
 lint = "ruff check src/ tests/"
 fmt = "ruff format src/ tests/"
 
@@ -204,6 +205,7 @@ addopts = [
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
+    "baseline_regression: pinned external-baseline regression gates required in CI",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 filterwarnings = [

@@ -3,7 +3,7 @@
 The performance database is a revisioned evidence store behind a normalized query protocol. It answers a precise question—how an architecture component or legal implementation is expected to behave in a declared context—without hiding architecture choices or calibration knobs inside a lookup table.
 
 !!! note "Design status"
-    The repository currently loads `HardwareProfile` directly. The request/result/store design on this page is the accepted migration target.
+    The general estimator still loads `HardwareProfile` directly. Static inference now distinguishes an admissible cost-provider contract from a read-only baseline contract; the Vidur CSV adapter is baseline-only. The request/result/store design on this page remains the accepted generalization target.
 
 ## Request contract
 

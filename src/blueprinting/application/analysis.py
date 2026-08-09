@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from itertools import product
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from blueprinting.compiler.analysis import CalibrationMode, HardwareProfile, estimate_iteration
 from blueprinting.compiler.codec import content_digest
@@ -35,6 +35,11 @@ from blueprinting.compiler.models import (
 from blueprinting.compiler.passes import AnalysisStore, PassManager, PassPipeline
 
 LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from blueprinting.compiler.analysis import InferenceCostProvider
+
+    from .inference import InferenceAnalysisDraft, InferenceAnalysisOutcome, InferenceAnalysisService
 
 
 class DiagnosticLevel(Enum):
@@ -195,6 +200,10 @@ class TaskReport:
     memory_seconds: float
     network_seconds: float
     total_seconds: float
+    analytical_seconds: float = 0.0
+    evidence_provider: str = ""
+    evidence_revision: str = ""
+    evidence_match: str = ""
 
 
 @dataclass(frozen=True)
@@ -236,9 +245,7 @@ class AnalysisOutcome:
 
     @property
     def ok(self) -> bool:
-        return self.report is not None and not any(
-            item.level is DiagnosticLevel.ERROR for item in self.diagnostics
-        )
+        return self.report is not None and not any(item.level is DiagnosticLevel.ERROR for item in self.diagnostics)
 
 
 @dataclass(frozen=True)
@@ -254,15 +261,15 @@ class SweepRequest:
     def __post_init__(self) -> None:
         for field_name in ("tensor_parallel", "pipeline_parallel", "data_parallel"):
             values = tuple(dict.fromkeys(getattr(self, field_name)))
-            if not values or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
+            if not values or any(
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values
+            ):
                 raise ValueError(f"{field_name} must contain positive integers")
             object.__setattr__(self, field_name, values)
         if self.max_candidates <= 0:
             raise ValueError("max_candidates must be positive")
         if self.candidate_count > self.max_candidates:
-            raise ValueError(
-                f"strategy sweep has {self.candidate_count} candidates; limit is {self.max_candidates}"
-            )
+            raise ValueError(f"strategy sweep has {self.candidate_count} candidates; limit is {self.max_candidates}")
 
     @property
     def candidate_count(self) -> int:
@@ -359,12 +366,28 @@ def _stage_report(
 class BlueprintingService:
     """Single supported orchestration entry point for Blueprinting clients."""
 
-    def __init__(self, analyses: AnalysisStore | None = None) -> None:
+    def __init__(
+        self,
+        analyses: AnalysisStore | None = None,
+        *,
+        inference_cost_provider: InferenceCostProvider | None = None,
+    ) -> None:
+        from .inference import InferenceAnalysisService
+
         self._manager = PassManager(analyses=analyses)
         self._pipeline = PassPipeline.of(
             DistributeTransformerTrainingPass(),
             PlanTransformerTrainingPass(),
         )
+        self._inference: InferenceAnalysisService = InferenceAnalysisService(
+            analyses,
+            cost_provider=inference_cost_provider,
+        )
+
+    def analyze_inference(self, draft: InferenceAnalysisDraft) -> InferenceAnalysisOutcome:
+        """Run the canonical static inference path through the same service boundary."""
+
+        return self._inference.analyze(draft)
 
     def analyze(self, draft: AnalysisDraft) -> AnalysisOutcome:
         try:
@@ -525,8 +548,7 @@ class BlueprintingService:
                 AnalysisDiagnostic(
                     code="capacity.device_memory_exceeded",
                     message=(
-                        f"每设备预计需要 {estimate.memory.total} bytes，"
-                        f"超过容量 {hardware.memory.capacity_bytes} bytes"
+                        f"每设备预计需要 {estimate.memory.total} bytes，超过容量 {hardware.memory.capacity_bytes} bytes"
                     ),
                     level=DiagnosticLevel.WARNING,
                     path=("memory", "total"),
