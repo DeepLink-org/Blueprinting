@@ -647,7 +647,7 @@ class BlueprintingWorkbench:
                     self.evidence_mode_tab = self._build_mode_button(
                         WorkbenchMode.EVIDENCE,
                         "性能证据",
-                        "monitoring",
+                        "speed",
                         "mode-evidence",
                     )
                     self.float_mode_tab = self._build_mode_button(
