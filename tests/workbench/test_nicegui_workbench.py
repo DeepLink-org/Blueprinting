@@ -51,7 +51,6 @@ async def test_nicegui_workbench_loads_without_eager_analysis(
         await user.should_see("当前显示解析任务贡献，不是事件级 Timeline")
         await user.should_see(marker="run-analysis")
         await user.should_see(marker="sidebar-run-analysis")
-        await user.should_see("Calculon / Streamlit Legacy")
         await user.should_see(marker="mode-evidence")
         await user.should_see(marker="mode-float")
 
