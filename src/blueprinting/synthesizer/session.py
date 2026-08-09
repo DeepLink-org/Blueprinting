@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from blueprinting.schema.codec import content_digest, record_type
+from blueprinting.schema.frozen import FrozenDict, freeze
+
 from .axes import BindingAxis
 from .bindings import BindingSet, BindingValue, TargetRequirements
-from .codec import content_digest, record_type
 from .errors import BindingError
-from .frozen import FrozenDict, freeze
 
 
 @record_type("compiler.session")

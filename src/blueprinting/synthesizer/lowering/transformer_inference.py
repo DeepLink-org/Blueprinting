@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from ...analysis.transformer_inference import (
+from blueprinting.mapping import TransformerInferenceMappingSpec
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.workload import TransformerModelSpec
+
+from ..axes import BindingAxis
+from ..bindings import InferencePhase, WorkloadMode
+from ..dialects.transformer import (
+    EngineKind,
     InferenceBlockMemoryFacts,
     InferenceInvocation,
     derive_transformer_inference_block,
 )
-from ...analysis.transformer_workload import EngineKind
-from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
-from ..axes import BindingAxis
-from ..bindings import InferencePhase, WorkloadMode
-from ..frozen import FrozenDict
 from ..ids import BufferId, Lineage, NodeId, ValueId
 from ..ir import (
     AbstractStorageClass,
@@ -51,7 +53,7 @@ from ..passes import DerivationPass, PassContext, PassContract
 def _semantic_specs(
     ir: ModelIR,
     context: PassContext,
-) -> tuple[TransformerModelSpec, TransformerInferenceExecutionSpec, InferencePhase, int, int, int]:
+) -> tuple[TransformerModelSpec, TransformerInferenceMappingSpec, InferencePhase, int, int, int, str]:
     if len(ir.operations) != 1 or ir.operations[0].operation != OperationName("transformer", "decoder_inference"):
         raise ValueError("Transformer inference distribution expects one transformer.decoder_inference operation")
     model = ir.operations[0].attributes.get("model_spec")
@@ -63,13 +65,13 @@ def _semantic_specs(
         raise ValueError("Transformer inference distribution requires workload and strategy bindings")
     if workload.mode is not WorkloadMode.INFERENCE or workload.inference_phase is None:
         raise ValueError("Transformer inference requires an explicit inference phase")
-    execution = strategy.attributes.get("inference_execution_spec")
-    if not isinstance(execution, TransformerInferenceExecutionSpec):
-        raise TypeError("strategy binding is missing a typed TransformerInferenceExecutionSpec")
+    mapping = strategy.attributes.get("inference_mapping_spec")
+    if not isinstance(mapping, TransformerInferenceMappingSpec):
+        raise TypeError("strategy binding is missing a typed TransformerInferenceMappingSpec")
     if (
-        strategy.tensor_parallel != execution.tensor_parallel
-        or strategy.pipeline_parallel != execution.pipeline_parallel
-        or strategy.data_parallel != execution.replicas
+        strategy.tensor_parallel != mapping.tensor_parallel
+        or strategy.pipeline_parallel != mapping.pipeline_parallel
+        or strategy.data_parallel != mapping.replicas
     ):
         raise ValueError("strategy binding is inconsistent with inference execution facts")
     if any(
@@ -84,39 +86,43 @@ def _semantic_specs(
         raise ValueError("workload query_tokens attribute is inconsistent with the inference phase")
     if workload.attributes.get("context_tokens") != context_tokens:
         raise ValueError("workload context_tokens attribute is inconsistent with sequence_length")
-    execution.validate_model(model)
-    return model, execution, workload.inference_phase, batch_size, query_tokens, context_tokens
+    datatype = workload.attributes.get("datatype")
+    if not isinstance(datatype, str):
+        raise TypeError("inference workload binding is missing a concrete datatype")
+    mapping.validate_model(model)
+    return model, mapping, workload.inference_phase, batch_size, query_tokens, context_tokens, datatype
 
 
 class DistributeTransformerInferencePass(DerivationPass[ModelIR, DistributedTaskIR]):
     """Expand one phase into observable local and collective components."""
 
     contract = PassContract.create(
-        "transformer-inference-distribute-v1",
+        "transformer-inference-distribute-v2",
         ModelIR,
         DistributedTaskIR,
         required_bindings=frozenset({BindingAxis.WORKLOAD, BindingAxis.STRATEGY}),
     )
 
     def run(self, ir: ModelIR, context: PassContext) -> DistributedTaskIR:
-        model, execution, phase, batch_size, query_tokens, context_tokens = _semantic_specs(ir, context)
+        model, mapping, phase, batch_size, query_tokens, context_tokens, datatype = _semantic_specs(ir, context)
         invocations, block_memory = derive_transformer_inference_block(
             model,
-            execution,
+            mapping,
             phase=phase,
             batch_size=batch_size,
             context_tokens=context_tokens,
+            datatype=datatype,
         )
-        ranks = tuple(range(execution.tensor_parallel))
-        mesh = LogicalMesh("local-tensor-parallel-group", (MeshAxis("tp", execution.tensor_parallel),))
+        ranks = tuple(range(mapping.tensor_parallel))
+        mesh = LogicalMesh("local-tensor-parallel-group", (MeshAxis("tp", mapping.tensor_parallel),))
         source_input = ir.inputs[0]
         source_output = ir.outputs[0]
         source_cache = next(value.id for value in ir.values if value.role is ValueRole.KV_CACHE)
         input_id = ValueId.derive(ir.digest, phase.value, "transformer-distributed", "input")
         cache_id = ValueId.derive(ir.digest, phase.value, "transformer-distributed", "kv-cache")
         output_id = ValueId.derive(ir.digest, phase.value, "transformer-distributed", "output")
-        boundary_type = TensorType((batch_size, query_tokens, model.hidden_size), execution.datatype)
-        cache_type = TensorType((2, batch_size, context_tokens, model.hidden_size), execution.datatype)
+        boundary_type = TensorType((batch_size, query_tokens, model.hidden_size), datatype)
+        cache_type = TensorType((2, batch_size, context_tokens, model.hidden_size), datatype)
         boundary_sharding = ShardingSpec.replicated(boundary_type.rank, ("tp",))
         cache_sharding = ShardingSpec(((), (), (), ("tp",)))
 
@@ -211,11 +217,12 @@ class DistributeTransformerInferencePass(DerivationPass[ModelIR, DistributedTask
             attributes=FrozenDict(
                 {
                     "model_spec": model,
-                    "inference_execution_spec": execution,
+                    "inference_mapping_spec": mapping,
                     "inference_phase": phase,
                     "batch_size": batch_size,
                     "query_tokens": query_tokens,
                     "context_tokens": context_tokens,
+                    "datatype": datatype,
                     "block_memory": block_memory,
                     "scope": "one-local-tensor-parallel-block-phase",
                 }
@@ -244,7 +251,6 @@ def _plan_resources(invocation: InferenceInvocation) -> tuple[ResourceRequiremen
                 ResourceKind.NETWORK,
                 invocation.work.message_bytes,
                 ResourceScope.PER_RANK,
-                FrozenDict({"network_tier": invocation.network_tier}),
             )
         )
     return tuple(resources)
@@ -272,7 +278,7 @@ class PlanTransformerInferencePass(DerivationPass[DistributedTaskIR, PortablePla
     """Materialize a phase plan without target placement or measured time."""
 
     contract = PassContract.create(
-        "transformer-inference-plan-work-v1",
+        "transformer-inference-plan-work-v2",
         DistributedTaskIR,
         PortablePlanIR,
         required_bindings=frozenset({BindingAxis.WORKLOAD, BindingAxis.STRATEGY}),
@@ -280,13 +286,13 @@ class PlanTransformerInferencePass(DerivationPass[DistributedTaskIR, PortablePla
 
     def run(self, ir: DistributedTaskIR, context: PassContext) -> PortablePlanIR:
         model = ir.attributes.get("model_spec")
-        execution = ir.attributes.get("inference_execution_spec")
+        mapping = ir.attributes.get("inference_mapping_spec")
         phase = ir.attributes.get("inference_phase")
         block_memory = ir.attributes.get("block_memory")
         if not isinstance(model, TransformerModelSpec):
             raise TypeError("distributed inference IR is missing TransformerModelSpec")
-        if not isinstance(execution, TransformerInferenceExecutionSpec):
-            raise TypeError("distributed inference IR is missing TransformerInferenceExecutionSpec")
+        if not isinstance(mapping, TransformerInferenceMappingSpec):
+            raise TypeError("distributed inference IR is missing TransformerInferenceMappingSpec")
         if not isinstance(phase, InferencePhase):
             raise TypeError("distributed inference IR is missing InferencePhase")
         if not isinstance(block_memory, InferenceBlockMemoryFacts):
@@ -353,9 +359,6 @@ class PlanTransformerInferencePass(DerivationPass[DistributedTaskIR, PortablePla
                                 "collective": (
                                     invocation.collective.value if invocation.collective is not None else ""
                                 ),
-                                "network_tier": (
-                                    invocation.network_tier if invocation.network_tier is not None else -1
-                                ),
                             }
                         ),
                     ),
@@ -371,7 +374,7 @@ class PlanTransformerInferencePass(DerivationPass[DistributedTaskIR, PortablePla
             name=f"{model.name}-{phase.value}-local-tp-block-plan",
             source_distributed_digest=ir.digest,
             strategy_fingerprint=strategy.fingerprint,
-            planner_revision="transformer-inference-work-analysis-v1",
+            planner_revision="transformer-inference-work-analysis-v2",
             tasks=tuple(tasks),
             buffers=(
                 PlanBuffer(
@@ -437,11 +440,12 @@ class PlanTransformerInferencePass(DerivationPass[DistributedTaskIR, PortablePla
             attributes=FrozenDict(
                 {
                     "model_spec": model,
-                    "inference_execution_spec": execution,
+                    "inference_mapping_spec": mapping,
                     "inference_phase": phase,
                     "batch_size": ir.attributes["batch_size"],
                     "query_tokens": ir.attributes["query_tokens"],
                     "context_tokens": ir.attributes["context_tokens"],
+                    "datatype": ir.attributes["datatype"],
                     "scope": ir.attributes["scope"],
                 }
             ),

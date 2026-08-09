@@ -14,8 +14,9 @@ from enum import Enum
 from numbers import Real
 from typing import Any, Union
 
+from blueprinting.schema.codec import enum_type, record_type
+
 from .axes import BindingAxis
-from .codec import enum_type, record_type
 from .errors import BindingError
 
 Number = int | float

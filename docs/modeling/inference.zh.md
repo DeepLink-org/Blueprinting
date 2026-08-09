@@ -29,20 +29,22 @@ Frontend 生成一个 phase-neutral 的 `transformer.decoder_inference` operatio
 
 ```text
 TransformerModelSpec
-  + TransformerInferenceExecutionSpec(TP, PP, replicas, dtype, network tiers)
-  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context)
+  + TransformerInferenceRequestSpec(batch, prompt, generated, dtype)
+  + TransformerInferenceMappingSpec(TP, PP, replicas)
+  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context, dtype)
   -> ModelIR
   -> DistributeTransformerInferencePass
   -> DistributedTaskIR
   -> PlanTransformerInferencePass
   -> PortablePlanIR
+  -> [SystemProfile + NetworkTierBinding]
   -> estimate_inference_phase(Blueprinting cost provider | analytical model)
   -> optional post-hoc Vidur comparison
 ```
 
 Component task 包括 input norm、QKV projection、RoPE、KV save、attention core、output projection、TP all-reduce、residual、post-attention norm、MLP up/activation/down、第二次 all-reduce 与最终 residual。这个边界既足以检查 work conservation，也能与 profiling system 中可观测的 kernel family 对齐。
 
-Prefill 绑定 `query_tokens = context_tokens = prompt_tokens`。Decode 绑定 `query_tokens = 1`，并把 `context_tokens` 定义为追加当前 token 后 attention 可见的 key 数。每个 phase plan 保存精确 operations、read/write bytes、collective volume、phase、primitive、source layer、query/context length、block weight capacity、KV capacity 与保守 workspace buffer；它不携带 duration。Costing 只从 `PlanTask.workload` 与显式 buffer 重建 task view，不允许隐藏 lowering object 成为第二份 workload 真值。
+Prefill 绑定 `query_tokens = context_tokens = prompt_tokens`。Decode 绑定 `query_tokens = 1`，并把 `context_tokens` 定义为追加当前 token 后 attention 可见的 key 数。每个 phase plan 保存精确 operations、read/write bytes、逻辑 collective volume、phase、primitive、source layer、query/context length、datatype、block weight capacity、KV capacity 与保守 workspace buffer；它不携带 duration 或 physical network tier。Costing 只从 `PlanTask.workload` 与显式 buffer 重建 task view，再应用显式 `NetworkTierBinding`，不允许隐藏 lowering object 或 deployment placement 成为第二份 workload 真值。
 
 ## Request composition 语义
 
@@ -71,10 +73,11 @@ mean decode-step model time = decode total / (O-1), when O > 1
 
 ```python
 from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
 from blueprinting.system import SystemProfile
 from blueprinting.synthesizer.bindings import InferencePhase
-from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.workload import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.validation import VidurExperimentCase, run_vidur_experiment
+from blueprinting.workload import TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -88,7 +91,9 @@ baseline = VidurProfileBaseline.from_csv(
 case = VidurExperimentCase(
     name="decode/context-128",
     model=TransformerModelSpec(...),
-    execution=TransformerInferenceExecutionSpec(...),
+    mapping=TransformerInferenceMappingSpec(...),
+    network_binding=NetworkTierBinding(...),
+    datatype="float16",
     hardware=SystemProfile(...),
     phase=InferencePhase.DECODE,
     batch_size=1,

@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from blueprinting.synthesizer.experiments import (  # noqa: E402
+from blueprinting.validation import (  # noqa: E402
     discover_seqsel_tab5_cases,
     run_calculon_experiment,
 )

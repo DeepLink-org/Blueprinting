@@ -11,23 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 
-from ..synthesizer.codec import enum_type, record_type
-from ..synthesizer.ir import CollectiveKind
-from ..workload import (
-    RecomputePolicy,
-    TensorParallelCommunication,
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-)
+from blueprinting.mapping import RecomputePolicy, TensorParallelCommunication, TransformerTrainingMappingSpec
+from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+
+from ...ir import CollectiveKind
+from .common import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
-
-
-@enum_type("compiler.analysis.engine_kind")
-class EngineKind(Enum):
-    MATRIX = "matrix"
-    VECTOR = "vector"
-    COLLECTIVE = "collective"
 
 
 @enum_type("compiler.analysis.training_phase")
@@ -40,32 +31,7 @@ class TrainingPhase(Enum):
     RECOMMUNICATION = "recommunication"
 
 
-@record_type("compiler.analysis.phase_work.v1")
-@dataclass(frozen=True)
-class PhaseWork:
-    """Exact work for one invocation, before target binding."""
-
-    operations: int = 0
-    read_bytes: int = 0
-    write_bytes: int = 0
-    message_bytes: int = 0
-
-    def __post_init__(self) -> None:
-        for field_name in ("operations", "read_bytes", "write_bytes", "message_bytes"):
-            value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{field_name} must be a non-negative integer")
-
-    @property
-    def memory_bytes(self) -> int:
-        return self.read_bytes + self.write_bytes
-
-    @property
-    def is_empty(self) -> bool:
-        return self.operations == 0 and self.memory_bytes == 0 and self.message_bytes == 0
-
-
-@record_type("compiler.analysis.primitive_invocation.v1")
+@record_type("blueprinting.transformer.primitive-invocation.v2")
 @dataclass(frozen=True)
 class PrimitiveInvocation:
     """One structurally selected operation in a local block program."""
@@ -77,7 +43,6 @@ class PrimitiveInvocation:
     engine: EngineKind
     work: PhaseWork
     collective: CollectiveKind | None = None
-    network_tier: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("name", "source_layer", "primitive"):
@@ -90,9 +55,9 @@ class PrimitiveInvocation:
         if not isinstance(self.work, PhaseWork):
             raise TypeError("work must be PhaseWork")
         if self.engine is EngineKind.COLLECTIVE:
-            if self.collective is None or self.network_tier is None:
-                raise ValueError("collective invocations require kind and network tier")
-        elif self.collective is not None or self.network_tier is not None:
+            if self.collective is None:
+                raise ValueError("collective invocations require a collective kind")
+        elif self.collective is not None:
             raise ValueError("local invocations cannot carry collective metadata")
 
 
@@ -121,7 +86,48 @@ class BlockMemoryFacts:
 class _Communication:
     kind: CollectiveKind
     work: PhaseWork
-    network_tier: int
+
+
+@dataclass(frozen=True)
+class _TrainingContext:
+    workload: TransformerTrainingWorkloadSpec
+    mapping: TransformerTrainingMappingSpec
+
+    @property
+    def bytes_per_element(self) -> int:
+        return self.workload.bytes_per_element
+
+    @property
+    def microbatch_size(self) -> int:
+        return self.workload.microbatch_size
+
+    @property
+    def tensor_parallel(self) -> int:
+        return self.mapping.tensor_parallel
+
+    @property
+    def data_parallel(self) -> int:
+        return self.mapping.data_parallel
+
+    @property
+    def optimizer_sharding(self) -> bool:
+        return self.mapping.optimizer_sharding
+
+    @property
+    def fused_activation(self) -> bool:
+        return self.mapping.fused_activation
+
+    @property
+    def recompute(self) -> RecomputePolicy:
+        return self.mapping.recompute
+
+    @property
+    def sequence_parallel_all_gather_redo(self) -> bool:
+        return self.mapping.sequence_parallel_all_gather_redo
+
+    @property
+    def tensor_parallel_communication(self) -> TensorParallelCommunication:
+        return self.mapping.tensor_parallel_communication
 
 
 @dataclass(frozen=True)
@@ -231,7 +237,7 @@ def _linear(
     m: int,
     n: int,
     k: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
     activation_reused: bool = False,
@@ -266,7 +272,7 @@ def _batch_matmul(
     m: int,
     n: int,
     k: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
     output_stored: bool = True,
@@ -291,7 +297,7 @@ def _layer_norm(
     name: str,
     elements: int,
     hidden: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
 ) -> _Layer:
@@ -321,7 +327,7 @@ def _fork(
     name: str,
     elements: int,
     users: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
     activation_stored: bool = True,
@@ -348,7 +354,7 @@ def _fork(
 def _softmax(
     name: str,
     elements: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
     output_stored: bool,
@@ -374,7 +380,7 @@ def _softmax(
 def _dropout(
     name: str,
     elements: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
     activation_stored: bool = True,
@@ -404,7 +410,7 @@ def _dropout(
 def _gelu(
     name: str,
     elements: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
 ) -> _Layer:
@@ -430,7 +436,7 @@ def _gelu(
 def _residual(
     name: str,
     elements: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     recompute: bool,
 ) -> _Layer:
@@ -454,7 +460,7 @@ def _residual(
 def _tp_communication(
     name: str,
     elements: int,
-    execution: TransformerExecutionSpec,
+    execution: _TrainingContext,
     *,
     conjugate: bool,
     recompute: bool,
@@ -477,39 +483,19 @@ def _tp_communication(
             gradient_kind = CollectiveKind.ALL_GATHER if conjugate else CollectiveKind.REDUCE_SCATTER
             forward_ops = reduction_operations if conjugate else 0
             gradient_ops = 0 if conjugate else reduction_operations
-            forward_comm = _Communication(
-                forward_kind,
-                _work(forward_ops, memory, 0, message),
-                execution.tensor_parallel_network,
-            )
-            gradient_comm = _Communication(
-                gradient_kind,
-                _work(gradient_ops, memory, 0, message),
-                execution.tensor_parallel_network,
-            )
+            forward_comm = _Communication(forward_kind, _work(forward_ops, memory, 0, message))
+            gradient_comm = _Communication(gradient_kind, _work(gradient_ops, memory, 0, message))
         elif conjugate:
-            forward_comm = _Communication(
-                CollectiveKind.ALL_REDUCE,
-                _work(reduction_operations, memory, 0, message),
-                execution.tensor_parallel_network,
-            )
+            forward_comm = _Communication(CollectiveKind.ALL_REDUCE, _work(reduction_operations, memory, 0, message))
         else:
-            gradient_comm = _Communication(
-                CollectiveKind.ALL_REDUCE,
-                _work(reduction_operations, memory, 0, message),
-                execution.tensor_parallel_network,
-            )
+            gradient_comm = _Communication(CollectiveKind.ALL_REDUCE, _work(reduction_operations, memory, 0, message))
 
         if recommunicate and (split or conjugate):
             if split:
                 kind = CollectiveKind.REDUCE_SCATTER if conjugate else CollectiveKind.ALL_GATHER
             else:
                 kind = CollectiveKind.ALL_REDUCE
-            recompute_comm = _Communication(
-                kind,
-                _work(message=message),
-                execution.tensor_parallel_network,
-            )
+            recompute_comm = _Communication(kind, _work(message=message))
 
     if split:
         activation_bytes = message // tp
@@ -545,7 +531,7 @@ def _tp_communication(
     )
 
 
-def _build_layers(model: TransformerModelSpec, execution: TransformerExecutionSpec) -> tuple[_Layer, ...]:
+def _build_layers(model: TransformerModelSpec, execution: _TrainingContext) -> tuple[_Layer, ...]:
     tp = execution.tensor_parallel
     if model.hidden_size % tp or model.feedforward_size % tp or model.attention_heads % tp:
         raise ValueError("hidden, feedforward, and attention heads must divide tensor parallelism")
@@ -735,16 +721,18 @@ def _communication_invocation(
         engine=EngineKind.COLLECTIVE,
         work=communication.work,
         collective=communication.kind,
-        network_tier=communication.network_tier,
     )
 
 
 def derive_transformer_block(
     model: TransformerModelSpec,
-    execution: TransformerExecutionSpec,
+    workload: TransformerTrainingWorkloadSpec,
+    mapping: TransformerTrainingMappingSpec,
 ) -> tuple[tuple[PrimitiveInvocation, ...], BlockMemoryFacts]:
     """Decompose a block into explicit forward/recompute/backward work."""
 
+    mapping.validate_workload(workload)
+    execution = _TrainingContext(workload, mapping)
     layers = _build_layers(model, execution)
     invocations = []
 

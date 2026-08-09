@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from blueprinting.synthesizer.codec import record_type
-from blueprinting.synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import record_type
+from blueprinting.schema.frozen import FrozenDict
 
 
 @record_type("compiler.analysis.network_operation.v1")

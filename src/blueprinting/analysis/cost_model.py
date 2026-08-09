@@ -18,21 +18,24 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from ..synthesizer.codec import enum_type
-from ..synthesizer.ir import CollectiveKind, PortablePlanIR
-from ..system import SystemProfile
-from ..workload import (
+from blueprinting.mapping import (
+    NetworkTierBinding,
     RecomputePolicy,
     TensorParallelCommunication,
-    TransformerExecutionSpec,
-    TransformerModelSpec,
+    TransformerTrainingMappingSpec,
 )
-from .transformer_workload import (
+from blueprinting.schema.codec import enum_type
+from blueprinting.synthesizer.dialects.transformer import (
     BlockMemoryFacts,
     EngineKind,
+    PhaseWork,
     PrimitiveInvocation,
     TrainingPhase,
 )
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+
+from ..synthesizer.ir import CollectiveKind, PlanTask, PortablePlanIR
+from ..system import SystemProfile
 
 # Codec tags are stable wire identities; the legacy namespace survives the
 # Python package move so existing snapshots and performance evidence still load.
@@ -109,6 +112,7 @@ def _task_estimate(
     invocation: PrimitiveInvocation,
     hardware: SystemProfile,
     participants: int,
+    network_binding: NetworkTierBinding,
     mode: CalibrationMode,
 ) -> TaskEstimate:
     work = invocation.work
@@ -127,9 +131,12 @@ def _task_estimate(
     local_seconds = hardware.processing_time(compute_seconds, memory_seconds)
     network_seconds = 0.0
     if invocation.engine is EngineKind.COLLECTIVE:
-        if invocation.network_tier is None or invocation.collective is None:
-            raise ValueError("collective invocation is missing network facts")
-        network = hardware.networks[invocation.network_tier]
+        if invocation.collective is None:
+            raise ValueError("collective invocation is missing its collective kind")
+        try:
+            network = hardware.networks[network_binding.tensor_parallel]
+        except IndexError as error:
+            raise ValueError("tensor_parallel network tier is not defined by the bound system") from error
         network_seconds = network.time(
             invocation.collective.value,
             work.message_bytes,
@@ -145,24 +152,72 @@ def _task_estimate(
     )
 
 
+def _invocation_from_plan_task(task: PlanTask) -> PrimitiveInvocation:
+    """Reconstruct a cost view from canonical portable workload facts."""
+
+    attributes = task.workload.attributes
+    try:
+        phase = TrainingPhase(attributes["phase"])
+        engine = EngineKind(attributes["engine"])
+        name = attributes["name"]
+        primitive = attributes["primitive"]
+        source_layer = attributes["source_layer"]
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"portable training task {task.id} has invalid semantic workload metadata") from error
+    for field_name, value in (("name", name), ("primitive", primitive), ("source_layer", source_layer)):
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"portable training task {task.id} has invalid {field_name}")
+    collective_value = attributes.get("collective", "")
+    collective = None
+    if engine is EngineKind.COLLECTIVE:
+        try:
+            collective = CollectiveKind(collective_value)
+        except ValueError as error:
+            raise ValueError(f"portable training task {task.id} has invalid collective metadata") from error
+    elif collective_value != "":
+        raise ValueError(f"local portable training task {task.id} carries collective metadata")
+    return PrimitiveInvocation(
+        name=name,
+        source_layer=source_layer,
+        primitive=primitive,
+        phase=phase,
+        engine=engine,
+        work=PhaseWork(
+            operations=task.workload.operations,
+            read_bytes=task.workload.read_bytes,
+            write_bytes=task.workload.write_bytes,
+            message_bytes=task.workload.message_bytes,
+        ),
+        collective=collective,
+    )
+
+
 def estimate_block(
     plan: PortablePlanIR,
     hardware: SystemProfile,
     mode: CalibrationMode,
+    *,
+    network_binding: NetworkTierBinding,
 ) -> BlockEstimate:
-    execution = plan.attributes.get("execution_spec")
-    if not isinstance(execution, TransformerExecutionSpec):
-        raise TypeError("portable plan is missing TransformerExecutionSpec")
+    mapping = plan.attributes.get("mapping_spec")
+    if not isinstance(mapping, TransformerTrainingMappingSpec):
+        raise TypeError("portable plan is missing TransformerTrainingMappingSpec")
+    if not isinstance(network_binding, NetworkTierBinding):
+        raise TypeError("network_binding must be NetworkTierBinding")
     tasks = []
     totals = dict.fromkeys(TrainingPhase, 0.0)
     tp_forward = 0.0
     tp_backward = 0.0
     recommunication = 0.0
     for task in plan.tasks:
-        invocation = task.attributes.get("invocation")
-        if not isinstance(invocation, PrimitiveInvocation):
-            raise TypeError("plan task is missing PrimitiveInvocation")
-        estimate = _task_estimate(invocation, hardware, execution.tensor_parallel, mode)
+        invocation = _invocation_from_plan_task(task)
+        estimate = _task_estimate(
+            invocation,
+            hardware,
+            mapping.tensor_parallel,
+            network_binding,
+            mode,
+        )
         tasks.append(estimate)
         if invocation.engine is EngineKind.COLLECTIVE:
             if invocation.phase is TrainingPhase.FORWARD:
@@ -191,19 +246,21 @@ def estimate_block(
 
 def _iteration_memory(
     model: TransformerModelSpec,
-    execution: TransformerExecutionSpec,
+    workload: TransformerTrainingWorkloadSpec,
+    mapping: TransformerTrainingMappingSpec,
     block: BlockMemoryFacts,
     blocks_per_processor: int,
 ) -> IterationMemory:
-    memory_microbatches = min(execution.microbatch_count, execution.pipeline_parallel)
-    if execution.pipeline_interleaving > 1:
+    microbatch_count = mapping.microbatch_count(workload)
+    memory_microbatches = min(microbatch_count, mapping.pipeline_parallel)
+    if mapping.pipeline_interleaving > 1:
         pipeline_factor = memory_microbatches * (
-            1 + (execution.pipeline_parallel - 1) / (execution.pipeline_interleaving * execution.pipeline_parallel)
+            1 + (mapping.pipeline_parallel - 1) / (mapping.pipeline_interleaving * mapping.pipeline_parallel)
         )
     else:
         pipeline_factor = memory_microbatches
 
-    if execution.recompute is RecomputePolicy.FULL:
+    if mapping.recompute is RecomputePolicy.FULL:
         activation_bytes = block.activation_working
         checkpoint_bytes = round(blocks_per_processor * block.activation_checkpoint * pipeline_factor)
     else:
@@ -230,37 +287,47 @@ def estimate_iteration(
     plan: PortablePlanIR,
     hardware: SystemProfile,
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
+    *,
+    network_binding: NetworkTierBinding,
 ) -> IterationEstimate:
     """Apply an explicit 1F1B/interleaved schedule to a derived block plan."""
 
     model = plan.attributes.get("model_spec")
-    execution = plan.attributes.get("execution_spec")
+    workload = plan.attributes.get("workload_spec")
+    mapping = plan.attributes.get("mapping_spec")
     block_memory = plan.attributes.get("block_memory")
     if not isinstance(model, TransformerModelSpec):
         raise TypeError("portable plan is missing TransformerModelSpec")
-    if not isinstance(execution, TransformerExecutionSpec):
-        raise TypeError("portable plan is missing TransformerExecutionSpec")
+    if not isinstance(workload, TransformerTrainingWorkloadSpec):
+        raise TypeError("portable plan is missing TransformerTrainingWorkloadSpec")
+    if not isinstance(mapping, TransformerTrainingMappingSpec):
+        raise TypeError("portable plan is missing TransformerTrainingMappingSpec")
     if not isinstance(block_memory, BlockMemoryFacts):
         raise TypeError("portable plan is missing BlockMemoryFacts")
-    if hardware.datatype != execution.datatype:
-        raise ValueError("system profile datatype does not match execution datatype")
+    if hardware.datatype != workload.datatype:
+        raise ValueError("system profile datatype does not match workload datatype")
+    if not isinstance(network_binding, NetworkTierBinding):
+        raise TypeError("network_binding must be NetworkTierBinding")
 
-    blocks_per_processor = math.ceil(model.block_count / execution.pipeline_parallel)
-    if execution.pipeline_interleaving > blocks_per_processor:
+    blocks_per_processor = math.ceil(model.block_count / mapping.pipeline_parallel)
+    if mapping.pipeline_interleaving > blocks_per_processor:
         raise ValueError("pipeline_interleaving cannot exceed blocks per processor")
-    if blocks_per_processor % execution.pipeline_interleaving:
+    if blocks_per_processor % mapping.pipeline_interleaving:
         raise ValueError("pipeline_interleaving must divide blocks per processor")
-    blocks_per_chunk = blocks_per_processor // execution.pipeline_interleaving
-    chunks_per_processor = execution.pipeline_interleaving
+    blocks_per_chunk = blocks_per_processor // mapping.pipeline_interleaving
+    chunks_per_processor = mapping.pipeline_interleaving
     base_blocks_per_chunk = blocks_per_chunk - 1
-    block = estimate_block(plan, hardware, mode)
+    block = estimate_block(plan, hardware, mode, network_binding=network_binding)
 
-    activation_elements = execution.microbatch_size * model.sequence_length * model.hidden_size
-    if execution.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
-        activation_elements //= execution.tensor_parallel
-    pipeline_message = activation_elements * execution.bytes_per_element
-    if execution.pipeline_parallel > 1:
-        pipeline_network = hardware.networks[execution.pipeline_parallel_network]
+    activation_elements = workload.microbatch_size * model.sequence_length * model.hidden_size
+    if mapping.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
+        activation_elements //= mapping.tensor_parallel
+    pipeline_message = activation_elements * workload.bytes_per_element
+    if mapping.pipeline_parallel > 1:
+        try:
+            pipeline_network = hardware.networks[network_binding.pipeline_parallel]
+        except IndexError as error:
+            raise ValueError("pipeline_parallel network tier is not defined by the bound system") from error
         pipeline_point_to_point = pipeline_network.time(
             "p2p",
             pipeline_message,
@@ -285,23 +352,24 @@ def estimate_iteration(
     chunk_time = chunk_forward + chunk_backward
 
     missing_blocks = (
-        execution.pipeline_parallel - model.block_count % execution.pipeline_parallel
-        if model.block_count % execution.pipeline_parallel
+        mapping.pipeline_parallel - model.block_count % mapping.pipeline_parallel
+        if model.block_count % mapping.pipeline_parallel
         else 0
     )
     if base_blocks_per_chunk > 0:
         bubble_reduction = missing_blocks * (base_forward + edge_forward + base_backward + edge_backward) / 2
     else:
         bubble_reduction = missing_blocks * (edge_forward + edge_backward)
-    bubble_chunks = execution.pipeline_parallel - 1
-    if execution.microbatch_count % execution.pipeline_parallel:
-        shortage = execution.pipeline_parallel - execution.microbatch_count % execution.pipeline_parallel
-        extra_bubbles = (execution.pipeline_interleaving - 1) * shortage
+    microbatch_count = mapping.microbatch_count(workload)
+    bubble_chunks = mapping.pipeline_parallel - 1
+    if microbatch_count % mapping.pipeline_parallel:
+        shortage = mapping.pipeline_parallel - microbatch_count % mapping.pipeline_parallel
+        extra_bubbles = (mapping.pipeline_interleaving - 1) * shortage
     else:
         extra_bubbles = 0
     pipeline_bubble = bubble_chunks * chunk_time + extra_bubbles * chunk_time - bubble_reduction
 
-    multiplicity = blocks_per_processor * execution.microbatch_count
+    multiplicity = blocks_per_processor * microbatch_count
     forward = multiplicity * block.forward
     backward = multiplicity * (block.activation_gradient + block.weight_gradient)
     recompute = multiplicity * block.recompute
@@ -309,31 +377,32 @@ def estimate_iteration(
     tensor_parallel = multiplicity * (block.tensor_parallel_forward + block.tensor_parallel_backward)
     recommunication = multiplicity * block.recommunication
     pipeline_parallel = (
-        execution.microbatch_count * chunks_per_processor * pipeline_point_to_point * 2
-        if execution.pipeline_parallel > 1
-        else 0.0
+        microbatch_count * chunks_per_processor * pipeline_point_to_point * 2 if mapping.pipeline_parallel > 1 else 0.0
     )
 
     data_parallel = 0.0
-    if execution.data_parallel > 1:
-        network = hardware.networks[execution.data_parallel_network]
-        if execution.optimizer_sharding:
+    if mapping.data_parallel > 1:
+        try:
+            network = hardware.networks[network_binding.data_parallel]
+        except IndexError as error:
+            raise ValueError("data_parallel network tier is not defined by the bound system") from error
+        if mapping.optimizer_sharding:
             per_block = network.time(
                 CollectiveKind.REDUCE_SCATTER.value,
                 block_memory.weights,
-                execution.data_parallel,
+                mapping.data_parallel,
                 apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             ) + network.time(
                 CollectiveKind.ALL_GATHER.value,
                 block_memory.weights,
-                execution.data_parallel,
+                mapping.data_parallel,
                 apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
         else:
             per_block = network.time(
                 CollectiveKind.ALL_REDUCE.value,
                 block_memory.weights,
-                execution.data_parallel,
+                mapping.data_parallel,
                 apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
         data_parallel = blocks_per_processor * per_block
@@ -352,7 +421,7 @@ def estimate_iteration(
     return IterationEstimate(
         mode=mode,
         block=block,
-        memory=_iteration_memory(model, execution, block_memory, blocks_per_processor),
+        memory=_iteration_memory(model, workload, mapping, block_memory, blocks_per_processor),
         forward=forward,
         backward=backward,
         optimizer=optimizer,

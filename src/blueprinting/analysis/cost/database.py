@@ -8,8 +8,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import cached_property
 
-from ...synthesizer.codec import canonical_dumps, canonical_loads, content_digest, record_type
-from ...synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest, record_type
+from blueprinting.schema.frozen import FrozenDict
+
 from .protocol import (
     CostEstimate,
     CostProvider,

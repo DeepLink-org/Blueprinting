@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from blueprinting.synthesizer.codec import content_digest, record_type
-from blueprinting.synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import content_digest, record_type
+from blueprinting.schema.frozen import FrozenDict
 
 from .chip import EfficiencyCurve, EfficiencyPoint, MemoryProfile, ProcessorProfile
 from .interconnect import NetworkOperationProfile, NetworkProfile

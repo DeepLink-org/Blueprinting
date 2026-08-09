@@ -9,10 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ...analysis import VidurProfileBaseline
-from ...system import SystemProfile
-from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
-from ..bindings import InferencePhase
+from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerModelSpec
+
 from .calculon import CalculonExperimentReport, discover_seqsel_tab5_cases, run_calculon_experiment
 from .vidur import VidurExperimentCase, VidurExperimentReport, run_vidur_experiment
 
@@ -277,12 +279,15 @@ def _load_vidur_report(
         )
 
     model = TransformerModelSpec(**manifest["blueprinting"]["model"])
-    execution = TransformerInferenceExecutionSpec(**manifest["blueprinting"]["execution"])
+    execution_data = manifest["blueprinting"]["execution"]
+    mapping = TransformerInferenceMappingSpec.from_mapping(execution_data)
+    network_binding = NetworkTierBinding.from_mapping(execution_data)
+    datatype = execution_data["datatype"]
     hardware_manifest = manifest["blueprinting"]["hardware"]
     hardware = SystemProfile.from_mapping(
         hardware_manifest["name"],
         _read_json(repository_root / hardware_manifest["profile"]),
-        datatype=execution.datatype,
+        datatype=datatype,
     )
     baseline = VidurProfileBaseline.from_csv(
         attention_csv=_fixture_path(fixture_root, "attention.csv"),
@@ -292,13 +297,15 @@ def _load_vidur_report(
         attention_backend=manifest["selection"]["attention_backend"],
         block_size=manifest["selection"]["block_size"],
         source_revision=manifest["source"]["revision"],
-        datatype=execution.datatype,
+        datatype=datatype,
     )
     cases = tuple(
         VidurExperimentCase(
             name=(f"phi2-a100-tp1/{case_data['phase']}/b{case_data['batch_size']}-c{case_data['context_tokens']}"),
             model=model,
-            execution=execution,
+            mapping=mapping,
+            network_binding=network_binding,
+            datatype=datatype,
             hardware=hardware,
             phase=InferencePhase(case_data["phase"]),
             batch_size=case_data["batch_size"],

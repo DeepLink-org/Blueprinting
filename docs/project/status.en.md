@@ -50,18 +50,19 @@ The five current IR classes use `1.0.0` as an internal canonical serialization v
 The current runnable slices are:
 
 ```text
-TransformerModelSpec + TransformerExecutionSpec
+TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMappingSpec
   -> exact workload decomposition
   -> ModelIR
   -> DistributedTaskIR
   -> PortablePlanIR
-  -> SystemProfile analytical estimate
+  -> [SystemProfile + NetworkTierBinding] analytical estimate
   -> Calculon / paper comparison report
 
-TransformerModelSpec + inference mapping + request cohort
+TransformerModelSpec + inference request cohort + inference mapping
   -> phase-neutral inference ModelIR
   -> independently bound prefill and decode DistributedTaskIR
   -> phase-local PortablePlanIR with KV state/capacity
+  -> [SystemProfile + NetworkTierBinding]
   -> CostResolver(exact imported evidence -> explicit roofline fallback)
   -> optional post-hoc Vidur baseline comparison
   -> static prefill / decode-step model time and analytical memory report
@@ -79,18 +80,18 @@ It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous 
 
 | Foundation | Status | Source of truth |
 |---|---|---|
-| Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
+| Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/schema/`, `src/blueprinting/synthesizer/ids.py` |
 | Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`; only the first three have a production derivation slice |
 | Typed workload/strategy/target/deployment bindings | **Implemented** | `bindings.py`, `session.py` |
 | Chip, memory, interconnect, and aggregate system profile | **Implemented adapter** | `src/blueprinting/system/`; evidence-bearing profile, not the planned `ArchitectureBlueprint` |
 | Transactional analyses/transformations, checkpoints, observers | **Implemented** | `passes/base.py` |
-| Transformer workload contracts, frontend, and workload algebra | **Implemented slice** | `workload/transformer.py`, `synthesizer/frontend/transformer.py`, `analysis/transformer_workload.py` |
+| Transformer workload/mapping contracts, frontend, and workload algebra | **Implemented slice** | `workload/transformer.py`, `mapping/transformer.py`, `synthesizer/frontend/transformer.py`, `synthesizer/dialects/transformer/` |
 | Distributed and portable mapping derivations | **Implemented slice** | `lowering/transformer.py` |
 | Cost protocol, resolver, roofline, database, and external importers | **Implemented slice** | `analysis/cost/`, `analysis/vidur.py`; exact task latency only, not plan simulation |
-| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `workload/transformer_inference.py`, `synthesizer/frontend/transformer_inference.py`, `analysis/{transformer_inference,inference_cost}.py`, `synthesizer/lowering/transformer_inference.py`, `application/inference.py` |
-| Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
-| Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
-| External-baseline regression gate | **Implemented** | frozen contract and licensed offline fixtures under `data/validation/`; `experiments/regression.py`; `.github/workflows/quality.yml` |
+| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `workload/transformer_inference.py`, `mapping/transformer.py`, `synthesizer/{frontend,lowering}/transformer_inference.py`, `synthesizer/dialects/transformer/inference.py`, `analysis/inference_cost.py`, `application/inference.py` |
+| Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `validation/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
+| Calculon experiment | **Implemented experiment** | `validation/calculon.py` |
+| External-baseline regression gate | **Implemented** | frozen contract and licensed offline fixtures under `data/validation/`; `validation/regression.py`; `.github/workflows/quality.yml` |
 
 These typed representations, verifiers, derivation transactions, and analyses are the formal foundation for hardware exploration. New architecture models, simulator providers, and analysis products should extend this one semantic foundation rather than establish parallel workload truth.
 

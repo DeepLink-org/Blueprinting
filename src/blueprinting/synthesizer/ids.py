@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, ClassVar, TypeVar
 
-from .codec import canonical_dumps, enum_type, record_type
+from blueprinting.schema.codec import canonical_dumps, enum_type, record_type
+
 from .errors import InvalidIdError
 
 _ID_RE = re.compile(r"^[0-9a-f]{32}$")

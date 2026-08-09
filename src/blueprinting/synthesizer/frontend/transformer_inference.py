@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from blueprinting.workload import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.mapping import TransformerInferenceMappingSpec
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.workload import TransformerModelSpec
 
 from ..axes import BindingAxis
 from ..bindings import BindingSet, InferencePhase, StrategyBinding, WorkloadBinding, WorkloadMode
 from ..expr import Symbol
-from ..frozen import FrozenDict
 from ..ids import Lineage, NodeId, ValueId
 from ..ir import Effect, EffectKind, ModelIR, ModelOperation, ModelValue, OperationName, TensorType, ValueRole
 from ..session import SynthesisSession
@@ -86,17 +87,20 @@ def build_transformer_inference_model_ir(
 
 def inference_synthesis_session_for(
     model: TransformerModelSpec,
-    execution: TransformerInferenceExecutionSpec,
+    mapping: TransformerInferenceMappingSpec,
     *,
     phase: InferencePhase,
     batch_size: int,
     context_tokens: int,
+    datatype: str = "float16",
 ) -> SynthesisSession:
     """Create an explicit phase binding for static inference specialization."""
 
-    execution.validate_model(model)
+    mapping.validate_model(model)
     _positive_integer(batch_size, "batch_size")
     _positive_integer(context_tokens, "context_tokens")
+    if datatype not in _SUPPORTED_DATATYPES:
+        raise ValueError(f"unsupported datatype: {datatype!r}")
     if not isinstance(phase, InferencePhase):
         raise TypeError("phase must be InferencePhase")
     query_tokens = context_tokens if phase is InferencePhase.PREFILL else 1
@@ -109,18 +113,19 @@ def inference_synthesis_session_for(
             {
                 "query_tokens": query_tokens,
                 "context_tokens": context_tokens,
+                "datatype": datatype,
             }
         ),
     )
     strategy = StrategyBinding(
-        tensor_parallel=execution.tensor_parallel,
-        pipeline_parallel=execution.pipeline_parallel,
-        data_parallel=execution.replicas,
+        tensor_parallel=mapping.tensor_parallel,
+        pipeline_parallel=mapping.pipeline_parallel,
+        data_parallel=mapping.replicas,
         recompute_policy="none",
         pipeline_policy="static-inference",
-        attributes=FrozenDict({"inference_execution_spec": execution}),
+        attributes=FrozenDict({"inference_mapping_spec": mapping}),
     )
     return SynthesisSession(
         bindings=BindingSet(workload=workload, strategy=strategy),
-        features=frozenset({"transformer-inference-analysis-v1", f"inference-{phase.value}"}),
+        features=frozenset({"transformer-inference-analysis-v2", f"inference-{phase.value}"}),
     )

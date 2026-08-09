@@ -1,21 +1,10 @@
-"""Target-neutral workload and logical-mapping contracts."""
+"""Target-neutral model and workload contracts."""
 
-from .transformer import (
-    RecomputePolicy,
-    TensorParallelCommunication,
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-)
-from .transformer_inference import (
-    TransformerInferenceExecutionSpec,
-    TransformerInferenceRequestSpec,
-)
+from .transformer import TransformerModelSpec, TransformerTrainingWorkloadSpec
+from .transformer_inference import TransformerInferenceRequestSpec
 
 __all__ = [
-    "RecomputePolicy",
-    "TensorParallelCommunication",
-    "TransformerExecutionSpec",
-    "TransformerInferenceExecutionSpec",
     "TransformerInferenceRequestSpec",
     "TransformerModelSpec",
+    "TransformerTrainingWorkloadSpec",
 ]

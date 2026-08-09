@@ -4,8 +4,8 @@ import pickle
 
 from blueprinting.analysis import CalibrationMode
 from blueprinting.application import AnalysisDraft, BlueprintingService, SweepRequest
+from blueprinting.schema.frozen import FrozenDict
 from blueprinting.synthesizer.frontend import build_transformer_model_ir
-from blueprinting.synthesizer.frozen import FrozenDict
 from blueprinting.workbench import default_catalog
 from blueprinting.workload import TransformerModelSpec
 
@@ -71,6 +71,34 @@ def test_analysis_service_is_the_complete_client_boundary() -> None:
     assert all(stage.valid for stage in report.stages)
     assert report.tasks
     assert report.evidence_revision == report.evidence["revision"]
+
+
+def test_analysis_service_accepts_canonical_mapping_names_and_sweeps_them() -> None:
+    legacy = _draft()
+    execution = dict(legacy.execution_data.items())
+    for canonical, alias in (
+        ("tensor_parallel", "tensor_par"),
+        ("pipeline_parallel", "pipeline_par"),
+        ("data_parallel", "data_par"),
+        ("recompute", "activation_recompute"),
+        ("tensor_parallel_communication", "tensor_par_comm_type"),
+    ):
+        execution[canonical] = execution.pop(alias)
+    canonical = AnalysisDraft.from_mappings(
+        model_name=legacy.model_name,
+        model_data=dict(legacy.model_data.items()),
+        execution_name=legacy.execution_name,
+        execution_data=execution,
+        hardware_name=legacy.hardware_name,
+        hardware_data=dict(legacy.hardware_data.items()),
+    )
+
+    outcome = BlueprintingService().analyze(canonical.with_parallelism(4, 1, 2))
+
+    assert outcome.ok
+    assert outcome.report is not None
+    assert outcome.report.world_size == 8
+    assert outcome.report.configuration["execution"]["tensor_parallel"] == 4
 
 
 def test_expected_configuration_failure_is_a_diagnostic() -> None:

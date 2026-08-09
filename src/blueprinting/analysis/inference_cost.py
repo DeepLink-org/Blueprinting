@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.synthesizer.dialects.transformer import EngineKind, InferenceInvocation, PhaseWork
+from blueprinting.workload import TransformerModelSpec
+
 from ..synthesizer.bindings import InferencePhase
-from ..synthesizer.frozen import FrozenDict
 from ..synthesizer.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
 from ..system import SystemProfile
-from ..workload import TransformerInferenceExecutionSpec, TransformerModelSpec
 from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject
 from .cost_model import CalibrationMode
 from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery
-from .transformer_inference import InferenceInvocation
-from .transformer_workload import EngineKind, PhaseWork
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,8 @@ def inference_evidence_query_for(
     invocation: InferenceInvocation,
     *,
     hardware: SystemProfile,
-    execution: TransformerInferenceExecutionSpec,
+    mapping: TransformerInferenceMappingSpec,
+    datatype: str,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -85,8 +87,8 @@ def inference_evidence_query_for(
         batch_size=batch_size,
         query_tokens=query_tokens,
         context_tokens=context_tokens,
-        tensor_parallel=execution.tensor_parallel,
-        datatype=execution.datatype,
+        tensor_parallel=mapping.tensor_parallel,
+        datatype=datatype,
     )
 
 
@@ -113,7 +115,9 @@ def cost_query_for_inference_task(
     task: PlanTask,
     *,
     hardware: SystemProfile,
-    execution: TransformerInferenceExecutionSpec,
+    mapping: TransformerInferenceMappingSpec,
+    network_binding: NetworkTierBinding,
+    datatype: str,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -128,7 +132,7 @@ def cost_query_for_inference_task(
     primitive = invocation.primitive
     operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
     subject = CostSubject.COMMUNICATION if invocation.engine is EngineKind.COLLECTIVE else CostSubject.OPERATOR
-    tensor_parallel = execution.tensor_parallel
+    tensor_parallel = mapping.tensor_parallel
     dimensions: dict[str, object] = {
         "semantic_operation": primitive,
         "source_layer": invocation.source_layer,
@@ -150,7 +154,7 @@ def cost_query_for_inference_task(
         "use_gated_mlp": False,
         "beam_width": 1,
         "window_size": 0,
-        "kv_cache_datatype": execution.datatype,
+        "kv_cache_datatype": datatype,
     }
     if primitive in _GEMM_PRIMITIVES:
         tokens = batch_size * query_tokens
@@ -171,13 +175,13 @@ def cost_query_for_inference_task(
         subject=subject,
         operation=operation,
         hardware=hardware.name,
-        datatype=execution.datatype,
+        datatype=datatype,
         operations=task.workload.operations,
         read_bytes=task.workload.read_bytes,
         write_bytes=task.workload.write_bytes,
         message_bytes=task.workload.message_bytes,
         participants=tensor_parallel if subject is CostSubject.COMMUNICATION else 1,
-        network_tier=invocation.network_tier or 0,
+        network_tier=network_binding.tensor_parallel,
         engine=invocation.engine.value,
         hardware_revision=hardware.evidence_revision,
         implementation=context.implementation_for(primitive, operation),
@@ -194,7 +198,9 @@ def _task_estimate(
     task: PlanTask,
     *,
     hardware: SystemProfile,
-    execution: TransformerInferenceExecutionSpec,
+    mapping: TransformerInferenceMappingSpec,
+    network_binding: NetworkTierBinding,
+    datatype: str,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -220,16 +226,16 @@ def _task_estimate(
     )
     network_seconds = 0.0
     if invocation.engine is EngineKind.COLLECTIVE:
-        if invocation.network_tier is None or invocation.collective is None:
-            raise ValueError("collective invocation is missing network facts")
+        if invocation.collective is None:
+            raise ValueError("collective invocation is missing its collective kind")
         try:
-            network = hardware.networks[invocation.network_tier]
+            network = hardware.networks[network_binding.tensor_parallel]
         except IndexError as error:
-            raise ValueError(f"system profile does not define network tier {invocation.network_tier}") from error
+            raise ValueError("tensor_parallel network tier is not defined by the bound system") from error
         network_seconds = network.time(
             invocation.collective.value,
             work.message_bytes,
-            execution.tensor_parallel,
+            mapping.tensor_parallel,
             apply_efficiency=apply_efficiency,
         )
     analytical_seconds = hardware.processing_time(compute_seconds, memory_seconds) + network_seconds
@@ -245,7 +251,9 @@ def _task_estimate(
             cost_query_for_inference_task(
                 task,
                 model=model,
-                execution=execution,
+                mapping=mapping,
+                network_binding=network_binding,
+                datatype=datatype,
                 hardware=hardware,
                 batch_size=batch_size,
                 query_tokens=query_tokens,
@@ -266,7 +274,8 @@ def _task_estimate(
             inference_evidence_query_for(
                 invocation,
                 model=model,
-                execution=execution,
+                mapping=mapping,
+                datatype=datatype,
                 hardware=hardware,
                 batch_size=batch_size,
                 query_tokens=query_tokens,
@@ -318,18 +327,13 @@ def _invocation_from_plan_task(task: PlanTask) -> InferenceInvocation:
             raise ValueError(f"portable inference task {task.id} has invalid {field_name}")
 
     collective_value = attributes.get("collective", "")
-    network_tier_value = attributes.get("network_tier", -1)
     collective = None
-    network_tier = None
     if engine is EngineKind.COLLECTIVE:
         try:
             collective = CollectiveKind(collective_value)
         except ValueError as error:
             raise ValueError(f"portable inference task {task.id} has invalid collective metadata") from error
-        if isinstance(network_tier_value, bool) or not isinstance(network_tier_value, int) or network_tier_value < 0:
-            raise ValueError(f"portable inference task {task.id} has invalid network tier")
-        network_tier = network_tier_value
-    elif collective_value != "" or network_tier_value != -1:
+    elif collective_value != "":
         raise ValueError(f"local portable inference task {task.id} carries collective metadata")
 
     return InferenceInvocation(
@@ -345,7 +349,6 @@ def _invocation_from_plan_task(task: PlanTask) -> InferenceInvocation:
             message_bytes=task.workload.message_bytes,
         ),
         collective=collective,
-        network_tier=network_tier,
     )
 
 
@@ -368,6 +371,7 @@ def estimate_inference_phase(
     hardware: SystemProfile,
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
     *,
+    network_binding: NetworkTierBinding,
     cost_provider: InferenceCostProvider | None = None,
     cost_resolver: CostResolver | None = None,
     cost_context: CostQueryContext = CostQueryContext(),
@@ -375,16 +379,21 @@ def estimate_inference_phase(
     """Cost one prefill or decode phase point without queueing assumptions."""
 
     model = plan.attributes.get("model_spec")
-    execution = plan.attributes.get("inference_execution_spec")
+    mapping = plan.attributes.get("inference_mapping_spec")
     phase = plan.attributes.get("inference_phase")
+    datatype = plan.attributes.get("datatype")
     if not isinstance(model, TransformerModelSpec):
         raise TypeError("portable inference plan is missing TransformerModelSpec")
-    if not isinstance(execution, TransformerInferenceExecutionSpec):
-        raise TypeError("portable inference plan is missing TransformerInferenceExecutionSpec")
+    if not isinstance(mapping, TransformerInferenceMappingSpec):
+        raise TypeError("portable inference plan is missing TransformerInferenceMappingSpec")
     if not isinstance(phase, InferencePhase):
         raise TypeError("portable inference plan is missing InferencePhase")
-    if hardware.datatype != execution.datatype:
-        raise ValueError("system profile datatype does not match inference execution datatype")
+    if not isinstance(datatype, str):
+        raise TypeError("portable inference plan is missing its datatype")
+    if hardware.datatype != datatype:
+        raise ValueError("system profile datatype does not match inference workload datatype")
+    if not isinstance(network_binding, NetworkTierBinding):
+        raise TypeError("network_binding must be NetworkTierBinding")
     if cost_provider is not None and cost_resolver is not None:
         raise ValueError("cost_provider and cost_resolver are mutually exclusive")
     if not isinstance(cost_context, CostQueryContext):
@@ -401,7 +410,9 @@ def estimate_inference_phase(
             _task_estimate(
                 task,
                 hardware=hardware,
-                execution=execution,
+                mapping=mapping,
+                network_binding=network_binding,
+                datatype=datatype,
                 model=model,
                 batch_size=batch_size,
                 query_tokens=query_tokens,
@@ -417,15 +428,13 @@ def estimate_inference_phase(
     transformer_seconds = block_seconds * model.block_count
     pipeline_seconds = 0.0
     pipeline_estimate = None
-    if execution.pipeline_parallel > 1:
+    if mapping.pipeline_parallel > 1:
         boundary_bytes = _concrete_buffer_size(next(buffer for buffer in plan.buffers if buffer.id == plan.inputs[0]))
         if cost_resolver is None:
             try:
-                network = hardware.networks[execution.pipeline_parallel_network]
+                network = hardware.networks[network_binding.pipeline_parallel]
             except IndexError as error:
-                raise ValueError(
-                    f"system profile does not define network tier {execution.pipeline_parallel_network}"
-                ) from error
+                raise ValueError("pipeline_parallel network tier is not defined by the bound system") from error
             one_hop_seconds = network.time(
                 "p2p",
                 boundary_bytes,
@@ -440,7 +449,7 @@ def estimate_inference_phase(
                 "batch_size": batch_size,
                 "query_tokens": query_tokens,
                 "context_tokens": context_tokens,
-                "pipeline_parallel": execution.pipeline_parallel,
+                "pipeline_parallel": mapping.pipeline_parallel,
             }
             pipeline_dimensions = _merge_dimensions(
                 pipeline_dimensions,
@@ -451,10 +460,10 @@ def estimate_inference_phase(
                     subject=CostSubject.COMMUNICATION,
                     operation="p2p",
                     hardware=hardware.name,
-                    datatype=execution.datatype,
+                    datatype=datatype,
                     message_bytes=boundary_bytes,
                     participants=2,
-                    network_tier=execution.pipeline_parallel_network,
+                    network_tier=network_binding.pipeline_parallel,
                     engine=EngineKind.COLLECTIVE.value,
                     hardware_revision=hardware.evidence_revision,
                     implementation=cost_context.implementation_for("p2p", "p2p"),
@@ -467,15 +476,15 @@ def estimate_inference_phase(
                 )
             ).estimate
             one_hop_seconds = pipeline_estimate.seconds
-        pipeline_seconds = (execution.pipeline_parallel - 1) * one_hop_seconds
+        pipeline_seconds = (mapping.pipeline_parallel - 1) * one_hop_seconds
 
-    blocks_per_stage = model.block_count // execution.pipeline_parallel
+    blocks_per_stage = model.block_count // mapping.pipeline_parallel
     boundary_bytes = _concrete_buffer_size(next(buffer for buffer in plan.buffers if buffer.id == plan.inputs[0]))
     memory = InferencePhaseMemory(
         weights=_semantic_buffer_size(plan, "block_weights") * blocks_per_stage,
         kv_cache=_semantic_buffer_size(plan, "kv_cache") * blocks_per_stage,
         working_upper_bound=_semantic_buffer_size(plan, "block_working_upper_bound"),
-        pipeline_buffers=boundary_bytes * (2 if execution.pipeline_parallel > 1 else 1),
+        pipeline_buffers=boundary_bytes * (2 if mapping.pipeline_parallel > 1 else 1),
     )
     revisions = {hardware.evidence_revision: "analytical-system-profile"}
     for item in task_estimates:

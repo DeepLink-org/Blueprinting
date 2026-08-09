@@ -42,5 +42,11 @@ class ConfigCatalog:
 
 @lru_cache(maxsize=1)
 def default_catalog() -> ConfigCatalog:
+    package_presets = Path(__file__).resolve().parents[1] / "presets"
+    if package_presets.is_dir():
+        return ConfigCatalog(package_presets)
     repository_root = Path(__file__).resolve().parents[3]
-    return ConfigCatalog(repository_root / "data")
+    source_presets = repository_root / "data"
+    if source_presets.is_dir():
+        return ConfigCatalog(source_presets)
+    raise FileNotFoundError("Blueprinting model and system presets are not installed")

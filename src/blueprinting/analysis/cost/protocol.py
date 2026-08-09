@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from ...synthesizer.codec import content_digest, enum_type, record_type
-from ...synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import content_digest, enum_type, record_type
+from blueprinting.schema.frozen import FrozenDict
 
 # Keep the legacy codec namespace as a stable serialized identity.
 

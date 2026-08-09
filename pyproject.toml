@@ -95,7 +95,7 @@ Issues = "https://github.com/DeepLink-org/Blueprinting/issues"
 Changelog = "https://github.com/DeepLink-org/Blueprinting/releases"
 
 [project.scripts]
-blueprinting = "blueprinting:__main__"
+blueprinting = "blueprinting.cli:main"
 blueprinting-workbench = "blueprinting.workbench.nicegui_app:main"
 
 # ============================================================================
@@ -122,10 +122,15 @@ exclude = [
     "/docs",
     "/examples",
     "/pages",
+    "/data/evidence",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/blueprinting", "src/calculon", "src/simfloat"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"data/models" = "blueprinting/presets/models"
+"data/systems" = "blueprinting/presets/systems"
 
 [tool.hatch.envs.default]
 features = ["dev", "full"]
@@ -249,7 +254,7 @@ show_missing = true
 # ============================================================================
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

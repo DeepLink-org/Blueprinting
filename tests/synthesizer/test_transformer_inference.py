@@ -11,12 +11,8 @@ from blueprinting.analysis import (
     VidurProfileBaseline,
     estimate_inference_phase,
 )
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
 from blueprinting.synthesizer.bindings import InferencePhase
-from blueprinting.synthesizer.experiments import (
-    VidurExperimentCase,
-    compare_inference_phase_to_vidur,
-    run_vidur_experiment,
-)
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
@@ -24,8 +20,12 @@ from blueprinting.synthesizer.frontend import (
 from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
 from blueprinting.system import SystemProfile
+from blueprinting.validation import (
+    VidurExperimentCase,
+    compare_inference_phase_to_vidur,
+    run_vidur_experiment,
+)
 from blueprinting.workload import (
-    TransformerInferenceExecutionSpec,
     TransformerInferenceRequestSpec,
     TransformerModelSpec,
 )
@@ -45,15 +45,11 @@ def _model() -> TransformerModelSpec:
     )
 
 
-def _execution() -> TransformerInferenceExecutionSpec:
-    return TransformerInferenceExecutionSpec(
-        world_size=4,
+def _execution() -> TransformerInferenceMappingSpec:
+    return TransformerInferenceMappingSpec(
         tensor_parallel=2,
         pipeline_parallel=2,
         replicas=1,
-        datatype="float16",
-        tensor_parallel_network=0,
-        pipeline_parallel_network=0,
     )
 
 
@@ -70,6 +66,7 @@ def _derive(phase: InferencePhase, context_tokens: int):
             phase=phase,
             batch_size=3,
             context_tokens=context_tokens,
+            datatype="float16",
         ),
     )
     return source, result.ir
@@ -88,6 +85,8 @@ def test_inference_lowering_has_valid_auditable_phase_plans(phase: InferencePhas
     assert plan.attributes["inference_phase"] is phase
     assert all("invocation" not in task.attributes for task in plan.tasks)
     assert all(task.workload.attributes.get("phase") == phase.value for task in plan.tasks)
+    assert all("network_tier" not in task.workload.attributes for task in plan.tasks)
+    assert all("network_tier" not in resource.capabilities for task in plan.tasks for resource in task.resources)
     assert {buffer.attributes.get("semantic") for buffer in plan.buffers} >= {
         "block_weights",
         "block_working_upper_bound",
@@ -123,6 +122,22 @@ def test_kv_cache_capacity_is_derived_from_shape_not_a_correction_factor():
     assert workspace.size_bytes > 0
 
 
+def test_network_tier_binding_changes_cost_without_changing_portable_plan():
+    _, plan = _derive(InferencePhase.DECODE, 96)
+    hardware = SystemProfile.from_mapping(
+        "fixture-hardware",
+        json.loads((ROOT / "data" / "systems" / "a100_80g.json").read_text(encoding="utf-8")),
+        datatype="float16",
+    )
+    digest = plan.digest
+
+    fast = estimate_inference_phase(plan, hardware, network_binding=NetworkTierBinding(tensor_parallel=0))
+    slow = estimate_inference_phase(plan, hardware, network_binding=NetworkTierBinding(tensor_parallel=1))
+
+    assert fast.total_seconds != slow.total_seconds
+    assert plan.digest == digest
+
+
 def test_request_semantics_count_prefill_as_the_first_output_token():
     one = TransformerInferenceRequestSpec(batch_size=1, prompt_tokens=64, generated_tokens=1)
     four = TransformerInferenceRequestSpec(batch_size=1, prompt_tokens=64, generated_tokens=4)
@@ -135,14 +150,10 @@ def test_request_semantics_count_prefill_as_the_first_output_token():
 
 def test_invalid_mapping_is_rejected_before_lowering():
     model = _model()
-    invalid = TransformerInferenceExecutionSpec(
-        world_size=3,
+    invalid = TransformerInferenceMappingSpec(
         tensor_parallel=3,
         pipeline_parallel=1,
         replicas=1,
-        datatype="float16",
-        tensor_parallel_network=0,
-        pipeline_parallel_network=0,
     )
 
     with pytest.raises(ValueError, match="hidden_size must be divisible"):
@@ -221,7 +232,8 @@ def test_vidur_adapter_uses_only_exact_shape_matches(tmp_path: Path):
         datatype="float16",
     )
     digest_before = plan.digest
-    estimate = estimate_inference_phase(plan, hardware)
+    network_binding = NetworkTierBinding()
+    estimate = estimate_inference_phase(plan, hardware, network_binding=network_binding)
     attention_estimate = next(item for item in estimate.tasks if item.invocation.primitive == "attention_core")
     comparison = compare_inference_phase_to_vidur(plan, estimate, hardware, baseline)
     attention_comparison = next(item for item in comparison.components if item.primitive == "attention_core")
@@ -239,7 +251,9 @@ def test_vidur_adapter_uses_only_exact_shape_matches(tmp_path: Path):
             VidurExperimentCase(
                 name="fixture/decode-96",
                 model=_model(),
-                execution=_execution(),
+                mapping=_execution(),
+                network_binding=network_binding,
+                datatype="float16",
                 hardware=hardware,
                 phase=InferencePhase.DECODE,
                 batch_size=3,

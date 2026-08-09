@@ -20,31 +20,25 @@ from blueprinting.analysis import (
     InferencePhaseEstimate,
     estimate_inference_phase,
 )
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.frozen import FrozenDict, freeze, thaw
 from blueprinting.synthesizer.bindings import InferencePhase
-from blueprinting.synthesizer.codec import content_digest
 from blueprinting.synthesizer.errors import IRVerificationError, PassExecutionError, SynthesisError
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
-from blueprinting.synthesizer.frozen import FrozenDict, freeze, thaw
 from blueprinting.synthesizer.ir import ModelIR, PortablePlanIR
 from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import AnalysisStore, PassCheckpoint, PassManager, PassPipeline
 from blueprinting.system import SystemProfile
 from blueprinting.workload import (
-    TransformerInferenceExecutionSpec,
     TransformerInferenceRequestSpec,
     TransformerModelSpec,
 )
 
-from .analysis import (
-    AnalysisDiagnostic,
-    DiagnosticLevel,
-    IRStageReport,
-    TaskReport,
-    _stage_report,
-)
+from .reporting import AnalysisDiagnostic, DiagnosticLevel, IRStageReport, TaskReport, stage_report
 
 LOGGER = logging.getLogger(__name__)
 
@@ -124,9 +118,10 @@ class InferenceAnalysisDraft:
 
     def normalized_execution(self) -> dict[str, Any]:
         data = thaw(self.execution_data)
-        replicas = data.get("replicas", data.get("data_par", 1))
-        data["replicas"] = replicas
-        data["num_procs"] = data["tensor_par"] * data["pipeline_par"] * replicas
+        data.pop("num_procs", None)
+        mapping = TransformerInferenceMappingSpec.from_mapping(data)
+        data["replicas"] = mapping.replicas
+        data["num_procs"] = mapping.world_size
         return data
 
 
@@ -307,7 +302,9 @@ class InferenceAnalysisService:
         self,
         source: ModelIR,
         model: TransformerModelSpec,
-        execution: TransformerInferenceExecutionSpec,
+        mapping: TransformerInferenceMappingSpec,
+        network_binding: NetworkTierBinding,
+        datatype: str,
         hardware: SystemProfile,
         draft: InferenceAnalysisDraft,
         *,
@@ -318,10 +315,11 @@ class InferenceAnalysisService:
         session = replace(
             inference_synthesis_session_for(
                 model,
-                execution,
+                mapping,
                 phase=phase,
                 batch_size=batch_size,
                 context_tokens=context_tokens,
+                datatype=datatype,
             ),
             seed=draft.seed,
         )
@@ -333,6 +331,7 @@ class InferenceAnalysisService:
             plan,
             hardware,
             draft.calibration_mode,
+            network_binding=network_binding,
             cost_provider=self._cost_provider,
         )
         return _DerivedPhase(session.fingerprint, plan, estimate, pipeline.checkpoints)
@@ -343,23 +342,28 @@ class InferenceAnalysisService:
         request_data = thaw(draft.request_data)
         hardware_data = thaw(draft.hardware_data)
         model = TransformerModelSpec.from_mapping(draft.model_name, model_data)
-        execution = TransformerInferenceExecutionSpec.from_mapping(execution_data)
-        request = TransformerInferenceRequestSpec.from_mapping(request_data)
-        execution.validate_model(model)
+        mapping = TransformerInferenceMappingSpec.from_mapping(execution_data)
+        network_binding = NetworkTierBinding.from_mapping(execution_data)
+        request = TransformerInferenceRequestSpec.from_mapping(
+            {**request_data, "datatype": request_data.get("datatype", execution_data.get("datatype", "float16"))}
+        )
+        mapping.validate_model(model)
         request.validate_model(model)
         hardware = SystemProfile.from_mapping(
             draft.hardware_name,
             hardware_data,
-            datatype=execution.datatype,
+            datatype=request.datatype,
         )
 
         frontend_started = time.perf_counter_ns()
-        source = build_transformer_inference_model_ir(model, datatype=execution.datatype)
+        source = build_transformer_inference_model_ir(model, datatype=request.datatype)
         frontend_duration = time.perf_counter_ns() - frontend_started
         prefill = self._derive_phase(
             source,
             model,
-            execution,
+            mapping,
+            network_binding,
+            request.datatype,
             hardware,
             draft,
             phase=InferencePhase.PREFILL,
@@ -370,7 +374,9 @@ class InferenceAnalysisService:
             self._derive_phase(
                 source,
                 model,
-                execution,
+                mapping,
+                network_binding,
+                request.datatype,
                 hardware,
                 draft,
                 phase=InferencePhase.DECODE,
@@ -391,15 +397,15 @@ class InferenceAnalysisService:
         analytical_memory_fits = peak.memory.total <= hardware.memory.capacity_bytes
 
         stages = [
-            _stage_report("model", "推理模型语义", "frontend-import", source, frontend_duration),
-            _stage_report(
+            stage_report("model", "推理模型语义", "frontend-import", source, frontend_duration),
+            stage_report(
                 "prefill.distributed",
                 "Prefill 分布式任务",
                 prefill.checkpoints[0].record.pass_name,
                 prefill.checkpoints[0].ir,
                 prefill.checkpoints[0].record.duration_ns,
             ),
-            _stage_report(
+            stage_report(
                 "prefill.portable",
                 "Prefill 可移植计划",
                 prefill.checkpoints[1].record.pass_name,
@@ -411,14 +417,14 @@ class InferenceAnalysisService:
         if representative is not None:
             stages.extend(
                 (
-                    _stage_report(
+                    stage_report(
                         "decode.distributed",
                         "Decode 分布式任务（最终 context）",
                         representative.checkpoints[0].record.pass_name,
                         representative.checkpoints[0].ir,
                         representative.checkpoints[0].record.duration_ns,
                     ),
-                    _stage_report(
+                    stage_report(
                         "decode.portable",
                         "Decode 可移植计划（最终 context）",
                         representative.checkpoints[1].record.pass_name,
@@ -523,7 +529,7 @@ class InferenceAnalysisService:
             execution_name=draft.execution_name,
             hardware_name=draft.hardware_name,
             calibration_mode=draft.calibration_mode.value,
-            world_size=execution.world_size,
+            world_size=mapping.world_size,
             analytical_memory_fits=analytical_memory_fits,
             prefill_seconds=prefill_seconds,
             mean_decode_step_seconds=mean_decode_step,

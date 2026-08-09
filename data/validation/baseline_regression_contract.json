@@ -18,14 +18,14 @@
       "paper_mean_absolute_error_percent": 3.654361437637248,
       "paper_max_absolute_error_percent": 8.874452316395821,
       "portable_digests": {
-        "seqsel-tab5/megatron-22B/full": "9ce66dd1c115a1efbb0cad1cc3921c3f28ffc58f",
-        "seqsel-tab5/megatron-22B/seqsel": "873c82dde8f06f97a619855bf7fa74d5730c7d55",
-        "seqsel-tab5/gpt3-175B/full": "2c9566d969073f2983b2ca3e35d840c986063058",
-        "seqsel-tab5/gpt3-175B/seqsel": "d3f1826b4e0b24ee91fc5920c95c1dd3b3ca6782",
-        "seqsel-tab5/turing-530B/full": "1eca776c1c27807964278cf5e768193a6f06c4cc",
-        "seqsel-tab5/turing-530B/seqsel": "8095358ace4a3a62466c13b0895e03545c6f5621",
-        "seqsel-tab5/megatron-1T/full": "5ffc23392d5a374f442ef2f448366e3d9f6118ce",
-        "seqsel-tab5/megatron-1T/seqsel": "377375178daedbd9655bdccb618eab11ba8b68f3"
+        "seqsel-tab5/megatron-22B/full": "a702e06f09e0e7ed49b1d06371fdc5f01df40ead",
+        "seqsel-tab5/megatron-22B/seqsel": "d8c1a76517458d5bd92af95c125225a00c1b6a61",
+        "seqsel-tab5/gpt3-175B/full": "b9ed7a9c81a7cbd02066e000478d3488e31c3321",
+        "seqsel-tab5/gpt3-175B/seqsel": "bf7be9b50d482232aaee649c506f4afca5c9dfcb",
+        "seqsel-tab5/turing-530B/full": "3988fe962f1ccecca2cee3a08b98da5e177f8c65",
+        "seqsel-tab5/turing-530B/seqsel": "2e9047b02f855c3527c07cfae116bbc41631eaea",
+        "seqsel-tab5/megatron-1T/full": "d4a11ba89f39f36f002ee9c0179bbc02dc62a542",
+        "seqsel-tab5/megatron-1T/seqsel": "7549a08665566ef4187e9a37ca50d860308c8800"
       }
     }
   },
@@ -54,8 +54,8 @@
       "system_evidence_component_max_absolute_error_percent": 99.50036630036631,
       "cases": {
         "phi2-a100-tp1/decode/b1-c33": {
-          "distributed_digest": "1d6a4598cff8907554b3c246d3993143d17b3d5a",
-          "portable_digest": "5bbe78b2017f21215b6e66904ba95fa1ccda5e49",
+          "distributed_digest": "3aaaddf8d05e49da9d675acc2b1dc0e252c4f1fc",
+          "portable_digest": "d96d85895fa4f19655b2dc0592b5dc402e1bfb0d",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.000147,
           "system_evidence_comparable_block_seconds": 0.00010824697435897437,
@@ -64,8 +64,8 @@
           "system_evidence_component_max_absolute_error_percent": 99.50036630036631
         },
         "phi2-a100-tp1/decode/b1-c129": {
-          "distributed_digest": "4ea3575ed2cd51d69d789e6addc7197a45d32efb",
-          "portable_digest": "74335a2d5a3ed2f9da31b334a93519c559a0c6a3",
+          "distributed_digest": "727acb5e4a18f54570180de6dfe7c6f28b634b92",
+          "portable_digest": "ce6e6d1fd1233134300445391f4cd33a4ae7dff3",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.00015000000000000001,
           "system_evidence_comparable_block_seconds": 0.00010879564102564103,
@@ -74,8 +74,8 @@
           "system_evidence_component_max_absolute_error_percent": 99.50036630036631
         },
         "phi2-a100-tp1/prefill/b1-c128": {
-          "distributed_digest": "a91b167c1f4644bc7f16b38184f61a16d42d004c",
-          "portable_digest": "7fe68d256445d118ae842cef0d23e123741a7b62",
+          "distributed_digest": "56e34687555489beae3d40b66deea30e529bde10",
+          "portable_digest": "71d41b98eb84dfc57ee3ec0e4614ce1a52622aef",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.0002015,
           "system_evidence_comparable_block_seconds": 0.00023554310256410256,

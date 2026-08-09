@@ -29,20 +29,22 @@ The model frontend emits one phase-neutral `transformer.decoder_inference` opera
 
 ```text
 TransformerModelSpec
-  + TransformerInferenceExecutionSpec(TP, PP, replicas, dtype, network tiers)
-  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context)
+  + TransformerInferenceRequestSpec(batch, prompt, generated, dtype)
+  + TransformerInferenceMappingSpec(TP, PP, replicas)
+  + WorkloadBinding(INFERENCE, PREFILL | DECODE, batch, context, dtype)
   -> ModelIR
   -> DistributeTransformerInferencePass
   -> DistributedTaskIR
   -> PlanTransformerInferencePass
   -> PortablePlanIR
+  -> [SystemProfile + NetworkTierBinding]
   -> estimate_inference_phase(Blueprinting cost provider | analytical model)
   -> optional post-hoc Vidur comparison
 ```
 
 The component tasks are input norm, QKV projection, RoPE, KV save, attention core, output projection, TP all-reduce, residual, post-attention norm, MLP up/activation/down, a second all-reduce, and the final residual. This boundary is fine enough to inspect work conservation and broad enough to match observable kernel families in profiling systems.
 
-Prefill binds `query_tokens = context_tokens = prompt_tokens`. Decode binds `query_tokens = 1` and treats `context_tokens` as the number of keys visible after the current token is appended. Every phase plan carries exact operations, read/write bytes, collective volume, phase, primitive, source layer, query length, context length, block weight capacity, KV capacity, and a conservative workspace buffer. It carries no duration. Costing reconstructs its task view from `PlanTask.workload` and explicit buffers; a hidden lowering object is not allowed to become a second workload truth.
+Prefill binds `query_tokens = context_tokens = prompt_tokens`. Decode binds `query_tokens = 1` and treats `context_tokens` as the number of keys visible after the current token is appended. Every phase plan carries exact operations, read/write bytes, logical collective volume, phase, primitive, source layer, query length, context length, datatype, block weight capacity, KV capacity, and a conservative workspace buffer. It carries no duration or physical network tier. Costing reconstructs its task view from `PlanTask.workload` and explicit buffers, then applies an explicit `NetworkTierBinding`; neither a hidden lowering object nor deployment placement may become a second workload truth.
 
 ## Request composition semantics
 
@@ -71,10 +73,11 @@ It is multiplied by the number of blocks in one pipeline stage. Weight storage i
 
 ```python
 from blueprinting.analysis import VidurProfileBaseline
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
 from blueprinting.system import SystemProfile
 from blueprinting.synthesizer.bindings import InferencePhase
-from blueprinting.synthesizer.experiments import VidurExperimentCase, run_vidur_experiment
-from blueprinting.workload import TransformerInferenceExecutionSpec, TransformerModelSpec
+from blueprinting.validation import VidurExperimentCase, run_vidur_experiment
+from blueprinting.workload import TransformerModelSpec
 
 baseline = VidurProfileBaseline.from_csv(
     attention_csv="/profiles/attention.csv",
@@ -88,7 +91,9 @@ baseline = VidurProfileBaseline.from_csv(
 case = VidurExperimentCase(
     name="decode/context-128",
     model=TransformerModelSpec(...),
-    execution=TransformerInferenceExecutionSpec(...),
+    mapping=TransformerInferenceMappingSpec(...),
+    network_binding=NetworkTierBinding(...),
+    datatype="float16",
     hardware=SystemProfile(...),
     phase=InferencePhase.DECODE,
     batch_size=1,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.synthesizer.experiments import (
+from blueprinting.validation import (
     BaselineRegressionGate,
     RegressionCheck,
     run_inference_baseline_regression,

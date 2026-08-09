@@ -5,8 +5,8 @@ from dataclasses import FrozenInstanceError, dataclass, replace
 
 import pytest
 
-from blueprinting.synthesizer import FrozenDict, NodeId, SerializationError
-from blueprinting.synthesizer.codec import canonical_dumps, canonical_loads, record_type
+from blueprinting.schema import FrozenDict, SerializationError, canonical_dumps, canonical_loads, record_type
+from blueprinting.synthesizer import NodeId
 from blueprinting.synthesizer.ir import (
     ConcretePlanIR,
     DistributedTaskIR,

@@ -43,21 +43,21 @@
         "tensor_parallel": 0.19742618860307692
       },
       "ir": {
-        "distributed_digest": "3bcb5e87b8efac3cd21caf0d3eeb7c4a1e17a4af",
+        "distributed_digest": "1230592973066408f9b10ce90a054bc9bf3b86c6",
         "model_digest": "6ca20f14d69e2a0eea633ac6339f498a0a50a563",
         "pass_checkpoints": [
           {
-            "digest": "3bcb5e87b8efac3cd21caf0d3eeb7c4a1e17a4af",
-            "pass": "transformer-distribute-v1",
+            "digest": "1230592973066408f9b10ce90a054bc9bf3b86c6",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "9ce66dd1c115a1efbb0cad1cc3921c3f28ffc58f",
-            "pass": "transformer-plan-work-v1",
+            "digest": "a702e06f09e0e7ed49b1d06371fdc5f01df40ead",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "9ce66dd1c115a1efbb0cad1cc3921c3f28ffc58f"
+        "portable_digest": "a702e06f09e0e7ed49b1d06371fdc5f01df40ead"
       },
       "memory_bytes": {
         "calculon": 51705331712.0,
@@ -203,21 +203,21 @@
         "tensor_parallel": 0.3070430097723077
       },
       "ir": {
-        "distributed_digest": "437435a6805306add32e0557a4be1197e1d966c3",
+        "distributed_digest": "5623e9ff5660faaf3d66f3c3791b19f61abc5877",
         "model_digest": "6ca20f14d69e2a0eea633ac6339f498a0a50a563",
         "pass_checkpoints": [
           {
-            "digest": "437435a6805306add32e0557a4be1197e1d966c3",
-            "pass": "transformer-distribute-v1",
+            "digest": "5623e9ff5660faaf3d66f3c3791b19f61abc5877",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "873c82dde8f06f97a619855bf7fa74d5730c7d55",
-            "pass": "transformer-plan-work-v1",
+            "digest": "d8c1a76517458d5bd92af95c125225a00c1b6a61",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "873c82dde8f06f97a619855bf7fa74d5730c7d55"
+        "portable_digest": "d8c1a76517458d5bd92af95c125225a00c1b6a61"
       },
       "memory_bytes": {
         "calculon": 55920607232.0,
@@ -363,21 +363,21 @@
         "tensor_parallel": 1.5947695088246152
       },
       "ir": {
-        "distributed_digest": "4e300183da79f3354da1ced305b36a7e9c25bde6",
+        "distributed_digest": "878896018e2080321a2998174a5a91c269247bce",
         "model_digest": "e2a097e24aa28d6bc3fbfc731880d6a766ab9db9",
         "pass_checkpoints": [
           {
-            "digest": "4e300183da79f3354da1ced305b36a7e9c25bde6",
-            "pass": "transformer-distribute-v1",
+            "digest": "878896018e2080321a2998174a5a91c269247bce",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "2c9566d969073f2983b2ca3e35d840c986063058",
-            "pass": "transformer-plan-work-v1",
+            "digest": "b9ed7a9c81a7cbd02066e000478d3488e31c3321",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "2c9566d969073f2983b2ca3e35d840c986063058"
+        "portable_digest": "b9ed7a9c81a7cbd02066e000478d3488e31c3321"
       },
       "memory_bytes": {
         "calculon": 51649806336.0,
@@ -523,21 +523,21 @@
         "tensor_parallel": 2.487064078178462
       },
       "ir": {
-        "distributed_digest": "c237f8f3c66adea3643b1886605fc1becfc44ff6",
+        "distributed_digest": "1f2ac9b45bd791e4a5032c0a969270633cbd5926",
         "model_digest": "e2a097e24aa28d6bc3fbfc731880d6a766ab9db9",
         "pass_checkpoints": [
           {
-            "digest": "c237f8f3c66adea3643b1886605fc1becfc44ff6",
-            "pass": "transformer-distribute-v1",
+            "digest": "1f2ac9b45bd791e4a5032c0a969270633cbd5926",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "d3f1826b4e0b24ee91fc5920c95c1dd3b3ca6782",
-            "pass": "transformer-plan-work-v1",
+            "digest": "bf7be9b50d482232aaee649c506f4afca5c9dfcb",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "d3f1826b4e0b24ee91fc5920c95c1dd3b3ca6782"
+        "portable_digest": "bf7be9b50d482232aaee649c506f4afca5c9dfcb"
       },
       "memory_bytes": {
         "calculon": 58060800000.0,
@@ -683,21 +683,21 @@
         "tensor_parallel": 2.8847319171282053
       },
       "ir": {
-        "distributed_digest": "2bf52253b604335356e4daf86bbd80f1a0a6a9a6",
+        "distributed_digest": "bdc95102dbe14479526bf537c29e5a37dcd99e36",
         "model_digest": "941505070aec9373c78d390e55facfadc3966960",
         "pass_checkpoints": [
           {
-            "digest": "2bf52253b604335356e4daf86bbd80f1a0a6a9a6",
-            "pass": "transformer-distribute-v1",
+            "digest": "bdc95102dbe14479526bf537c29e5a37dcd99e36",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "1eca776c1c27807964278cf5e768193a6f06c4cc",
-            "pass": "transformer-plan-work-v1",
+            "digest": "3988fe962f1ccecca2cee3a08b98da5e177f8c65",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "1eca776c1c27807964278cf5e768193a6f06c4cc"
+        "portable_digest": "3988fe962f1ccecca2cee3a08b98da5e177f8c65"
       },
       "memory_bytes": {
         "calculon": 45386465280.0,
@@ -843,21 +843,21 @@
         "tensor_parallel": 4.4889105591794864
       },
       "ir": {
-        "distributed_digest": "83056fda70e2d0efac0e1f59982002888f8f7d48",
+        "distributed_digest": "37a93bf5ccd120dfcd7288b2e928d9160db2cfb5",
         "model_digest": "941505070aec9373c78d390e55facfadc3966960",
         "pass_checkpoints": [
           {
-            "digest": "83056fda70e2d0efac0e1f59982002888f8f7d48",
-            "pass": "transformer-distribute-v1",
+            "digest": "37a93bf5ccd120dfcd7288b2e928d9160db2cfb5",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "8095358ace4a3a62466c13b0895e03545c6f5621",
-            "pass": "transformer-plan-work-v1",
+            "digest": "2e9047b02f855c3527c07cfae116bbc41631eaea",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "8095358ace4a3a62466c13b0895e03545c6f5621"
+        "portable_digest": "2e9047b02f855c3527c07cfae116bbc41631eaea"
       },
       "memory_bytes": {
         "calculon": 57487032320.0,
@@ -1003,21 +1003,21 @@
         "tensor_parallel": 4.3855419689572654
       },
       "ir": {
-        "distributed_digest": "cc434813b1a0071df740e4135ec5b25a6c511729",
+        "distributed_digest": "b1a289cda7c0b71b92c7ff3328a6a0193aa396e6",
         "model_digest": "f293e3af1366c93c861a1107ac21c88e394fecc2",
         "pass_checkpoints": [
           {
-            "digest": "cc434813b1a0071df740e4135ec5b25a6c511729",
-            "pass": "transformer-distribute-v1",
+            "digest": "b1a289cda7c0b71b92c7ff3328a6a0193aa396e6",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "5ffc23392d5a374f442ef2f448366e3d9f6118ce",
-            "pass": "transformer-plan-work-v1",
+            "digest": "d4a11ba89f39f36f002ee9c0179bbc02dc62a542",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "5ffc23392d5a374f442ef2f448366e3d9f6118ce"
+        "portable_digest": "d4a11ba89f39f36f002ee9c0179bbc02dc62a542"
       },
       "memory_bytes": {
         "calculon": 49679769600.0,
@@ -1163,21 +1163,21 @@
         "tensor_parallel": 6.819764661606838
       },
       "ir": {
-        "distributed_digest": "e2d2c7497ff079a09c1fb88aab5e9fd0cd40f084",
+        "distributed_digest": "d6abe8eac1b0974539e127ccc0b0b148e9645ccc",
         "model_digest": "f293e3af1366c93c861a1107ac21c88e394fecc2",
         "pass_checkpoints": [
           {
-            "digest": "e2d2c7497ff079a09c1fb88aab5e9fd0cd40f084",
-            "pass": "transformer-distribute-v1",
+            "digest": "d6abe8eac1b0974539e127ccc0b0b148e9645ccc",
+            "pass": "transformer-distribute-v2",
             "schema": "blueprinting.distributed-task"
           },
           {
-            "digest": "377375178daedbd9655bdccb618eab11ba8b68f3",
-            "pass": "transformer-plan-work-v1",
+            "digest": "7549a08665566ef4187e9a37ca50d860308c8800",
+            "pass": "transformer-plan-work-v2",
             "schema": "blueprinting.portable-plan"
           }
         ],
-        "portable_digest": "377375178daedbd9655bdccb618eab11ba8b68f3"
+        "portable_digest": "7549a08665566ef4187e9a37ca50d860308c8800"
       },
       "memory_bytes": {
         "calculon": 63507865600.0,

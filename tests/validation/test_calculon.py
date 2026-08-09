@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 
 from blueprinting.analysis.cost_model import CalibrationMode, estimate_iteration
-from blueprinting.analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
-from blueprinting.synthesizer.experiments import discover_seqsel_tab5_cases, run_calculon_experiment
+from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
+from blueprinting.synthesizer.dialects.transformer import EngineKind, TrainingPhase
 from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
 from blueprinting.system import SystemProfile
-from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
+from blueprinting.validation import discover_seqsel_tab5_cases, run_calculon_experiment
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -26,37 +27,41 @@ def _derive(model_name: str, mode: str):
     model_data = _json(ROOT / "data" / "models" / f"{model_name}.json")
     execution_data = _json(ROOT / "data" / "validation" / "seqsel" / "tab5" / f"{model_name}_{mode}.json")
     model = TransformerModelSpec.from_mapping(model_name, model_data)
-    execution = TransformerExecutionSpec.from_mapping(execution_data)
-    source = build_transformer_model_ir(model)
+    workload = TransformerTrainingWorkloadSpec.from_mapping(execution_data)
+    mapping = TransformerTrainingMappingSpec.from_mapping(execution_data)
+    network_binding = NetworkTierBinding.from_mapping(execution_data)
+    source = build_transformer_model_ir(model, datatype=workload.datatype)
     result = PassManager().run(
         PassPipeline.of(DistributeTransformerTrainingPass(), PlanTransformerTrainingPass()),
         source,
-        session=synthesis_session_for(model, execution),
+        session=synthesis_session_for(model, workload, mapping),
     )
-    return model, execution, source, result
+    return model, workload, mapping, network_binding, source, result
 
 
 def test_transformer_lowering_produces_auditable_ir_checkpoints():
-    _, _, source, result = _derive("gpt3-175B", "seqsel")
+    _, _, _, _, source, result = _derive("gpt3-175B", "seqsel")
 
     assert source.require_valid() is None
     assert tuple(record.pass_name for record in result.records) == (
-        "transformer-distribute-v1",
-        "transformer-plan-work-v1",
+        "transformer-distribute-v2",
+        "transformer-plan-work-v2",
     )
     assert tuple(checkpoint.ir.header.schema_name for checkpoint in result.checkpoints) == (
         "blueprinting.distributed-task",
         "blueprinting.portable-plan",
     )
     assert result.ir.require_valid() is None
-    assert all(isinstance(task.attributes["invocation"], PrimitiveInvocation) for task in result.ir.tasks)
+    assert all("invocation" not in task.attributes for task in result.ir.tasks)
+    assert all("network_tier" not in resource.capabilities for task in result.ir.tasks for resource in task.resources)
 
 
 def test_selective_recompute_is_structural_and_linear_gradients_are_derived():
-    _, _, _, result = _derive("gpt3-175B", "seqsel")
-    invocations = tuple(task.attributes["invocation"] for task in result.ir.tasks)
+    _, _, _, _, _, result = _derive("gpt3-175B", "seqsel")
     recomputed_layers = {
-        invocation.source_layer for invocation in invocations if invocation.phase is TrainingPhase.RECOMPUTE
+        task.workload.attributes["source_layer"]
+        for task in result.ir.tasks
+        if task.workload.attributes["phase"] == TrainingPhase.RECOMPUTE.value
     }
 
     assert recomputed_layers == {
@@ -65,27 +70,50 @@ def test_selective_recompute_is_structural_and_linear_gradients_are_derived():
         "attention.probability_dropout",
     }
     query = {
-        invocation.phase: invocation.work.operations
-        for invocation in invocations
-        if invocation.source_layer == "attention.query" and invocation.engine is EngineKind.MATRIX
+        TrainingPhase(task.workload.attributes["phase"]): task.workload.operations
+        for task in result.ir.tasks
+        if task.workload.attributes["source_layer"] == "attention.query"
+        and task.workload.attributes["engine"] == EngineKind.MATRIX.value
     }
     assert query[TrainingPhase.FORWARD] == query[TrainingPhase.ACTIVATION_GRADIENT]
     assert query[TrainingPhase.FORWARD] == query[TrainingPhase.WEIGHT_GRADIENT]
 
 
 def test_hardware_evidence_is_shared_and_does_not_change_workload():
-    _, execution, _, result = _derive("gpt3-175B", "full")
+    _, workload, _, network_binding, _, result = _derive("gpt3-175B", "full")
     hardware = SystemProfile.from_mapping(
         "a100_80g",
         _json(ROOT / "data" / "systems" / "a100_80g.json"),
-        datatype=execution.datatype,
+        datatype=workload.datatype,
     )
     digests_before = tuple(task.workload for task in result.ir.tasks)
 
-    peak = estimate_iteration(result.ir, hardware, CalibrationMode.PEAK_ONLY)
-    calibrated = estimate_iteration(result.ir, hardware, CalibrationMode.SYSTEM_EVIDENCE)
+    peak = estimate_iteration(
+        result.ir,
+        hardware,
+        CalibrationMode.PEAK_ONLY,
+        network_binding=network_binding,
+    )
+    calibrated = estimate_iteration(
+        result.ir,
+        hardware,
+        CalibrationMode.SYSTEM_EVIDENCE,
+        network_binding=network_binding,
+    )
+    alternate_network = NetworkTierBinding(
+        tensor_parallel=1,
+        pipeline_parallel=network_binding.pipeline_parallel,
+        data_parallel=network_binding.data_parallel,
+    )
+    alternate = estimate_iteration(
+        result.ir,
+        hardware,
+        CalibrationMode.SYSTEM_EVIDENCE,
+        network_binding=alternate_network,
+    )
 
     assert peak.total < calibrated.total
+    assert alternate.tensor_parallel != calibrated.tensor_parallel
     assert tuple(task.workload for task in result.ir.tasks) == digests_before
     assert result.ir.attributes.get("duration") is None
 

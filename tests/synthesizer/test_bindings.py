@@ -2,20 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from blueprinting.schema import FrozenDict, SerializationError, canonical_dumps, canonical_loads
 from blueprinting.synthesizer import (
     BindingAxis,
     BindingError,
     DeploymentProfile,
-    FrozenDict,
-    SerializationError,
     Symbol,
     SynthesisSession,
     TargetProfile,
     TargetRequirements,
     WorkloadBinding,
     WorkloadMode,
-    canonical_dumps,
-    canonical_loads,
 )
 from blueprinting.synthesizer.ir import PortablePlanIR
 

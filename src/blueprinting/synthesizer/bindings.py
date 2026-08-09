@@ -7,11 +7,12 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
+from blueprinting.schema.codec import content_digest, enum_type, record_type
+from blueprinting.schema.frozen import FrozenDict, freeze
+
 from .axes import BindingAxis
-from .codec import content_digest, enum_type, record_type
 from .errors import BindingError, MissingBindingError
 from .expr import Scalar, ScalarExpr, Symbol, free_symbols
-from .frozen import FrozenDict, freeze
 
 
 def _frozen_map(value: Any) -> FrozenDict:

@@ -16,10 +16,6 @@ class SynthesisError(Exception):
     """Base class for formal-synthesis failures."""
 
 
-class SerializationError(SynthesisError):
-    """Raised when canonical serialization or deserialization fails."""
-
-
 class InvalidIdError(SynthesisError, ValueError):
     """Raised when a stable synthesis identifier is malformed."""
 

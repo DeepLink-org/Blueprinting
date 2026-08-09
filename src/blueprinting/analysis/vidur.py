@@ -13,9 +13,10 @@ import math
 import statistics
 from pathlib import Path
 
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.frozen import FrozenDict
+
 from ..synthesizer.bindings import InferencePhase
-from ..synthesizer.codec import content_digest
-from ..synthesizer.frozen import FrozenDict
 from .cost.database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .cost.protocol import CostSubject, EstimateMethod
 from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult

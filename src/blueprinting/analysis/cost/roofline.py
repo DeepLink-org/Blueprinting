@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from ...synthesizer.codec import content_digest
-from ...synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.frozen import FrozenDict
+
 from ...system import SystemProfile
 from ..cost_model import CalibrationMode
 from .protocol import (

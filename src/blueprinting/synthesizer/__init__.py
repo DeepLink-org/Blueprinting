@@ -12,7 +12,6 @@ from .bindings import (
     WorkloadBinding,
     WorkloadMode,
 )
-from .codec import canonical_dumps, canonical_loads, content_digest
 from .errors import (
     BindingError,
     Diagnostic,
@@ -20,12 +19,10 @@ from .errors import (
     MissingAnalysisError,
     MissingBindingError,
     PassContractError,
-    SerializationError,
     SynthesisError,
     VerificationReport,
 )
 from .expr import ExprOp, ScalarExpr, Symbol, ceil_div, free_symbols, maximum, minimum, substitute
-from .frozen import FrozenDict, freeze, thaw
 from .ids import (
     BufferId,
     CommandId,
@@ -54,7 +51,6 @@ __all__ = [
     "DeviceId",
     "Diagnostic",
     "ExprOp",
-    "FrozenDict",
     "IRVerificationError",
     "InferencePhase",
     "InstructionId",
@@ -68,7 +64,6 @@ __all__ = [
     "QueueId",
     "TokenId",
     "ScalarExpr",
-    "SerializationError",
     "StrategyBinding",
     "Symbol",
     "TargetProfile",
@@ -77,14 +72,9 @@ __all__ = [
     "VerificationReport",
     "WorkloadBinding",
     "WorkloadMode",
-    "canonical_dumps",
-    "canonical_loads",
     "ceil_div",
-    "content_digest",
     "free_symbols",
-    "freeze",
     "maximum",
     "minimum",
     "substitute",
-    "thaw",
 ]

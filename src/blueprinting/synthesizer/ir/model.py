@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar
 
-from ..codec import enum_type, record_type
+from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.schema.frozen import FrozenDict
+
 from ..errors import DiagnosticBag, VerificationReport
-from ..frozen import FrozenDict
 from ..ids import Lineage, NodeId, ValueId
 from .common import (
     CanonicalIRMixin,

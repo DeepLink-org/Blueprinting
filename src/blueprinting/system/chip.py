@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from blueprinting.synthesizer.codec import record_type
+from blueprinting.schema.codec import record_type
 
 
 def _positive_rate(value: float, name: str) -> None:

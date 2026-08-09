@@ -18,21 +18,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from calculon.llm import Llm
-from calculon.system import System
-
-from ...analysis.cost_model import (
+from blueprinting.analysis.cost_model import (
     CalibrationMode,
     IterationEstimate,
     estimate_iteration,
 )
-from ...analysis.transformer_workload import EngineKind, PrimitiveInvocation, TrainingPhase
-from ...system import SystemProfile
-from ...workload import TransformerExecutionSpec, TransformerModelSpec
-from ..frontend import build_transformer_model_ir, synthesis_session_for
-from ..ir import PortablePlanIR
-from ..lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
-from ..passes import PassManager, PassPipeline
+from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
+from blueprinting.synthesizer.dialects.transformer import EngineKind, TrainingPhase
+from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
+from blueprinting.synthesizer.ir import PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
+from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+from calculon.llm import Llm
+from calculon.system import System
 
 SEQSEL_TABLE5_SECONDS = {
     "megatron-22B": {"full": 1.42, "seqsel": 1.10},
@@ -250,7 +250,7 @@ def _run_calculon(
     execution_data: dict[str, Any],
     system_data: dict[str, Any],
 ) -> dict[str, Any]:
-    logger = logging.getLogger("blueprinting.synthesizer.experiments.calculon")
+    logger = logging.getLogger("blueprinting.validation.calculon")
     application = Llm.Application(model_data)
     execution_fields = {field: execution_data[field] for field in Llm.Execution.fields()}
     execution = Llm.Execution.from_json(execution_fields)
@@ -263,10 +263,11 @@ def _run_calculon(
 
 def _derive_plan(
     model: TransformerModelSpec,
-    execution: TransformerExecutionSpec,
+    workload: TransformerTrainingWorkloadSpec,
+    mapping: TransformerTrainingMappingSpec,
 ) -> tuple[PortablePlanIR, tuple[dict[str, Any], ...], str, str]:
-    source = build_transformer_model_ir(model)
-    session = synthesis_session_for(model, execution)
+    source = build_transformer_model_ir(model, datatype=workload.datatype)
+    session = synthesis_session_for(model, workload, mapping)
     result = PassManager().run(
         PassPipeline.of(DistributeTransformerTrainingPass(), PlanTransformerTrainingPass()),
         source,
@@ -302,12 +303,11 @@ def _phase_work(plan: PortablePlanIR, phase: TrainingPhase) -> tuple[int, int, i
     memory_bytes = 0
     message_bytes = 0
     for task in plan.tasks:
-        invocation = task.attributes.get("invocation")
-        if not isinstance(invocation, PrimitiveInvocation) or invocation.phase is not phase:
+        if task.workload.attributes.get("phase") != phase.value:
             continue
-        operations += invocation.work.operations
-        memory_bytes += invocation.work.memory_bytes
-        message_bytes += invocation.work.message_bytes
+        operations += task.workload.operations
+        memory_bytes += task.workload.read_bytes + task.workload.write_bytes
+        message_bytes += task.workload.message_bytes
     return operations, memory_bytes, message_bytes
 
 
@@ -362,9 +362,11 @@ def run_calculon_experiment(cases: tuple[CalculonCase, ...]) -> CalculonExperime
         execution_data = _read_json(case.execution_path)
         system_data = _read_json(case.system_path)
         model = TransformerModelSpec.from_mapping(case.model_path.stem, model_data)
-        execution = TransformerExecutionSpec.from_mapping(execution_data)
-        plan, checkpoints, model_digest, distributed_digest = _derive_plan(model, execution)
-        hardware = SystemProfile.from_mapping(case.system_path.stem, system_data, datatype=execution.datatype)
+        workload = TransformerTrainingWorkloadSpec.from_mapping(execution_data)
+        mapping = TransformerTrainingMappingSpec.from_mapping(execution_data)
+        network_binding = NetworkTierBinding.from_mapping(execution_data)
+        plan, checkpoints, model_digest, distributed_digest = _derive_plan(model, workload, mapping)
+        hardware = SystemProfile.from_mapping(case.system_path.stem, system_data, datatype=workload.datatype)
         if not evidence_revision:
             evidence_revision = hardware.evidence_revision
         elif evidence_revision != hardware.evidence_revision:
@@ -378,8 +380,18 @@ def run_calculon_experiment(cases: tuple[CalculonCase, ...]) -> CalculonExperime
                 portable_digest=plan.digest,
                 pass_checkpoints=checkpoints,
                 workload=_workload_audit(plan, calculon_stats),
-                peak_only=estimate_iteration(plan, hardware, CalibrationMode.PEAK_ONLY),
-                calibrated=estimate_iteration(plan, hardware, CalibrationMode.SYSTEM_EVIDENCE),
+                peak_only=estimate_iteration(
+                    plan,
+                    hardware,
+                    CalibrationMode.PEAK_ONLY,
+                    network_binding=network_binding,
+                ),
+                calibrated=estimate_iteration(
+                    plan,
+                    hardware,
+                    CalibrationMode.SYSTEM_EVIDENCE,
+                    network_binding=network_binding,
+                ),
                 calculon_stats=calculon_stats,
                 paper_seconds=case.paper_seconds,
             )

@@ -12,10 +12,11 @@ from enum import Enum
 from numbers import Real
 from typing import ClassVar
 
-from ..codec import enum_type, record_type
+from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.schema.frozen import FrozenDict
+
 from ..errors import DiagnosticBag, VerificationReport
 from ..expr import Scalar
-from ..frozen import FrozenDict
 from ..ids import BufferId, Lineage, NodeId
 from .common import (
     CanonicalIRMixin,

@@ -49,11 +49,11 @@ provides:
 - immutable schemas and structural verifiers for the current five-layer IR backbone; only the first three layers have a production derivation slice, while `ConcretePlanIR` and `MachineIR` remain experimental contracts;
 - stable IDs, lineage, schema-versioned serialization, content digests, and typed binding sessions;
 - declarative transformation contracts with analysis invalidation and derivation checkpoints;
-- a typed decoder-only Transformer training frontend;
-- `ModelIR -> DistributedTaskIR -> PortablePlanIR` staged derivation with explicit TP collectives, recomputation, workload,
-  and buffer facts;
-- peak-only and hardware-evidence cost views;
-- a reproducible Calculon/SeqSel calibration experiment.
+- typed decoder-only Transformer training and static prefill/decode frontends;
+- `ModelIR -> DistributedTaskIR -> PortablePlanIR` staged derivation with explicit TP collectives, recomputation,
+  KV state, workload, and buffer facts;
+- peak-only, hardware-evidence, database, and explicit roofline fallback cost views;
+- reproducible Calculon/SeqSel and Vidur comparison gates that remain downstream of derivation.
 
 First-class architecture blueprints, hardware design variables, concrete resource simulation, network/hardware
 simulator adapters, bottleneck/sensitivity reports, energy/area/cost models, and Pareto search are planned product
@@ -86,11 +86,13 @@ from blueprinting.synthesizer.lowering import (
 )
 from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
-from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
+from blueprinting.mapping import TransformerTrainingMappingSpec
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 model = TransformerModelSpec.from_mapping("gpt3-175B", model_config)
-execution = TransformerExecutionSpec.from_mapping(execution_config)
-source = build_transformer_model_ir(model)
+workload = TransformerTrainingWorkloadSpec.from_mapping(execution_config)
+mapping = TransformerTrainingMappingSpec.from_mapping(execution_config)
+source = build_transformer_model_ir(model, datatype=workload.datatype)
 
 result = PassManager().run(
     PassPipeline.of(
@@ -98,7 +100,7 @@ result = PassManager().run(
         PlanTransformerTrainingPass(),
     ),
     source,
-    session=synthesis_session_for(model, execution),
+    session=synthesis_session_for(model, workload, mapping),
 )
 
 portable_plan = result.ir
@@ -106,8 +108,8 @@ for checkpoint in result.checkpoints:
     print(checkpoint.pass_name, checkpoint.ir.digest)
 ```
 
-The mapping inputs use the model and execution schemas in `data/`. Invalid topology such as
-`world_size != tp * pp * dp` is rejected at the typed frontend boundary.
+The adapter reads the retained model/execution JSON presets in `data/`, then separates workload facts from the
+logical mapping. Invalid topology such as `world_size != tp * pp * dp` is rejected at the typed frontend boundary.
 
 ## Reproduce the Calculon calibration
 
@@ -148,26 +150,24 @@ Calculon remains an adjacent calibration utility and does not participate in the
 ## Repository layout
 
 ```text
-src/blueprinting/synthesizer/
-├── ir/              # five canonical IR contracts
-├── frontend/        # workload-to-IR/session adapters
-├── lowering/        # staged derivation passes
-├── experiments/     # reproducible validation experiments
-├── passes/          # transformation contracts and manager
-└── session.py       # explicit bindings and typed derivation context
-
-src/blueprinting/workload/      # target-neutral workload and mapping contracts
-src/blueprinting/system/        # chip, memory, interconnect, and system profiles
-src/blueprinting/analysis/      # exact workload and evidence-backed cost analyses
-src/blueprinting/application/  # framework-neutral analysis service
+src/blueprinting/schema/       # dependency-free codec and immutable schema primitives
+src/blueprinting/workload/     # target-neutral model and scenario facts
+src/blueprinting/mapping/      # logical strategies and explicit deployment mappings
+src/blueprinting/system/       # chip, memory, interconnect, and system profiles
+src/blueprinting/synthesizer/  # canonical IR, exact-work dialects, and verified derivation
+src/blueprinting/analysis/     # evidence protocols, cost resolution, and projections
+src/blueprinting/application/  # framework-neutral analysis services and reports
+src/blueprinting/validation/   # external baselines and strict regression gates
 src/blueprinting/workbench/    # NiceGUI workbench and legacy presentation adapters
 
-tests/synthesizer/      # current formal-representation and calibration tests
-docs/                # bilingual MkDocs design, reference, experiment, and project documentation
+data/evidence/                 # optional external evidence, excluded from the base package
+tests/                         # domain, derivation, application, and regression contracts
+docs/                          # bilingual MkDocs design, experiment, and project documentation
 ```
 
-`workload` and `system` own the two domain inputs. `synthesizer` connects them through canonical representations
-and verified derivation mechanics; `analysis` evaluates the resulting facts without owning either domain model.
+`workload`, `mapping`, and `system` own separate input concerns. `synthesizer` derives canonical plans from workload
+and logical-strategy contracts without reading a physical system; `analysis` later evaluates those plans against an
+explicit system, deployment mapping, and evidence snapshot. External oracles remain downstream in `validation`.
 
 ## Development
 

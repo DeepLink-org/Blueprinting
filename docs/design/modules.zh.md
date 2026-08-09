@@ -26,13 +26,17 @@ result.sensitivity
 
 内部会为每个 candidate 创建 immutable typed derivation context，用于 workload mapping、architecture binding 与 analysis addressing。当前实现把这个对象命名为 `SynthesisSession`；该 class 及其 workload/strategy binding 已实现，而 `ExplorationSession` 与 end-to-end product facade 仍为 planned。Global mutable configuration 被禁止，因为它会破坏 experiment reproducibility。
 
-## Workload 与 System 领域模型
+## Workload、Mapping 与 System 领域模型
 
-`blueprinting.workload` 拥有 target-neutral model semantic、request scenario 与 logical mapping intent。Workload object 不得包含 chip name、peak rate、empirical latency、kernel identity 或 physical placement。当前 slice 提供 typed Transformer training/inference contract。
+`blueprinting.workload` 拥有 target-neutral model semantic 与 request/training scenario。Workload object 不得包含 parallel placement、chip name、peak rate、empirical latency、kernel identity 或 physical placement。当前 slice 提供 typed Transformer model、training-workload 与 inference-request contract。
+
+`blueprinting.mapping` 拥有 TP/PP/DP、recomputation、collective form 等 target-neutral logical strategy，也拥有 `NetworkTierBinding` 这类显式 deployment-side association。后者只在 portable planning 之后提供给 evaluation，绝不嵌入 workload fact 或 `PortablePlanIR`。因此同一份 portable plan 可以在实质不同的 system 上评估。
+
+边界 importer 仍接受保留的 Calculon 风格字段名，但 alias 不是第二套 schema：canonical 与 legacy 拼写同时出现时必须一致，否则在 derivation 前拒绝导入。新构造的 domain object 与 report 只使用 canonical ownership 和 typed field。
 
 `blueprinting.system` 拥有 immutable chip-local compute engine、memory capacity/bandwidth、interconnect tier、collective volume rule 与导入 evidence revision。`SystemProfile` 是当前有限的 compute/memory/network adapter；它还不是产品设计中的 hierarchical `ArchitectureBlueprint`、physical deployment 或 target binding。Cost policy 继续属于 `analysis`：system contract 暴露 peak 与 evidence-bearing facts，但不选择 calibration mode。
 
-这两个 package 是权威 domain input，不是另一套 IR hierarchy。只有 synthesizer frontend 把 workload contract 导入 `ModelIR` 后，canonical derivation 才开始；system profile 继续位于 canonical workload state 之外，只能被显式 analysis 或后续 target binding 消费。
+这三个 package 是权威 domain input，不是另一套 IR hierarchy。只有 synthesizer frontend 把 workload 与 logical-strategy contract 导入 `ModelIR` 和 typed `SynthesisSession` 后，canonical derivation 才开始；system profile 与 deployment-side network binding 继续位于 canonical workload state 之外，只能被显式 analysis 或后续 target binding 消费。
 
 ## Frontend
 
@@ -44,7 +48,7 @@ Frontend 不读取 peak throughput、kernel catalog、physical topology 或 runt
 
 ## Canonical 形式化表示基础设施
 
-Representation core 的具体类型目前使用 `*IR` 后缀；它提供 immutable value、`NodeId`/`ValueId`、typed lineage、exact scalar expression、canonical JSON、schema version、feature set、deterministic digest 和 verifier diagnostic。
+`blueprinting.schema` 提供所有 typed contract 共享且无领域依赖的 canonical codec、frozen map 与 serialization error。`blueprinting.synthesizer` 中的 representation core 具体类型目前使用 `*IR` 后缀；它提供 `NodeId`/`ValueId`、typed lineage、exact scalar expression、schema header、feature set、deterministic digest 和 verifier diagnostic。
 
 它不依赖 Transformer-specific derivation、target plugin、performance provider 或 simulation。Typed extension 可以承载 namespaced semantic；free-form metadata 不具有 compatibility meaning。
 
@@ -115,31 +119,37 @@ Profiler adapter 把 runtime event 关联到 machine instruction 与 concrete co
 ## 依赖方向
 
 ```text
-workload ──► synthesizer/frontend ──► ModelIR
-                                       │
-                         lowering/passes ──► portable planning
-                                       │               │
-system ─────────────────────────► analysis              ▼
-                                       │    architecture binding
-evidence ──────────────────────────────┘               │
+schema ──► workload ──► mapping
+   │          │           │
+   ├──────────┴───────────┴──► synthesizer ──► PortablePlanIR
+   │                                      │             │
+   └──► system ───────────────────────────┼──► analysis ◄── evidence
+                         NetworkTierBinding             │
                                                        ▼
-                                            simulation / emission
+                                      application / validation
 ```
 
-依赖方向是显式的：workload contract 不依赖 system description；system description 不依赖 analysis policy；analysis 不构造 canonical plan。Synthesizer 物化 workload/plan facts，analysis 再使用 system description 与外部 evidence 评估这些事实。调用方不能把 cost evidence 当作隐式 lowering 决策。
+依赖方向是显式的：workload contract 不依赖 mapping 或 system description；logical mapping 可以针对 workload shape 做验证，但不能读取 system；system description 不依赖 analysis policy；analysis 不构造 canonical plan。Synthesizer 物化 workload/plan fact，analysis 再使用显式 system、deployment mapping 与外部 evidence 评估这些事实。Validation 可以消费整个 supported stack，但 production layer 不得依赖 validation 或外部 oracle。
 
 ## 当前源码映射
 
 | 关注点 | 源码 | 状态 |
 |---|---|---|
-| Workload semantic 与 logical mapping intent | `workload/` | Implemented Transformer slice |
+| Canonical codec 与 frozen schema value | `schema/` | Implemented |
+| Model 与 workload semantic | `workload/` | Implemented Transformer slice |
+| Logical strategy 与显式 deployment mapping | `mapping/` | Implemented Transformer/network slice |
 | Chip、memory、interconnect 与聚合 system profile | `system/` | Implemented limited profile adapter |
-| ID、expression、codec、frozen value | `synthesizer/{ids,expr,codec,frozen}.py` | Implemented |
+| ID、expression、lineage | `synthesizer/{ids,expr}.py` | Implemented |
 | Canonical 形式化表示（`*IR`） | `synthesizer/ir/` | Implemented contracts |
 | Binding 与 session | `synthesizer/{bindings,session}.py` | Implemented |
 | Analysis/transformation transaction | `synthesizer/passes/base.py` | Implemented |
 | Workload-to-IR/session frontend | `synthesizer/frontend/` | Implemented Transformer slice |
-| Workload 与 cost analysis | `analysis/` | Implemented slice |
-| Transformer derivation pass | `synthesizer/lowering/transformer.py` | Implemented through portable plan |
+| Transformer exact-work dialect | `synthesizer/dialects/transformer/` | Implemented training/inference slice |
+| Transformer derivation pass | `synthesizer/lowering/` | Implemented through portable plan |
 | 当前 system cost adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
+| Framework-neutral orchestration 与 report | `application/` | Implemented static analysis slice |
+| Calculon/Vidur comparison 与 regression gate | `validation/` | Implemented offline gate |
+| Optional external performance bundle | `data/evidence/` | 显式加载；从 base package 排除 |
 | Architecture model/search、evidence service、simulation、emission | Accepted boundary | Planned |
+
+`validation/legacy/` 保留 Calculon-only 的历史 SeqSel 图表复现。它们是 compatibility check，不构成 canonical Blueprinting derivation 正确性的证据；严格 gate 位于 `validation/calculon.py`、`validation/vidur.py` 与 `validation/regression.py`。

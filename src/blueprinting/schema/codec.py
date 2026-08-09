@@ -1,4 +1,4 @@
-"""Closed-world canonical codec used by formal synthesis snapshots.
+"""Closed-world canonical codec shared by Blueprinting contracts.
 
 The decoder only constructs explicitly registered record and enum types.  It
 never imports a class named by an input payload, which keeps IR loading

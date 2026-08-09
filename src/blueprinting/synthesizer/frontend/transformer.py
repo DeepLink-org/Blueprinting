@@ -6,12 +6,13 @@ contracts and Blueprinting's canonical representation/binding machinery.
 
 from __future__ import annotations
 
-from blueprinting.workload import TransformerExecutionSpec, TransformerModelSpec
+from blueprinting.mapping import TransformerTrainingMappingSpec
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 from ..axes import BindingAxis
 from ..bindings import BindingSet, StrategyBinding, WorkloadBinding, WorkloadMode
 from ..expr import Symbol
-from ..frozen import FrozenDict
 from ..ids import Lineage, NodeId, ValueId
 from ..ir import ModelIR, ModelOperation, ModelValue, OperationName, TensorType, ValueRole
 from ..session import SynthesisSession
@@ -60,25 +61,28 @@ def build_transformer_model_ir(model: TransformerModelSpec, *, datatype: str = "
 
 def synthesis_session_for(
     model: TransformerModelSpec,
-    execution: TransformerExecutionSpec,
+    workload_spec: TransformerTrainingWorkloadSpec,
+    mapping: TransformerTrainingMappingSpec,
 ) -> SynthesisSession:
     """Create the explicit session consumed by Transformer lowering passes."""
 
+    mapping.validate_workload(workload_spec)
     workload = WorkloadBinding(
         WorkloadMode.TRAINING,
-        batch_size=execution.microbatch_size,
+        batch_size=workload_spec.microbatch_size,
         sequence_length=model.sequence_length,
-        micro_batches=execution.microbatch_count,
+        micro_batches=mapping.microbatch_count(workload_spec),
+        attributes=FrozenDict({"workload_spec": workload_spec}),
     )
     strategy = StrategyBinding(
-        tensor_parallel=execution.tensor_parallel,
-        pipeline_parallel=execution.pipeline_parallel,
-        data_parallel=execution.data_parallel,
-        recompute_policy=execution.recompute.value,
-        pipeline_policy=f"1f1b-interleaved-{execution.pipeline_interleaving}",
-        attributes=FrozenDict({"execution_spec": execution}),
+        tensor_parallel=mapping.tensor_parallel,
+        pipeline_parallel=mapping.pipeline_parallel,
+        data_parallel=mapping.data_parallel,
+        recompute_policy=mapping.recompute.value,
+        pipeline_policy=f"1f1b-interleaved-{mapping.pipeline_interleaving}",
+        attributes=FrozenDict({"mapping_spec": mapping}),
     )
     return SynthesisSession(
         bindings=BindingSet(workload=workload, strategy=strategy),
-        features=frozenset({"transformer-training-analysis-v1"}),
+        features=frozenset({"transformer-training-analysis-v2"}),
     )

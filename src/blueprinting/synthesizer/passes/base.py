@@ -17,16 +17,17 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.errors import SerializationError
+from blueprinting.schema.frozen import freeze
+
 from ..axes import BindingAxis
-from ..codec import content_digest
 from ..errors import (
     MissingAnalysisError,
     PassContractError,
     PassExecutionError,
-    SerializationError,
     SynthesisError,
 )
-from ..frozen import freeze
 from ..ir.common import CanonicalIRMixin, SchemaVersion
 from ..session import SynthesisSession
 

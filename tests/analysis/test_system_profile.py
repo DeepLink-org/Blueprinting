@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from blueprinting.synthesizer.codec import canonical_dumps, canonical_loads
+from blueprinting.schema.codec import canonical_dumps, canonical_loads
 from blueprinting.system import SystemProfile
 
 ROOT = Path(__file__).resolve().parents[2]

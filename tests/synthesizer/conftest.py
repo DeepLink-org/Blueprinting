@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from blueprinting.synthesizer import FrozenDict
+from blueprinting.schema import FrozenDict
 from blueprinting.synthesizer.ids import (
     BufferId,
     CommandId,

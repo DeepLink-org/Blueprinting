@@ -15,10 +15,12 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, ClassVar, TypeVar
 
-from ..codec import canonical_dumps, canonical_loads, content_digest, enum_type, record_type
-from ..errors import DiagnosticBag, SerializationError, VerificationReport
+from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest, enum_type, record_type
+from blueprinting.schema.errors import SerializationError
+from blueprinting.schema.frozen import FrozenDict, freeze
+
+from ..errors import DiagnosticBag, VerificationReport
 from ..expr import Scalar, ScalarExpr, Symbol
-from ..frozen import FrozenDict, freeze
 from ..ids import StableId
 
 _NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")

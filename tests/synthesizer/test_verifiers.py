@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import fields, replace
 
-from blueprinting.synthesizer import BufferId, FrozenDict, NodeId, ValueId
+from blueprinting.schema import FrozenDict
+from blueprinting.synthesizer import BufferId, NodeId, ValueId
 from blueprinting.synthesizer.ir import (
     ConcretePlanIR,
     DistributedTaskIR,

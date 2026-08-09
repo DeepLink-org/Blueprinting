@@ -19,13 +19,13 @@ model.json
    | semantic import
    v
 ModelIR: transformer.decoder_training
-   | transformer-distribute-v1
+   | transformer-distribute-v2
    | - decompose Transformer primitives
    | - insert explicit TP collectives
    | - clone selective/full recomputation primitives
    v
 DistributedTaskIR: local TP block task DAG
-   | transformer-plan-work-v1
+   | transformer-plan-work-v2
    | - derive operations/read/write/message bytes
    | - do not bind GPU/LPU or write duration
    v
@@ -150,10 +150,10 @@ uv run pytest -m baseline_regression tests/regression
 
 - `workload/transformer.py`：typed workload 与 execution facts；
 - `synthesizer/frontend/transformer.py`：canonical import 与 binding adapter；
-- `analysis/transformer_workload.py`：静态 operation/byte analysis；
+- `synthesizer/dialects/transformer/training.py`：静态 operation/byte derivation；
 - `synthesizer/lowering/transformer.py`：两个 canonical derivation pass；
 - `analysis/cost_model.py`：peak-only 与 evidence-backed view；
-- `synthesizer/experiments/calculon.py`：oracle adapter、audit 与 report。
-- `synthesizer/experiments/regression.py`：严格的跨域 baseline gate 与诊断。
+- `validation/calculon.py`：oracle adapter、audit 与 report。
+- `validation/regression.py`：严格的跨域 baseline gate 与诊断。
 
 这是仓库唯一的 Blueprinting/Calculon calibration path。未来对比仍必须保证 workload construction 与 estimation 完成前无法访问 oracle data。内部 transformation contract 参见 [Transformer 工作负载推导](../design/passes/transformer.md)，未来 provider 迁移参见 [performance evidence](../design/performance/index.md)。

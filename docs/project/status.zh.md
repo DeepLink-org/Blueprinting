@@ -50,18 +50,19 @@
 当前存在两条可运行切片：
 
 ```text
-TransformerModelSpec + TransformerExecutionSpec
+TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMappingSpec
   -> exact workload decomposition
   -> ModelIR
   -> DistributedTaskIR
   -> PortablePlanIR
-  -> SystemProfile analytical estimate
+  -> [SystemProfile + NetworkTierBinding] analytical estimate
   -> Calculon / paper comparison report
 
-TransformerModelSpec + inference mapping + request cohort
+TransformerModelSpec + inference request cohort + inference mapping
   -> phase-neutral inference ModelIR
   -> 分别绑定的 prefill/decode DistributedTaskIR
   -> 携带 KV state/capacity 的 phase-local PortablePlanIR
+  -> [SystemProfile + NetworkTierBinding]
   -> CostResolver(exact imported evidence -> 显式 roofline fallback)
   -> optional post-hoc Vidur baseline comparison
   -> 静态 prefill / decode-step model time 与解析 memory report
@@ -79,18 +80,18 @@ TransformerModelSpec + inference mapping + request cohort
 
 | 基础 | 状态 | Source of truth |
 |---|---|---|
-| Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/synthesizer/{frozen,ids,codec}.py` |
+| Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/schema/`、`src/blueprinting/synthesizer/ids.py` |
 | 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`；只有前三层存在 production derivation slice |
 | Typed workload/strategy/target/deployment binding | **Implemented** | `bindings.py`、`session.py` |
 | Chip、memory、interconnect 与聚合 system profile | **Implemented adapter** | `src/blueprinting/system/`；是 evidence-bearing profile，不是计划中的 `ArchitectureBlueprint` |
 | Transactional analysis/transformation、checkpoint、observer | **Implemented** | `passes/base.py` |
-| Transformer workload contract、frontend 与 workload algebra | **Implemented slice** | `workload/transformer.py`、`synthesizer/frontend/transformer.py`、`analysis/transformer_workload.py` |
+| Transformer workload/mapping contract、frontend 与 workload algebra | **Implemented slice** | `workload/transformer.py`、`mapping/transformer.py`、`synthesizer/frontend/transformer.py`、`synthesizer/dialects/transformer/` |
 | Distributed/portable mapping derivation | **Implemented slice** | `lowering/transformer.py` |
 | Cost protocol、resolver、roofline、database 与外部 importer | **Implemented slice** | `analysis/cost/`、`analysis/vidur.py`；仅覆盖 exact task latency，不是 plan simulation |
-| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `workload/transformer_inference.py`、`synthesizer/frontend/transformer_inference.py`、`analysis/{transformer_inference,inference_cost}.py`、`synthesizer/lowering/transformer_inference.py`、`application/inference.py` |
-| Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `experiments/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
-| Calculon experiment | **Implemented experiment** | `experiments/calculon.py` |
-| 外部 baseline 回归门禁 | **Implemented** | `data/validation/` 下的冻结 contract 与带许可证离线 fixture、`experiments/regression.py`、`.github/workflows/quality.yml` |
+| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `workload/transformer_inference.py`、`mapping/transformer.py`、`synthesizer/{frontend,lowering}/transformer_inference.py`、`synthesizer/dialects/transformer/inference.py`、`analysis/inference_cost.py`、`application/inference.py` |
+| Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `validation/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
+| Calculon experiment | **Implemented experiment** | `validation/calculon.py` |
+| 外部 baseline 回归门禁 | **Implemented** | `data/validation/` 下的冻结 contract 与带许可证离线 fixture、`validation/regression.py`、`.github/workflows/quality.yml` |
 
 这些 typed representation、verifier、derivation transaction 与 analysis 构成 hardware exploration 的形式化基础。新的 architecture model、simulator provider 与 analysis product 应扩展这一份 semantic foundation，而不是建立平行 workload truth。
 

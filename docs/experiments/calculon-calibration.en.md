@@ -19,13 +19,13 @@ model.json
    | semantic import
    v
 ModelIR: transformer.decoder_training
-   | transformer-distribute-v1
+   | transformer-distribute-v2
    | - decompose Transformer primitives
    | - insert explicit TP collectives
    | - clone selective/full recomputation primitives
    v
 DistributedTaskIR: local TP block task DAG
-   | transformer-plan-work-v1
+   | transformer-plan-work-v2
    | - derive operations/read/write/message bytes
    | - do not bind GPU/LPU or write duration
    v
@@ -150,10 +150,10 @@ Implementation map:
 
 - `workload/transformer.py`: typed workload and execution facts;
 - `synthesizer/frontend/transformer.py`: canonical import and binding adapter;
-- `analysis/transformer_workload.py`: static operation/byte analysis;
+- `synthesizer/dialects/transformer/training.py`: static operation/byte derivation;
 - `synthesizer/lowering/transformer.py`: the two canonical derivation passes;
 - `analysis/cost_model.py`: peak-only and evidence-backed views;
-- `synthesizer/experiments/calculon.py`: oracle adapter, audit, and report.
-- `synthesizer/experiments/regression.py`: strict cross-domain baseline gate and diagnostics.
+- `validation/calculon.py`: oracle adapter, audit, and report.
+- `validation/regression.py`: strict cross-domain baseline gate and diagnostics.
 
 This is the repository's single Blueprinting/Calculon calibration path. Future comparisons must keep oracle data unavailable until workload construction and estimation complete. See [Transformer workload derivation](../design/passes/transformer.md) for the internal transformation contracts and [performance evidence](../design/performance/index.md) for the intended provider migration.

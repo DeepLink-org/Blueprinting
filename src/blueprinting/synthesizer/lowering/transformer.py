@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from ...analysis.transformer_workload import (
-    EngineKind,
-    PrimitiveInvocation,
-    derive_transformer_block,
-)
-from ...workload import (
-    TensorParallelCommunication,
-    TransformerExecutionSpec,
-    TransformerModelSpec,
-)
+from blueprinting.mapping import TensorParallelCommunication, TransformerTrainingMappingSpec
+from blueprinting.schema.frozen import FrozenDict
+from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+
 from ..axes import BindingAxis
-from ..frozen import FrozenDict
+from ..dialects.transformer import EngineKind, PrimitiveInvocation, derive_transformer_block
 from ..ids import BufferId, Lineage, NodeId, ValueId
 from ..ir import (
     AbstractStorageClass,
@@ -48,58 +42,67 @@ from ..ir import (
 from ..passes import DerivationPass, PassContext, PassContract
 
 
-def _semantic_specs(ir: ModelIR, context: PassContext) -> tuple[TransformerModelSpec, TransformerExecutionSpec]:
+def _semantic_specs(
+    ir: ModelIR,
+    context: PassContext,
+) -> tuple[TransformerModelSpec, TransformerTrainingWorkloadSpec, TransformerTrainingMappingSpec]:
     if len(ir.operations) != 1 or ir.operations[0].operation != OperationName("transformer", "decoder_training"):
         raise ValueError("Transformer distribution expects one transformer.decoder_training operation")
     model = ir.operations[0].attributes.get("model_spec")
-    strategy = context.session.bindings.strategy
-    if strategy is None:
-        raise ValueError("Transformer distribution requires a strategy binding")
-    execution = strategy.attributes.get("execution_spec")
     if not isinstance(model, TransformerModelSpec):
         raise TypeError("model operation is missing a typed TransformerModelSpec")
-    if not isinstance(execution, TransformerExecutionSpec):
-        raise TypeError("strategy binding is missing a typed TransformerExecutionSpec")
     workload = context.session.bindings.workload
-    if workload is None:
-        raise ValueError("Transformer distribution requires a workload binding")
-    expected = (execution.microbatch_size, model.sequence_length, execution.microbatch_count)
+    strategy = context.session.bindings.strategy
+    if workload is None or strategy is None:
+        raise ValueError("Transformer distribution requires workload and strategy bindings")
+    workload_spec = workload.attributes.get("workload_spec")
+    mapping = strategy.attributes.get("mapping_spec")
+    if not isinstance(workload_spec, TransformerTrainingWorkloadSpec):
+        raise TypeError("workload binding is missing a typed TransformerTrainingWorkloadSpec")
+    if not isinstance(mapping, TransformerTrainingMappingSpec):
+        raise TypeError("strategy binding is missing a typed TransformerTrainingMappingSpec")
+    mapping.validate_workload(workload_spec)
+    expected = (
+        workload_spec.microbatch_size,
+        model.sequence_length,
+        mapping.microbatch_count(workload_spec),
+    )
     actual = (workload.batch_size, workload.sequence_length, workload.micro_batches)
     if actual != expected:
-        raise ValueError(f"workload binding {actual!r} is inconsistent with execution facts {expected!r}")
+        raise ValueError(f"workload binding {actual!r} is inconsistent with workload facts {expected!r}")
     if (
-        strategy.tensor_parallel != execution.tensor_parallel
-        or strategy.pipeline_parallel != execution.pipeline_parallel
-        or strategy.data_parallel != execution.data_parallel
+        strategy.tensor_parallel != mapping.tensor_parallel
+        or strategy.pipeline_parallel != mapping.pipeline_parallel
+        or strategy.data_parallel != mapping.data_parallel
     ):
-        raise ValueError("strategy binding is inconsistent with Transformer execution facts")
-    return model, execution
+        raise ValueError("strategy binding is inconsistent with Transformer mapping facts")
+    return model, workload_spec, mapping
 
 
 class DistributeTransformerTrainingPass(DerivationPass[ModelIR, DistributedTaskIR]):
     """Expand one semantic block into explicit local and collective tasks."""
 
     contract = PassContract.create(
-        "transformer-distribute-v1",
+        "transformer-distribute-v2",
         ModelIR,
         DistributedTaskIR,
         required_bindings=frozenset({BindingAxis.WORKLOAD, BindingAxis.STRATEGY}),
     )
 
     def run(self, ir: ModelIR, context: PassContext) -> DistributedTaskIR:
-        model, execution = _semantic_specs(ir, context)
-        invocations, block_memory = derive_transformer_block(model, execution)
-        ranks = tuple(range(execution.tensor_parallel))
-        mesh = LogicalMesh("local-tensor-parallel-group", (MeshAxis("tp", execution.tensor_parallel),))
+        model, workload, mapping = _semantic_specs(ir, context)
+        invocations, block_memory = derive_transformer_block(model, workload, mapping)
+        ranks = tuple(range(mapping.tensor_parallel))
+        mesh = LogicalMesh("local-tensor-parallel-group", (MeshAxis("tp", mapping.tensor_parallel),))
         source_input = ir.inputs[0]
         source_output = ir.outputs[0]
         input_id = ValueId.derive(ir.digest, "transformer-distributed", "input")
         output_id = ValueId.derive(ir.digest, "transformer-distributed", "output")
         tensor_type = TensorType(
-            (execution.microbatch_size, model.sequence_length, model.hidden_size),
-            execution.datatype,
+            (workload.microbatch_size, model.sequence_length, model.hidden_size),
+            workload.datatype,
         )
-        if execution.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
+        if mapping.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
             sharding = ShardingSpec(((), ("tp",), ()))
         else:
             sharding = ShardingSpec.replicated(tensor_type.rank, ("tp",))
@@ -175,7 +178,8 @@ class DistributeTransformerTrainingPass(DerivationPass[ModelIR, DistributedTaskI
             attributes=FrozenDict(
                 {
                     "model_spec": model,
-                    "execution_spec": execution,
+                    "workload_spec": workload,
+                    "mapping_spec": mapping,
                     "block_memory": block_memory,
                     "scope": "one-local-tensor-parallel-block",
                 }
@@ -208,7 +212,6 @@ def _plan_resources(invocation: PrimitiveInvocation) -> tuple[ResourceRequiremen
                 ResourceKind.NETWORK,
                 invocation.work.message_bytes,
                 ResourceScope.PER_RANK,
-                FrozenDict({"network_tier": invocation.network_tier}),
             )
         )
     return tuple(resources)
@@ -218,7 +221,7 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
     """Materialize exact WorkloadFacts without choosing a hardware target."""
 
     contract = PassContract.create(
-        "transformer-plan-work-v1",
+        "transformer-plan-work-v2",
         DistributedTaskIR,
         PortablePlanIR,
         required_bindings=frozenset({BindingAxis.STRATEGY}),
@@ -226,8 +229,13 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
 
     def run(self, ir: DistributedTaskIR, context: PassContext) -> PortablePlanIR:
         model = ir.attributes.get("model_spec")
-        execution = ir.attributes.get("execution_spec")
-        if not isinstance(model, TransformerModelSpec) or not isinstance(execution, TransformerExecutionSpec):
+        workload = ir.attributes.get("workload_spec")
+        mapping = ir.attributes.get("mapping_spec")
+        if not isinstance(model, TransformerModelSpec):
+            raise TypeError("distributed Transformer IR is missing TransformerModelSpec")
+        if not isinstance(workload, TransformerTrainingWorkloadSpec):
+            raise TypeError("distributed Transformer IR is missing TransformerTrainingWorkloadSpec")
+        if not isinstance(mapping, TransformerTrainingMappingSpec):
             raise TypeError("distributed Transformer IR is missing typed semantic facts")
         strategy = context.session.bindings.strategy
         if strategy is None:
@@ -235,10 +243,10 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
 
         input_id = BufferId.derive(ir.digest, "transformer-portable", "input")
         output_id = BufferId.derive(ir.digest, "transformer-portable", "output")
-        boundary_elements = execution.microbatch_size * model.sequence_length * model.hidden_size
-        if execution.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
-            boundary_elements //= execution.tensor_parallel
-        boundary_bytes = boundary_elements * execution.bytes_per_element
+        boundary_elements = workload.microbatch_size * model.sequence_length * model.hidden_size
+        if mapping.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
+            boundary_elements //= mapping.tensor_parallel
+        boundary_bytes = boundary_elements * workload.bytes_per_element
 
         task_ids = tuple(
             NodeId.derive(ir.digest, "transformer-portable", index, task.id) for index, task in enumerate(ir.tasks)
@@ -275,10 +283,14 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
                         message_bytes=invocation.work.message_bytes,
                         attributes=FrozenDict(
                             {
+                                "name": invocation.name,
                                 "engine": invocation.engine.value,
                                 "phase": invocation.phase.value,
                                 "primitive": invocation.primitive,
                                 "source_layer": invocation.source_layer,
+                                "collective": (
+                                    invocation.collective.value if invocation.collective is not None else ""
+                                ),
                             }
                         ),
                     ),
@@ -286,7 +298,6 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
                     resources=_plan_resources(invocation),
                     implementations=(ImplementationRequirement(capability, alternatives=alternatives),),
                     concurrency_group=("network" if invocation.engine is EngineKind.COLLECTIVE else "compute"),
-                    attributes=FrozenDict({"invocation": invocation}),
                 )
             )
 
@@ -294,7 +305,7 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
             name=f"{model.name}-local-tp-block-plan",
             source_distributed_digest=ir.digest,
             strategy_fingerprint=strategy.fingerprint,
-            planner_revision="transformer-work-analysis-v1",
+            planner_revision="transformer-work-analysis-v2",
             tasks=tuple(tasks),
             buffers=(
                 PlanBuffer(
@@ -325,7 +336,8 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
             attributes=FrozenDict(
                 {
                     "model_spec": model,
-                    "execution_spec": execution,
+                    "workload_spec": workload,
+                    "mapping_spec": mapping,
                     "block_memory": ir.attributes["block_memory"],
                     "scope": ir.attributes["scope"],
                 }

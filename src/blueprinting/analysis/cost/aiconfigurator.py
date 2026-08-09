@@ -13,8 +13,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ...synthesizer.codec import content_digest
-from ...synthesizer.frozen import FrozenDict
+from blueprinting.schema.codec import content_digest
+from blueprinting.schema.frozen import FrozenDict
+
 from .database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .importers import read_tabular_rows
 from .protocol import CostSubject, EstimateMethod

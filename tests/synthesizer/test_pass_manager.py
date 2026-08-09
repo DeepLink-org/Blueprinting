@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
+from blueprinting.schema import FrozenDict
 from blueprinting.synthesizer import (
     BindingAxis,
-    FrozenDict,
     MissingAnalysisError,
     MissingBindingError,
     PassContractError,

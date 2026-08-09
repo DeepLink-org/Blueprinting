@@ -1,4 +1,4 @@
-"""Small immutable containers used at IR boundaries."""
+"""Small immutable containers used at typed contract boundaries."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ from typing import Any
 def freeze(value: Any) -> Any:
     """Recursively freeze JSON-like extension data.
 
-    Registered immutable synthesis records pass through unchanged.  Mutable
-    mappings and sequences are copied so callers cannot mutate an IR snapshot
-    through an alias retained outside the synthesizer.
+    Registered immutable records pass through unchanged. Mutable mappings and
+    sequences are copied so callers cannot mutate a snapshot through an alias.
     """
 
     if isinstance(value, FrozenDict):

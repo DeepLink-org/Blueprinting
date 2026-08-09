@@ -26,19 +26,17 @@ from blueprinting.analysis import (
     estimate_inference_phase,
 )
 from blueprinting.analysis.cost import InvalidCostEvidenceError
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.schema.frozen import FrozenDict
 from blueprinting.synthesizer.bindings import InferencePhase
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
-from blueprinting.synthesizer.frozen import FrozenDict
 from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
 from blueprinting.system import SystemProfile
-from blueprinting.workload import (
-    TransformerInferenceExecutionSpec,
-    TransformerModelSpec,
-)
+from blueprinting.workload import TransformerModelSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -398,14 +396,10 @@ def _inference_fixture():
         attention_head_size=8,
         block_count=8,
     )
-    execution = TransformerInferenceExecutionSpec(
-        world_size=4,
+    mapping = TransformerInferenceMappingSpec(
         tensor_parallel=2,
         pipeline_parallel=2,
         replicas=1,
-        datatype="float16",
-        tensor_parallel_network=0,
-        pipeline_parallel_network=0,
     )
     plan = (
         PassManager()
@@ -414,25 +408,29 @@ def _inference_fixture():
             build_transformer_inference_model_ir(model),
             session=inference_synthesis_session_for(
                 model,
-                execution,
+                mapping,
                 phase=InferencePhase.DECODE,
                 batch_size=3,
                 context_tokens=96,
+                datatype="float16",
             ),
         )
         .ir
     )
-    return model, execution, plan
+    return model, mapping, plan
 
 
 def test_inference_costing_uses_database_then_explicit_roofline_fallback():
-    model, execution, plan = _inference_fixture()
+    model, mapping, plan = _inference_fixture()
     hardware = _hardware()
+    network_binding = NetworkTierBinding()
     attention_task = next(task for task in plan.tasks if task.workload.attributes.get("primitive") == "attention_core")
     query = cost_query_for_inference_task(
         attention_task,
         hardware=hardware,
-        execution=execution,
+        mapping=mapping,
+        network_binding=network_binding,
+        datatype="float16",
         model=model,
         batch_size=3,
         query_tokens=1,
@@ -444,7 +442,7 @@ def test_inference_costing_uses_database_then_explicit_roofline_fallback():
         CostSubject.OPERATOR,
         "attention_core",
         hardware.name,
-        execution.datatype,
+        "float16",
         0.123,
         FrozenDict(
             {
@@ -467,6 +465,7 @@ def test_inference_costing_uses_database_then_explicit_roofline_fallback():
         plan,
         hardware,
         mode=CalibrationMode.PEAK_ONLY,
+        network_binding=network_binding,
         cost_resolver=resolver,
     )
     attention = next(item for item in estimate.tasks if item.invocation.primitive == "attention_core")

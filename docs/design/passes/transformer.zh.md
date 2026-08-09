@@ -9,7 +9,7 @@
 当前 production path 是：
 
 ```text
-TransformerModelSpec + TransformerExecutionSpec
+TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMappingSpec
   -> ModelIR
   -> DistributeTransformerTrainingPass
   -> DistributedTaskIR
@@ -23,7 +23,9 @@ TransformerModelSpec + TransformerExecutionSpec
 
 ## 强类型语义导入
 
-`TransformerModelSpec` 拥有模型维度与语义，`TransformerExecutionSpec` 拥有 micro-batching、TP/PP/DP、重计算、数据类型和 tensor-parallel 通信模式。`synthesis_session_for()` 把这些执行选择转换成显式 workload 与 strategy binding。
+`TransformerModelSpec` 拥有模型维度与语义，`TransformerTrainingWorkloadSpec` 拥有 global/micro batch size 与 datatype，`TransformerTrainingMappingSpec` 拥有 TP/PP/DP、重计算、pipeline interleaving、optimizer sharding 与 tensor-parallel 通信模式。`synthesis_session_for()` 把这些彼此独立的 contract 转换成显式 workload 与 strategy binding。
+
+Physical network tier 的选择被刻意排除。只有在用 `SystemProfile` 评估 portable plan 时才会提供 `NetworkTierBinding`；改变它不能改变 model、distributed 或 portable-plan digest。
 
 Importer 会在 pass 运行前拒绝非法维度、head 不可整除、错误并行拓扑以及互相矛盾的 workload facts。随后 `build_transformer_model_ir()` 创建一个粗粒度、target-neutral 的 `transformer.decoder_training` operation。这个 snapshot 中不存在 target 名称、峰值性能、kernel ID 或 latency。
 
@@ -86,11 +88,13 @@ Observer 可以把这些 facts 与 framework trace 或 reference model 对比并
 
 | 关注点 | 源码 | 测试 |
 |---|---|---|
-| 强类型 Transformer specification | `src/blueprinting/workload/transformer.py` | binding 与 calibration tests |
+| 模型与训练 workload contract | `src/blueprinting/workload/transformer.py` | binding 与 validation tests |
+| 逻辑 mapping contract | `src/blueprinting/mapping/transformer.py` | boundary 与 validation tests |
 | Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation 与 calibration tests |
-| 工作量代数 | `src/blueprinting/analysis/transformer_workload.py` | `tests/synthesizer/test_calculon_calibration.py` |
+| 工作量代数 | `src/blueprinting/synthesizer/dialects/transformer/training.py` | `tests/validation/test_calculon.py` |
 | 两个 derivation pass | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation 与 calibration tests |
 | 事务与 checkpoint | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
-| Evidence-derived estimate | `src/blueprinting/analysis/cost_model.py` | calibration tests |
+| Evidence-derived estimate | `src/blueprinting/analysis/cost_model.py` | validation tests |
+| Calculon/SeqSel oracle gate | `src/blueprinting/validation/calculon.py` | `tests/validation/test_calculon.py` |
 
 [Calculon 校准实验](../../experiments/calculon-calibration.md)是这条已实现纵向切片的端到端审计。

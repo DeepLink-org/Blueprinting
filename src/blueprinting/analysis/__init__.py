@@ -1,4 +1,4 @@
-"""Exact workload analyses and evidence-backed cost models."""
+"""Evidence protocols, cost projections, and architecture-facing analyses."""
 
 from .cost import (
     AIConfiguratorPerformanceImporter,
@@ -45,24 +45,10 @@ from .inference_evidence import (
     InferenceEvidenceQuery,
     InferenceEvidenceResult,
 )
-from .transformer_inference import (
-    InferenceBlockMemoryFacts,
-    InferenceInvocation,
-    derive_transformer_inference_block,
-)
-from .transformer_workload import (
-    BlockMemoryFacts,
-    EngineKind,
-    PhaseWork,
-    PrimitiveInvocation,
-    TrainingPhase,
-    derive_transformer_block,
-)
 from .vidur import VidurProfileBaseline, VidurProfileImporter
 
 __all__ = [
     "BlockEstimate",
-    "BlockMemoryFacts",
     "CalibrationMode",
     "AIConfiguratorPerformanceImporter",
     "AIConfiguratorTable",
@@ -74,34 +60,26 @@ __all__ = [
     "CostResolution",
     "CostResolver",
     "CostSubject",
-    "EngineKind",
     "EstimateMatch",
     "EstimateMethod",
     "EvidenceProvenance",
-    "InferenceBlockMemoryFacts",
     "InferenceBaseline",
     "InferenceCostProvider",
     "InferenceEvidenceQuery",
     "InferenceEvidenceResult",
-    "InferenceInvocation",
     "InferencePhaseEstimate",
     "InferencePhaseMemory",
     "InferenceTaskEstimate",
     "IterationEstimate",
     "IterationMemory",
     "LatencyUnit",
-    "PhaseWork",
     "PerformanceDatabase",
     "PerformanceDatabaseProvider",
     "PerformanceRecord",
-    "PrimitiveInvocation",
     "RooflineCostProvider",
     "SimulatorPerformanceImporter",
     "TabularImportSpec",
     "TabularPerformanceImporter",
-    "TrainingPhase",
-    "derive_transformer_block",
-    "derive_transformer_inference_block",
     "cost_query_for_inference_task",
     "estimate_block",
     "estimate_inference_phase",

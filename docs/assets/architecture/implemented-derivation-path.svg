@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1060" viewBox="0 0 1440 1060" role="img" aria-labelledby="title desc">
   <title id="title">Currently implemented Blueprinting workload-derivation path</title>
-  <desc id="desc">The typed Transformer model is derived through ModelIR, DistributedTaskIR, and PortablePlanIR with verified checkpoints. Hardware evidence enters only through derived cost views after portable planning.</desc>
+  <desc id="desc">Independent Transformer model, workload, and logical mapping contracts are derived through ModelIR, DistributedTaskIR, and PortablePlanIR with verified checkpoints. Hardware evidence and physical network-tier binding enter only through derived cost views after portable planning.</desc>
   <defs>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#172033" flood-opacity="0.10"/></filter>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#526075"/></marker>
@@ -32,12 +32,15 @@
   <text x="912" y="153" class="section" fill="#2D7FF9">DERIVED VALIDATION / 派生验证</text>
 
   <g filter="url(#shadow)">
-    <rect x="78" y="184" width="334" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <rect x="78" y="184" width="220" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
     <text x="102" y="214" class="box-title">TransformerModelSpec</text>
-    <text x="102" y="238" class="box-sub">hidden · FFN · heads · sequence · blocks</text>
-    <rect x="448" y="184" width="366" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
-    <text x="472" y="214" class="box-title">TransformerExecutionSpec</text>
-    <text x="472" y="238" class="box-sub">TP/PP/DP · microbatch · recompute · comm mode</text>
+    <text x="102" y="238" class="box-sub">shape · graph semantics</text>
+    <rect x="316" y="184" width="240" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <text x="340" y="211" class="box-title">TrainingWorkloadSpec</text>
+    <text x="340" y="237" class="box-sub">batch · microbatch · dtype</text>
+    <rect x="574" y="184" width="240" height="78" rx="14" fill="#F1F3F7" stroke="#C9D1DC"/>
+    <text x="598" y="211" class="box-title">TrainingMappingSpec</text>
+    <text x="598" y="237" class="box-sub">TP/PP/DP · recompute · comm</text>
 
     <rect x="166" y="298" width="560" height="58" rx="14" fill="#FFF3E1" stroke="#E58A20"/>
     <text x="446" y="323" text-anchor="middle" class="box-title">Typed validation / 类型校验</text>
@@ -53,14 +56,15 @@
     <text x="472" y="468" class="box-sub">NO target · deployment · calibration binding</text>
   </g>
 
-  <path d="M245 262 L245 298" class="arrow"/>
-  <path d="M631 262 L631 298" class="arrow"/>
+  <path d="M188 262 L300 298" class="arrow"/>
+  <path d="M436 262 L436 298" class="arrow"/>
+  <path d="M694 262 L592 298" class="arrow"/>
   <path d="M338 356 L245 394" class="arrow"/>
   <path d="M554 356 L631 394" class="arrow"/>
 
   <g filter="url(#shadow)">
     <rect x="78" y="526" width="736" height="82" rx="16" fill="#6C5CE7"/>
-    <text x="104" y="557" class="pass-name">transformer-distribute-v1</text>
+    <text x="104" y="557" class="pass-name">transformer-distribute-v2</text>
     <text x="104" y="582" class="pass-sub">ModelIR → primitive phases + local TP mesh + explicit collectives + structural recomputation</text>
     <rect x="78" y="638" width="736" height="86" rx="14" fill="#EAF0FF" stroke="#5B78E8"/>
     <text x="104" y="670" class="box-title">DistributedTaskIR</text>
@@ -69,7 +73,7 @@
     <text x="718" y="674" text-anchor="middle" class="pill" fill="#3E5FCB">PassCheckpoint #1</text>
 
     <rect x="78" y="760" width="736" height="82" rx="16" fill="#1E9FB5"/>
-    <text x="104" y="791" class="pass-name">transformer-plan-work-v1</text>
+    <text x="104" y="791" class="pass-name">transformer-plan-work-v2</text>
     <text x="104" y="816" class="pass-sub">DistributedTaskIR → exact workload facts + abstract resources/buffers + capability alternatives</text>
     <rect x="78" y="872" width="736" height="98" rx="14" fill="#E6F8FB" stroke="#1E9FB5"/>
     <text x="104" y="904" class="box-title">PortablePlanIR</text>
@@ -95,9 +99,9 @@
 
   <g filter="url(#shadow)">
     <rect x="912" y="314" width="458" height="88" rx="14" fill="#FFF7DB" stroke="#D99A00"/>
-    <text x="936" y="346" class="box-title">SystemProfile</text>
-    <text x="936" y="369" class="box-sub">peak throughput/bandwidth + versioned efficiency curves</text>
-    <text x="936" y="389" class="box-sub">same evidence revision shared across every case</text>
+    <text x="936" y="346" class="box-title">SystemProfile + NetworkTierBinding</text>
+    <text x="936" y="369" class="box-sub">versioned rates/curves + explicit TP/PP/DP tier placement</text>
+    <text x="936" y="389" class="box-sub">late-bound; never part of the PortablePlanIR digest</text>
 
     <rect x="912" y="466" width="214" height="98" rx="14" fill="#EAF3FF" stroke="#2D7FF9"/>
     <text x="1019" y="497" text-anchor="middle" class="box-title">Peak-only view</text>

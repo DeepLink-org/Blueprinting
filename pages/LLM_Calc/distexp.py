@@ -9,7 +9,7 @@ import hyperparameter as hp
 
 from calculon.llm import Llm
 from calculon.system import System
-from blueprinting import Execution, Model
+from blueprinting.types import Execution, Model
 from blueprinting.ui import (
     setup_page,
     setup_sidebar,

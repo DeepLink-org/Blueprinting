@@ -12,20 +12,21 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ...analysis import (
+from blueprinting.analysis import (
     CalibrationMode,
     InferenceBaseline,
     InferencePhaseEstimate,
     estimate_inference_phase,
     inference_evidence_query_for,
 )
-from ...system import SystemProfile
-from ...workload import TransformerInferenceExecutionSpec, TransformerModelSpec
-from ..bindings import InferencePhase
-from ..frontend import build_transformer_inference_model_ir, inference_synthesis_session_for
-from ..ir import PortablePlanIR
-from ..lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from ..passes import PassManager, PassPipeline
+from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.frontend import build_transformer_inference_model_ir, inference_synthesis_session_for
+from blueprinting.synthesizer.ir import PortablePlanIR
+from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
+from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.system import SystemProfile
+from blueprinting.workload import TransformerModelSpec
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,9 @@ class VidurExperimentCase:
 
     name: str
     model: TransformerModelSpec
-    execution: TransformerInferenceExecutionSpec
+    mapping: TransformerInferenceMappingSpec
+    network_binding: NetworkTierBinding
+    datatype: str
     hardware: SystemProfile
     phase: InferencePhase
     batch_size: int
@@ -176,11 +179,13 @@ class VidurExperimentCase:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{field_name} must be a positive integer")
-        self.execution.validate_model(self.model)
+        self.mapping.validate_model(self.model)
         if self.context_tokens > self.model.sequence_length:
             raise ValueError("context_tokens cannot exceed model sequence_length")
-        if self.hardware.datatype != self.execution.datatype:
-            raise ValueError("hardware and execution datatype must match")
+        if self.datatype not in {"float8", "float16", "bfloat16", "float32"}:
+            raise ValueError(f"unsupported datatype: {self.datatype!r}")
+        if self.hardware.datatype != self.datatype:
+            raise ValueError("hardware and workload datatype must match")
 
 
 @dataclass(frozen=True)
@@ -296,11 +301,14 @@ def compare_inference_phase_to_vidur(
     """Compare an already-lowered and already-costed phase with Vidur."""
 
     model = plan.attributes.get("model_spec")
-    execution = plan.attributes.get("inference_execution_spec")
+    mapping = plan.attributes.get("inference_mapping_spec")
+    datatype = plan.attributes.get("datatype")
     if not isinstance(model, TransformerModelSpec):
         raise TypeError("portable inference plan is missing TransformerModelSpec")
-    if not isinstance(execution, TransformerInferenceExecutionSpec):
-        raise TypeError("portable inference plan is missing TransformerInferenceExecutionSpec")
+    if not isinstance(mapping, TransformerInferenceMappingSpec):
+        raise TypeError("portable inference plan is missing TransformerInferenceMappingSpec")
+    if not isinstance(datatype, str):
+        raise TypeError("portable inference plan is missing its datatype")
     if len(plan.tasks) != len(estimate.tasks):
         raise ValueError("plan and estimate task counts differ")
 
@@ -313,7 +321,8 @@ def compare_inference_phase_to_vidur(
             inference_evidence_query_for(
                 invocation,
                 hardware=hardware,
-                execution=execution,
+                mapping=mapping,
+                datatype=datatype,
                 model=model,
                 batch_size=estimate.batch_size,
                 query_tokens=estimate.query_tokens,
@@ -356,23 +365,34 @@ def run_vidur_experiment(
     pipeline = PassPipeline.of(DistributeTransformerInferencePass(), PlanTransformerInferencePass())
     manager = PassManager()
     for case in cases:
-        source = build_transformer_inference_model_ir(case.model, datatype=case.execution.datatype)
+        source = build_transformer_inference_model_ir(case.model, datatype=case.datatype)
         result = manager.run(
             pipeline,
             source,
             session=inference_synthesis_session_for(
                 case.model,
-                case.execution,
+                case.mapping,
                 phase=case.phase,
                 batch_size=case.batch_size,
                 context_tokens=case.context_tokens,
+                datatype=case.datatype,
             ),
         )
         plan = result.ir
         if not isinstance(plan, PortablePlanIR):
             raise TypeError(f"inference pipeline returned {type(plan).__name__}, expected PortablePlanIR")
-        peak = estimate_inference_phase(plan, case.hardware, CalibrationMode.PEAK_ONLY)
-        system = estimate_inference_phase(plan, case.hardware, CalibrationMode.SYSTEM_EVIDENCE)
+        peak = estimate_inference_phase(
+            plan,
+            case.hardware,
+            CalibrationMode.PEAK_ONLY,
+            network_binding=case.network_binding,
+        )
+        system = estimate_inference_phase(
+            plan,
+            case.hardware,
+            CalibrationMode.SYSTEM_EVIDENCE,
+            network_binding=case.network_binding,
+        )
         checkpoints = tuple(
             {
                 "pass": checkpoint.record.pass_name,

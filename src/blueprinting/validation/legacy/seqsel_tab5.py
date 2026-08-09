@@ -1,7 +1,7 @@
-"""Validation case for seqsel table 5.
+"""Legacy Calculon reproduction of SeqSel table 5.
 
-NOTE: This validation case intentionally uses calculon for comparison purposes.
-It validates blueprinting's results against calculon's reference implementation.
+This compatibility check does not exercise Blueprinting's canonical derivation
+path; the strict production gate lives in :mod:`blueprinting.validation.calculon`.
 """
 
 import logging
@@ -9,7 +9,8 @@ import logging
 import hyperparameter as hp
 import pandas as pd
 
-from blueprinting import Execution, Model, io
+import blueprinting.io as io
+from blueprinting.types import Execution, Model
 
 # Calculon is used here for validation comparison only
 from calculon.llm import Llm
@@ -85,12 +86,8 @@ def seqsel_tab5(show=False):
         .reset_index()
     )
 
-    result["iter time/rtol"] = (
-        result["iter time(s)[act]"] - result["iter time(s)[pred]"]
-    ).abs() / result["iter time(s)[act]"]
+    result["iter time/rtol"] = (result["iter time(s)[act]"] - result["iter time(s)[pred]"]).abs() / result[
+        "iter time(s)[act]"
+    ]
 
-    return (
-        result.style.format({"iter time/rtol": lambda x: "%.2f%%" % (100 * x)})
-        if show
-        else result
-    )
+    return result.style.format({"iter time/rtol": lambda x: "%.2f%%" % (100 * x)}) if show else result

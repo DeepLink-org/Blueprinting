@@ -2,7 +2,7 @@
 
 from enum import Enum
 
-from .codec import enum_type
+from blueprinting.schema.codec import enum_type
 
 
 @enum_type("compiler.binding_axis")

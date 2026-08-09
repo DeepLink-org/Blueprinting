@@ -10,16 +10,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..synthesizer.bindings import InferencePhase
-from ..synthesizer.codec import record_type
-from ..synthesizer.ir import CollectiveKind
-from ..workload import TransformerInferenceExecutionSpec, TransformerModelSpec
-from .transformer_workload import EngineKind, PhaseWork
+from blueprinting.mapping import TransformerInferenceMappingSpec
+from blueprinting.schema.codec import record_type
+from blueprinting.workload import TransformerModelSpec
+
+from ...bindings import InferencePhase
+from ...ir import CollectiveKind
+from .common import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@record_type("compiler.analysis.inference_invocation.v1")
+@record_type("blueprinting.transformer.inference-invocation.v2")
 @dataclass(frozen=True)
 class InferenceInvocation:
     """One target-neutral component invocation for a single decoder block."""
@@ -31,7 +33,6 @@ class InferenceInvocation:
     engine: EngineKind
     work: PhaseWork
     collective: CollectiveKind | None = None
-    network_tier: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("name", "source_layer", "primitive"):
@@ -45,9 +46,9 @@ class InferenceInvocation:
         if not isinstance(self.work, PhaseWork):
             raise TypeError("work must be PhaseWork")
         if self.engine is EngineKind.COLLECTIVE:
-            if self.collective is None or self.network_tier is None:
-                raise ValueError("collective invocations require kind and network tier")
-        elif self.collective is not None or self.network_tier is not None:
+            if self.collective is None:
+                raise ValueError("collective invocations require a collective kind")
+        elif self.collective is not None:
             raise ValueError("local invocations cannot carry collective metadata")
 
 
@@ -74,11 +75,12 @@ def _work(*, operations: int = 0, read: int = 0, write: int = 0, message: int = 
 
 def derive_transformer_inference_block(
     model: TransformerModelSpec,
-    execution: TransformerInferenceExecutionSpec,
+    mapping: TransformerInferenceMappingSpec,
     *,
     phase: InferencePhase,
     batch_size: int,
     context_tokens: int,
+    datatype: str,
 ) -> tuple[tuple[InferenceInvocation, ...], InferenceBlockMemoryFacts]:
     """Derive exact work for one local block at one inference phase point.
 
@@ -87,23 +89,26 @@ def derive_transformer_inference_block(
     the newly appended token in the context.
     """
 
-    execution.validate_model(model)
+    mapping.validate_model(model)
     if not isinstance(phase, InferencePhase):
         raise TypeError("phase must be InferencePhase")
     for name, value in (("batch_size", batch_size), ("context_tokens", context_tokens)):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
+    try:
+        element_bytes = {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}[datatype]
+    except KeyError as error:
+        raise ValueError(f"unsupported datatype: {datatype!r}") from error
 
     b = batch_size
     q = context_tokens if phase is InferencePhase.PREFILL else 1
     c = context_tokens
     h = model.hidden_size
     f = model.feedforward_size
-    tp = execution.tensor_parallel
+    tp = mapping.tensor_parallel
     heads = model.attention_heads // tp
     local_h = h // tp
     local_f = f // tp
-    element_bytes = execution.bytes_per_element
     token_elements = b * q * h
     local_token_elements = b * q * local_h
     score_elements = b * heads * q * c
@@ -140,7 +145,6 @@ def derive_transformer_inference_block(
                 engine=EngineKind.COLLECTIVE,
                 work=_work(message=token_elements * element_bytes),
                 collective=CollectiveKind.ALL_REDUCE,
-                network_tier=execution.tensor_parallel_network,
             )
         )
 

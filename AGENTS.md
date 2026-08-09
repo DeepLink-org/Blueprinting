@@ -142,9 +142,12 @@ handling。若 LPU 的 issue cycle/slot 具有 correctness 含义，它在 targe
 
 ## 9. 当前实现边界
 
-Target-neutral workload contract 位于 `src/blueprinting/workload/`，芯片、memory、interconnect 与 system profile
-位于 `src/blueprinting/system/`；canonical 表示与形式化推导机制位于 `src/blueprinting/synthesizer/`，分析与证据评估
-位于同级 `src/blueprinting/analysis/`。Synthesizer 表示 formal plan synthesis 的实现边界，不是产品身份、RTL 综合器或独立 Compiler 组件。已经实现：
+无领域依赖的 codec 与 immutable schema primitive 位于 `src/blueprinting/schema/`；target-neutral workload contract
+位于 `src/blueprinting/workload/`，逻辑策略与显式 deployment mapping 位于 `src/blueprinting/mapping/`，芯片、memory、
+interconnect 与 system profile 位于 `src/blueprinting/system/`；canonical 表示与形式化推导机制位于
+`src/blueprinting/synthesizer/`，分析与证据评估位于同级 `src/blueprinting/analysis/`，外部 baseline 与回归 gate
+位于 `src/blueprinting/validation/`。Synthesizer 表示 formal plan synthesis 的实现边界，不是产品身份、RTL 综合器
+或独立 Compiler 组件。已经实现：
 
 - 五层 canonical IR 的 immutable schema、serialization 和 structural verifier；其中后两层仍是 experimental contract；
 - stable ID、lineage、typed scalar expression、binding/session；
@@ -165,8 +168,8 @@ Target-neutral workload contract 位于 `src/blueprinting/workload/`，芯片、
 
 ## 10. 代码与仓库规则
 
-- Workload semantic/request/mapping contract 进入 `src/blueprinting/workload/`；芯片、memory、interconnect 与 system
-  contract 进入 `src/blueprinting/system/`；workload-to-IR adapter、canonical 表示与推导进入
+- 无领域依赖的 canonical codec、frozen value 与 schema error 进入 `src/blueprinting/schema/`；workload semantic/request contract 进入 `src/blueprinting/workload/`；逻辑 strategy 与 deployment mapping 进入
+  `src/blueprinting/mapping/`；芯片、memory、interconnect 与 system contract 进入 `src/blueprinting/system/`；workload-to-IR adapter、canonical 表示与推导进入
   `src/blueprinting/synthesizer/`；cost/evidence analysis 进入 `src/blueprinting/analysis/`。不得新建平行表示栈。
 - `SystemProfile` 是当前有限的 compute/memory/network evidence-bearing adapter，不得被描述成已经实现的完整
   `ArchitectureBlueprint`；`src/blueprinting/types/system/` 只服务 legacy calculator，新代码不得依赖它。
