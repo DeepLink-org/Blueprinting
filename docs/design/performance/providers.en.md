@@ -168,6 +168,8 @@ estimate = estimate_inference_phase(
 )
 ```
 
+The application boundary also accepts `cost_resolver` and `cost_context`, so evidence promoted into the database no longer needs to bypass `InferenceAnalysisService`. The legacy `InferenceCostProvider` remains as a mutually exclusive compatibility seam. Provider/source revisions, raw record IDs, method, match, assumptions, and per-task uncertainty returned by the resolver reach application task reports; without a correlation model, the service does not invent phase-level variance.
+
 Inference task queries are derived from canonical `PlanTask.workload`; GEMM dimensions and local attention-head dimensions are derived from model and TP facts. Tensor-parallel collectives and pipeline P2P use the same resolver. All tasks must be covered by an installed provider—normally an exact database followed by roofline—so an unknown task never becomes zero.
 
 ## Implemented boundary and next steps

@@ -66,6 +66,7 @@ def synthesis_session_for(
 ) -> SynthesisSession:
     """Create the explicit session consumed by Transformer lowering passes."""
 
+    mapping.validate_model(model)
     mapping.validate_workload(workload_spec)
     workload = WorkloadBinding(
         WorkloadMode.TRAINING,

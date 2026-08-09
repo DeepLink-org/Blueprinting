@@ -21,6 +21,7 @@
 | Typed Transformer training workload accounting | **Implemented** | 精确 block operation、byte、collective、recomputation 与 phase |
 | Static Transformer inference phase planning | **Implemented slice** | 独立验证的 prefill/decode plan、KV 容量以及 decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path 到达 `PortablePlanIR` |
+| Portable dependency projection Chrome Trace export | **Implemented presentation adapter** | Workbench 可通过 PING/PONG bridge 在 Perfetto 打开；metadata 明确 `executable=false`，不是 `TimelineBundle` |
 | 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` 与两种 analytical estimate mode |
 | Normalized task-cost resolution 与性能数据导入 | **Implemented slice** | immutable query/result/store、ordered resolver、roofline fallback、通用 simulator 表、Vidur profile 与四类 AIConfigurator 表 |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | 独立 lowering/costing 后进行 exact-key CSV lookup，并报告 component coverage 与不可抵消的误差归因 |

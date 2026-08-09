@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from itertools import product
 from typing import TYPE_CHECKING, Any
 
-from blueprinting.analysis import CalibrationMode, estimate_iteration
+from blueprinting.analysis import CalibrationMode, CostQueryContext, CostResolver, estimate_iteration
 from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
 from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict, freeze, thaw
@@ -263,6 +263,8 @@ class BlueprintingService:
         analyses: AnalysisStore | None = None,
         *,
         inference_cost_provider: InferenceCostProvider | None = None,
+        inference_cost_resolver: CostResolver | None = None,
+        inference_cost_context: CostQueryContext = CostQueryContext(),
     ) -> None:
         from .inference import InferenceAnalysisService
 
@@ -274,6 +276,8 @@ class BlueprintingService:
         self._inference: InferenceAnalysisService = InferenceAnalysisService(
             analyses,
             cost_provider=inference_cost_provider,
+            cost_resolver=inference_cost_resolver,
+            cost_context=inference_cost_context,
         )
 
     def analyze_inference(self, draft: InferenceAnalysisDraft) -> InferenceAnalysisOutcome:

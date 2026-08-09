@@ -138,7 +138,7 @@ It provides a shared configuration surface for single-point analysis, canonical 
 TP/PP/DP strategy exploration. Analysis runs outside the UI event loop, and failed candidates remain visible as
 structured diagnostics.
 
-The existing Calculon and floating-point Streamlit tools remain isolated as an optional legacy interface:
+The existing Calculon Streamlit tools remain isolated as an optional legacy interface. Floating-point analysis is available in the primary NiceGUI workbench:
 
 ```bash
 uv sync --extra legacy-ui

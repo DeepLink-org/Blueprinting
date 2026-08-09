@@ -72,7 +72,7 @@ ConcretePlanIR target extension
 
 | 阶段 | 交付物 | 必须证明 | 明确不声称 |
 |---|---|---|---|
-| A — 当前 baseline | `PortablePlanIR` + analytical estimate | Work/byte/collective conservation，stable lineage，evidence provenance | Architecture-bound schedule 或 event simulation |
+| A — 当前 baseline | `PortablePlanIR` + analytical estimate + 可选的 dependency-projection Chrome Trace | Work/byte/collective conservation，stable lineage，evidence provenance；projection export 明确标记 `executable=false` | Architecture-bound schedule、`TimelineBundle` 或 event simulation |
 | B — Virtual timeline | Virtual target `ConcretePlanIR` + `TimingProjection` + event trace | Resource legality、buffer safety、deterministic replay、手算 DAG 对齐 | 真实 GPU/LPU 性能或 ABI 可执行性 |
 | C — Multi-target simulation | 多 blueprint binding + provider-backed timeline bundle | 同 workload digest、target-specific legality、uncertainty、bottleneck 可解释性 | 所有 target 共享相同 queue/dataflow 模型 |
 | D — Backend replay | Target plugin + replayable `MachineIR` | Command/instruction lineage、emitter 不重新调度、trace correlation | 已能驱动硅上硬件 |

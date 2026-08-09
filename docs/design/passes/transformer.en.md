@@ -19,7 +19,7 @@ TransformerModelSpec + TransformerTrainingWorkloadSpec + TransformerTrainingMapp
 
 The red boundary in the figure is intentional. `SystemProfile` is consumed only by a derived estimate after `PortablePlanIR`; it is not an implicit target binding and it does not make `ConcretePlanIR` available.
 
-This slice currently models decoder-only training at block scope. Full-model PP/DP task graphs, inference prefill/decode, intermediate-buffer lifetimes, target legalization, and physical scheduling remain subsequent work.
+This page covers decoder-only training at block scope; the repository separately implements a static inference prefill/decode phase slice. Full-model PP/DP task graphs, complete intermediate-buffer lifetimes, target legalization, and physical scheduling remain subsequent work.
 
 ## Typed semantic import
 
@@ -27,7 +27,7 @@ This slice currently models decoder-only training at block scope. Full-model PP/
 
 Physical network-tier selection is deliberately absent. `NetworkTierBinding` is supplied only when a portable plan is evaluated against a `SystemProfile`; changing it cannot change the model, distributed, or portable-plan digest.
 
-The importer rejects invalid dimensions, head divisibility, parallel topology, and inconsistent workload facts before a pass runs. `build_transformer_model_ir()` then creates a coarse, target-neutral `transformer.decoder_training` operation. No target name, peak rate, kernel ID, or latency enters this snapshot.
+The importer rejects invalid dimensions, TP divisibility failures, sequence dimensions that cannot be evenly partitioned under RS+AG, invalid parallel topology, and inconsistent workload or strategy facts before a pass runs. At TP=1, AR and RS+AG have identical local work and memory semantics. `build_transformer_model_ir()` then creates a coarse, target-neutral `transformer.decoder_training` operation. No target name, peak rate, kernel ID, or latency enters this snapshot.
 
 ## Static workload derivation
 
@@ -47,14 +47,14 @@ Recomputation is also structural. Full recomputation clones the required forward
 - distributed boundary values and sharding;
 - stable lineage from every task and value to its model source.
 
-The current dependency chain is conservative and serial within the local block. That is a correctness baseline, not a claim that no target can overlap work. Physical queues, routes, collective algorithms, and overlap are forbidden at this layer because they require target and deployment knowledge.
+The current block has explicit, conservative forward, recompute, backward, and optimizer stage ordering, while remaining serial within each stage. The external block output is produced at the forward terminal; optimizer work cannot masquerade as its activation producer. This is a stage-level correctness baseline, not a claim that no target can overlap work; primitive-level activation/gradient SSA and exact lifetimes are not yet materialized. Physical queues, routes, collective algorithms, and overlap are forbidden at this layer because they require target and deployment knowledge.
 
 The pass must preserve workload semantics and satisfy these checks:
 
 1. the logical mesh size agrees with the strategy;
 2. every rank and dependency resolves;
-3. shard specifications reconstruct the logical boundary tensor;
-4. collective participants, reduction semantics, and message volumes are well formed;
+3. shard rank, mesh axes, ownership, and references are valid;
+4. collective participants, reduction semantics, and non-negative message volumes are structurally well formed;
 5. the output records the source `ModelIR` digest.
 
 ## Portable-plan derivation
@@ -92,7 +92,7 @@ The derivation does not compensate for a discrepancy by reading a reference late
 | Logical mapping contract | `src/blueprinting/mapping/transformer.py` | boundary and validation tests |
 | Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation and calibration tests |
 | Workload algebra | `src/blueprinting/synthesizer/dialects/transformer/training.py` | `tests/validation/test_calculon.py` |
-| Two derivation passes | `src/blueprinting/synthesizer/lowering/transformer.py` | canonical representation and calibration tests |
+| Two derivation passes | `src/blueprinting/synthesizer/lowering/transformer.py` | `tests/synthesizer/test_transformer_training.py` and calibration tests |
 | Transaction/checkpoints | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
 | Evidence-derived estimates | `src/blueprinting/analysis/cost_model.py` | validation tests |
 | Calculon/SeqSel oracle gate | `src/blueprinting/validation/calculon.py` | `tests/validation/test_calculon.py` |

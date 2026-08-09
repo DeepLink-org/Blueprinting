@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from blueprinting.schema.frozen import FrozenDict
 from blueprinting.synthesizer.ir import DistributedTaskIR, ModelIR, PortablePlanIR
 
 
@@ -81,7 +82,12 @@ class TaskReport:
     analytical_seconds: float = 0.0
     evidence_provider: str = ""
     evidence_revision: str = ""
+    evidence_source_revision: str = ""
+    evidence_record_ids: tuple[str, ...] = ()
     evidence_match: str = ""
+    evidence_method: str = ""
+    evidence_uncertainty: FrozenDict = field(default_factory=FrozenDict)
+    evidence_assumptions: tuple[str, ...] = ()
 
 
 def _diagnostics_from_verification(

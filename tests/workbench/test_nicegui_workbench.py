@@ -51,6 +51,7 @@ async def test_nicegui_workbench_loads_without_eager_analysis(
         await user.should_see(marker="run-analysis")
         await user.should_see(marker="sidebar-run-analysis")
         await user.should_see("Calculon / Streamlit Legacy")
+        await user.should_see(marker="mode-float")
 
 
 async def test_sidebar_quick_controls_sync_with_full_configuration(
@@ -82,6 +83,7 @@ async def test_nicegui_analysis_reuses_one_result_across_views(
         await user.should_see("第一级严格使用 iteration estimate", retries=100)
         await user.should_see("Portable task timeline", retries=100)
         await user.should_see("DEPENDENCY PROJECTION", retries=100)
+        await user.should_see(marker="open-perfetto", retries=100)
         await user.should_see("查看完整层次明细", retries=100)
         await user.should_see("Portable task audit", retries=100)
         await user.should_see("Canonical derivation checkpoints", retries=100)
@@ -126,6 +128,25 @@ async def test_nicegui_strategy_sweep_keeps_candidate_status(
         await user.should_see("非支配", retries=100)
         await user.should_see(marker="batch-status-filter", retries=100)
         await user.should_see(marker="batch-open-point", retries=100)
+
+
+async def test_nicegui_float_analysis_is_available_without_running_workload_analysis(
+    simulated_user: Callable[[Callable[[], None]], AbstractAsyncContextManager[User]],
+) -> None:
+    async with simulated_user(create_workbench_root()) as user:
+        await user.open("/")
+        user.find(marker="mode-float").click()
+
+        await user.should_see("浮点数分析")
+        await user.should_see("格式位宽对比")
+        await user.should_see("FP8(E5M2) 位级计算器")
+        await user.should_see("动态范围与可表示值")
+        await user.should_see("四则运算范围影响")
+        await user.should_see(marker="float-exponent-bits")
+        await user.should_see(marker="float-mantissa-bits")
+
+        user.find(marker="float-exponent-bits").clear().type("4").trigger("update:model-value")
+        await user.should_see("FP7(E4M2) 位级计算器")
 
 
 def test_workbench_cli_defaults_to_local_only() -> None:

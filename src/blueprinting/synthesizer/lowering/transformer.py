@@ -7,7 +7,7 @@ from blueprinting.schema.frozen import FrozenDict
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 from ..axes import BindingAxis
-from ..dialects.transformer import EngineKind, PrimitiveInvocation, derive_transformer_block
+from ..dialects.transformer import EngineKind, PrimitiveInvocation, TrainingPhase, derive_transformer_block
 from ..ids import BufferId, Lineage, NodeId, ValueId
 from ..ir import (
     AbstractStorageClass,
@@ -61,6 +61,7 @@ def _semantic_specs(
         raise TypeError("workload binding is missing a typed TransformerTrainingWorkloadSpec")
     if not isinstance(mapping, TransformerTrainingMappingSpec):
         raise TypeError("strategy binding is missing a typed TransformerTrainingMappingSpec")
+    mapping.validate_model(model)
     mapping.validate_workload(workload_spec)
     expected = (
         workload_spec.microbatch_size,
@@ -74,9 +75,37 @@ def _semantic_specs(
         strategy.tensor_parallel != mapping.tensor_parallel
         or strategy.pipeline_parallel != mapping.pipeline_parallel
         or strategy.data_parallel != mapping.data_parallel
+        or strategy.recompute_policy != mapping.recompute.value
+        or strategy.pipeline_policy != f"1f1b-interleaved-{mapping.pipeline_interleaving}"
     ):
         raise ValueError("strategy binding is inconsistent with Transformer mapping facts")
     return model, workload_spec, mapping
+
+
+_TRAINING_STAGE = {
+    TrainingPhase.FORWARD: 0,
+    TrainingPhase.RECOMPUTE: 1,
+    TrainingPhase.RECOMMUNICATION: 1,
+    TrainingPhase.ACTIVATION_GRADIENT: 2,
+    TrainingPhase.WEIGHT_GRADIENT: 2,
+    TrainingPhase.OPTIMIZER: 3,
+}
+
+
+def _training_dependencies(
+    invocations: tuple[PrimitiveInvocation, ...],
+    task_ids: tuple[NodeId, ...],
+) -> tuple[tuple[tuple[NodeId, ...], ...], int]:
+    """Build a conservative phase-ordered DAG and identify the block output producer."""
+
+    stages = tuple(_TRAINING_STAGE[item.phase] for item in invocations)
+    if not stages or stages[0] != 0 or any(current < previous for previous, current in zip(stages, stages[1:])):
+        raise ValueError("training invocations must be ordered by forward/recompute/backward/optimizer stage")
+    forward_indices = tuple(index for index, item in enumerate(invocations) if item.phase is TrainingPhase.FORWARD)
+    if not forward_indices:
+        raise ValueError("training lowering requires at least one forward invocation")
+    dependencies = tuple((task_ids[index - 1],) if index else () for index in range(len(task_ids)))
+    return dependencies, forward_indices[-1]
 
 
 class DistributeTransformerTrainingPass(DerivationPass[ModelIR, DistributedTaskIR]):
@@ -111,6 +140,7 @@ class DistributeTransformerTrainingPass(DerivationPass[ModelIR, DistributedTaskI
             NodeId.derive(ir.digest, "transformer-distributed", index, invocation.name)
             for index, invocation in enumerate(invocations)
         )
+        dependencies, output_producer_index = _training_dependencies(invocations, task_ids)
         tasks = []
         for index, (task_id, invocation) in enumerate(zip(task_ids, invocations)):
             collective = None
@@ -140,8 +170,8 @@ class DistributeTransformerTrainingPass(DerivationPass[ModelIR, DistributedTaskI
                     operation=operation,
                     ranks=ranks,
                     inputs=(input_id,) if index == 0 else (),
-                    outputs=(output_id,) if index == len(invocations) - 1 else (),
-                    dependencies=(task_ids[index - 1],) if index else (),
+                    outputs=(output_id,) if index == output_producer_index else (),
+                    dependencies=dependencies[index],
                     lineage=Lineage.lowered("transformer-decompose", (ir.operations[0].id,)),
                     collective=collective,
                     attributes=FrozenDict({"invocation": invocation}),
@@ -251,11 +281,13 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
         task_ids = tuple(
             NodeId.derive(ir.digest, "transformer-portable", index, task.id) for index, task in enumerate(ir.tasks)
         )
+        invocations = tuple(task.attributes.get("invocation") for task in ir.tasks)
+        if any(not isinstance(item, PrimitiveInvocation) for item in invocations):
+            raise TypeError("distributed task is missing a typed PrimitiveInvocation")
+        typed_invocations = tuple(item for item in invocations if isinstance(item, PrimitiveInvocation))
+        dependencies, output_producer_index = _training_dependencies(typed_invocations, task_ids)
         tasks = []
-        for index, (source_task, task_id) in enumerate(zip(ir.tasks, task_ids)):
-            invocation = source_task.attributes.get("invocation")
-            if not isinstance(invocation, PrimitiveInvocation):
-                raise TypeError("distributed task is missing a typed PrimitiveInvocation")
+        for index, (source_task, task_id, invocation) in enumerate(zip(ir.tasks, task_ids, typed_invocations)):
             if invocation.engine is EngineKind.MATRIX:
                 capability = "matrix-multiply"
                 alternatives = ("tensor-core", "matrix-engine")
@@ -272,9 +304,9 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
                         PlanTaskKind.COLLECTIVE if invocation.engine is EngineKind.COLLECTIVE else PlanTaskKind.COMPUTE
                     ),
                     operation=source_task.operation,
-                    dependencies=(task_ids[index - 1],) if index else (),
+                    dependencies=dependencies[index],
                     inputs=(input_id,) if index == 0 else (),
-                    outputs=(output_id,) if index == len(ir.tasks) - 1 else (),
+                    outputs=(output_id,) if index == output_producer_index else (),
                     logical_ranks=source_task.ranks,
                     workload=WorkloadFacts(
                         operations=invocation.work.operations,
@@ -323,7 +355,7 @@ class PlanTransformerTrainingPass(DerivationPass[DistributedTaskIR, PortablePlan
                     PlanBufferRole.OUTPUT,
                     AbstractStorageClass.DEVICE_LOCAL,
                     Lineage.lowered("transformer-plan-buffer", (ir.outputs[0],)),
-                    producer=task_ids[-1],
+                    producer=task_ids[output_producer_index],
                     alignment_bytes=16,
                 ),
             ),

@@ -18,14 +18,14 @@
       "paper_mean_absolute_error_percent": 3.654361437637248,
       "paper_max_absolute_error_percent": 8.874452316395821,
       "portable_digests": {
-        "seqsel-tab5/megatron-22B/full": "a702e06f09e0e7ed49b1d06371fdc5f01df40ead",
-        "seqsel-tab5/megatron-22B/seqsel": "d8c1a76517458d5bd92af95c125225a00c1b6a61",
-        "seqsel-tab5/gpt3-175B/full": "b9ed7a9c81a7cbd02066e000478d3488e31c3321",
-        "seqsel-tab5/gpt3-175B/seqsel": "bf7be9b50d482232aaee649c506f4afca5c9dfcb",
-        "seqsel-tab5/turing-530B/full": "3988fe962f1ccecca2cee3a08b98da5e177f8c65",
-        "seqsel-tab5/turing-530B/seqsel": "2e9047b02f855c3527c07cfae116bbc41631eaea",
-        "seqsel-tab5/megatron-1T/full": "d4a11ba89f39f36f002ee9c0179bbc02dc62a542",
-        "seqsel-tab5/megatron-1T/seqsel": "7549a08665566ef4187e9a37ca50d860308c8800"
+        "seqsel-tab5/megatron-22B/full": "00517ca9fb4df346eebe6d4aa63543ca666a7af4",
+        "seqsel-tab5/megatron-22B/seqsel": "8eb389c417a9b33124997c21afd5c18597a39404",
+        "seqsel-tab5/gpt3-175B/full": "2ce66153c5c81ee97c6fa1e2bc14b9e2c0d844ff",
+        "seqsel-tab5/gpt3-175B/seqsel": "5c888d51fd8d5ffb5bb515ff797a9776a12cea6c",
+        "seqsel-tab5/turing-530B/full": "99c4b79b949fa4f58ffbd1cc98661d3b2101f5d6",
+        "seqsel-tab5/turing-530B/seqsel": "4a33b75f901df8c5d4948a8f44d501e8f695674e",
+        "seqsel-tab5/megatron-1T/full": "0e203dc354d91a45d8860c15aee999d57dbb5bbf",
+        "seqsel-tab5/megatron-1T/seqsel": "e7c5e86b0f7e9f9f8f3f47124fc643cf4a4d8e09"
       }
     }
   },

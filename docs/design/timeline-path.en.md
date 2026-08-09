@@ -72,7 +72,7 @@ It is a staged hardware-exploration product, not a redefinition of the project a
 
 | Stage | Deliverable | What it must establish | What it explicitly does not claim |
 |---|---|---|---|
-| A — Current baseline | `PortablePlanIR` + analytical estimate | Work/byte/collective conservation, stable lineage, evidence provenance | Architecture-bound scheduling or event simulation |
+| A — Current baseline | `PortablePlanIR` + analytical estimate + optional dependency-projection Chrome Trace | Work/byte/collective conservation, stable lineage, evidence provenance; the projection export is explicitly marked `executable=false` | Architecture-bound scheduling, a `TimelineBundle`, or event simulation |
 | B — Virtual timeline | Virtual-target `ConcretePlanIR` + `TimingProjection` + event trace | Resource legality, buffer safety, deterministic replay, agreement on hand-checkable DAGs | Real GPU/LPU performance or ABI executability |
 | C — Multi-target simulation | Multi-blueprint binding + provider-backed timeline bundle | Shared workload digest, target-specific legality, uncertainty, explainable bottlenecks | One queue/dataflow model shared by all targets |
 | D — Backend replay | Target plugin + replayable `MachineIR` | Command/instruction lineage, no emitter rescheduling, trace correlation | Ability to drive silicon |

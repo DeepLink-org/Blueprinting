@@ -22,18 +22,6 @@ pg = st.navigation(
                 url_path="blueprinting-overview",
                 default=True,
             ),
-            st.Page(
-                "pages/Blueprinting/ir_audit.py",
-                title="IR 推导审计",
-                icon="🔬",
-                url_path="blueprinting-ir-audit",
-            ),
-            st.Page(
-                "pages/Blueprinting/strategy_explorer.py",
-                title="策略空间探索",
-                icon="🧩",
-                url_path="blueprinting-strategy-explorer",
-            ),
         ],
         "Calculon 基线（旧版）": [
             st.Page(
@@ -51,13 +39,6 @@ pg = st.navigation(
                 "pages/LLM_Calc/distexp.py",
                 title="分布式实验",
                 icon="🔄",
-            ),
-        ],
-        "精度分析": [
-            st.Page(
-                "pages/FloatAnalysis/float_precision.py",
-                title="浮点精度",
-                icon="🔢",
             ),
         ],
     },

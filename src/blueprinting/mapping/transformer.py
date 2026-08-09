@@ -82,6 +82,20 @@ class TransformerTrainingMappingSpec:
         if self.local_batch_size(workload) % workload.microbatch_size:
             raise ValueError("local batch size must be divisible by microbatch_size")
 
+    def validate_model(self, model: TransformerModelSpec) -> None:
+        if not isinstance(model, TransformerModelSpec):
+            raise TypeError("model must be TransformerModelSpec")
+        divisibility = {
+            "hidden_size": model.hidden_size,
+            "feedforward_size": model.feedforward_size,
+            "attention_heads": model.attention_heads,
+        }
+        if self.tensor_parallel_communication is TensorParallelCommunication.REDUCE_SCATTER_ALL_GATHER:
+            divisibility["sequence_length"] = model.sequence_length
+        for name, value in divisibility.items():
+            if value % self.tensor_parallel:
+                raise ValueError(f"{name} must be divisible by tensor_parallel")
+
     def local_batch_size(self, workload: TransformerTrainingWorkloadSpec) -> int:
         return workload.global_batch_size // self.data_parallel
 
