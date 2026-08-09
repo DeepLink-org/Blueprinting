@@ -9,7 +9,7 @@ import pytest
 from nicegui import core
 from nicegui.testing import User, user_simulation
 
-from blueprinting.workbench.nicegui_app import build_parser
+from blueprinting.workbench.nicegui_app import build_parser, run_workbench
 from blueprinting.workbench.nicegui_ui import create_workbench_root
 
 
@@ -41,11 +41,31 @@ async def test_nicegui_workbench_loads_without_eager_analysis(
     async with simulated_user(create_workbench_root()) as user:
         await user.open("/")
 
-        await user.should_see("从工作负载语义走向可审计的硬件蓝图")
-        await user.should_see("等待第一张硬件蓝图")
+        await user.should_see("单点剖析")
+        await user.should_see("观察尺度")
+        await user.should_see("当前 Case")
+        await user.should_see("这个视图回答什么")
+        await user.should_see("等待运行")
+        await user.should_see("当前分析对象")
+        await user.should_see("当前显示解析任务贡献，不是事件级 Timeline")
         await user.should_see(marker="run-analysis")
-        await user.should_see(marker="run-sweep")
+        await user.should_see(marker="sidebar-run-analysis")
         await user.should_see("Calculon / Streamlit Legacy")
+
+
+async def test_sidebar_quick_controls_sync_with_full_configuration(
+    simulated_user: Callable[[Callable[[], None]], AbstractAsyncContextManager[User]],
+) -> None:
+    async with simulated_user(create_workbench_root()) as user:
+        await user.open("/")
+
+        user.find(marker="quick-tp").clear().type("8").trigger("update:model-value")
+        user.find(marker="open-full-configuration").click()
+
+        await user.should_see(marker="configuration-modal")
+        await user.should_see("模型语义参数")
+        tp_input = next(iter(user.find(marker="tp-input").elements))
+        assert tp_input.value == 8.0
 
 
 async def test_nicegui_analysis_reuses_one_result_across_views(
@@ -56,11 +76,34 @@ async def test_nicegui_analysis_reuses_one_result_across_views(
         user.find(marker="run-analysis").click()
 
         await user.should_see("迭代延迟", retries=100)
-        await user.should_see("Portable workload facts", retries=100)
+        await user.should_see("结果已就绪", retries=100)
+        await user.should_see("自顶向下时间分解", retries=100)
+        await user.should_see("ITERATION HIERARCHY", retries=100)
+        await user.should_see("第一级严格使用 iteration estimate", retries=100)
+        await user.should_see("Portable task timeline", retries=100)
+        await user.should_see("DEPENDENCY PROJECTION", retries=100)
+        await user.should_see("查看完整层次明细", retries=100)
         await user.should_see("Portable task audit", retries=100)
+        await user.should_see("Canonical derivation checkpoints", retries=100)
         await user.should_see("模型语义", retries=100)
         await user.should_see("分布式任务", retries=100)
         await user.should_see("可移植计划", retries=100)
+
+
+async def test_nicegui_marks_results_stale_after_configuration_change(
+    simulated_user: Callable[[Callable[[], None]], AbstractAsyncContextManager[User]],
+) -> None:
+    async with simulated_user(create_workbench_root()) as user:
+        await user.open("/")
+        user.find(marker="run-analysis").click()
+        await user.should_see("迭代延迟", retries=100)
+
+        user.find(marker="edit-configuration").click()
+        user.find(marker="tp-input").clear().type("8").trigger("update:model-value")
+
+        await user.should_see("配置已经变化；当前页面仍显示上一次结果")
+        await user.should_see("结果需要更新")
+        await user.should_see(marker="rerun-analysis")
 
 
 async def test_nicegui_strategy_sweep_keeps_candidate_status(
@@ -68,11 +111,21 @@ async def test_nicegui_strategy_sweep_keeps_candidate_status(
 ) -> None:
     async with simulated_user(create_workbench_root()) as user:
         await user.open("/")
+        user.find(marker="mode-sweep").click()
+        await user.should_see("批量探索")
+        await user.should_see("批量候选定义")
+        quick_candidates = next(iter(user.find(marker="quick-tp-candidates").elements))
+        assert quick_candidates.props["popup-content-class"] == "bp-sidebar-menu"
         user.find(marker="run-sweep").click()
 
+        await user.should_see("CaseSet 过滤器", retries=100)
         await user.should_see("延迟—内存空间", retries=100)
-        await user.should_see("全部候选", retries=100)
-        await user.should_see("strategy candidates", retries=100)
+        await user.should_see("可见 Case", retries=100)
+        await user.should_see("延迟上下界", retries=100)
+        await user.should_see("内存上下界", retries=100)
+        await user.should_see("非支配", retries=100)
+        await user.should_see(marker="batch-status-filter", retries=100)
+        await user.should_see(marker="batch-open-point", retries=100)
 
 
 def test_workbench_cli_defaults_to_local_only() -> None:
@@ -88,3 +141,16 @@ def test_workbench_cli_accepts_server_overrides() -> None:
     args: Any = build_parser().parse_args(["--host", "0.0.0.0", "--port", "9000", "--no-open", "--reload"])
 
     assert (args.host, args.port, args.no_open, args.reload) == ("0.0.0.0", 9000, True, True)
+
+
+def test_workbench_runtime_starts_in_light_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def capture_run(_root: Callable[[], None], **options: Any) -> None:
+        captured.update(options)
+
+    monkeypatch.setattr("blueprinting.workbench.nicegui_app.ui.run", capture_run)
+
+    run_workbench(show=False)
+
+    assert captured["dark"] is False
