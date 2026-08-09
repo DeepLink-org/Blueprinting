@@ -632,45 +632,29 @@ class BlueprintingWorkbench:
                 ui.label("WORKBENCH LENS").classes("bp-sidebar-kicker")
                 ui.label("观察尺度").classes("bp-sidebar-title")
                 with ui.element("div").classes("bp-mode-switch w-full mt-2").mark("mode-switch") as self.mode_switch:
-                    self.analysis_mode_tab = (
-                        ui.button(
-                            "单点剖析",
-                            icon="query_stats",
-                            on_click=partial(self._select_mode, WorkbenchMode.ANALYSIS),
-                        )
-                        .props("flat no-caps")
-                        .classes("bp-mode-button")
-                        .mark("mode-analysis")
+                    self.analysis_mode_tab = self._build_mode_button(
+                        WorkbenchMode.ANALYSIS,
+                        "单点剖析",
+                        "query_stats",
+                        "mode-analysis",
                     )
-                    self.sweep_mode_tab = (
-                        ui.button(
-                            "批量探索",
-                            icon="scatter_plot",
-                            on_click=partial(self._select_mode, WorkbenchMode.SWEEP),
-                        )
-                        .props("flat no-caps")
-                        .classes("bp-mode-button")
-                        .mark("mode-sweep")
+                    self.sweep_mode_tab = self._build_mode_button(
+                        WorkbenchMode.SWEEP,
+                        "批量探索",
+                        "scatter_plot",
+                        "mode-sweep",
                     )
-                    self.evidence_mode_tab = (
-                        ui.button(
-                            "性能证据",
-                            icon="monitoring",
-                            on_click=partial(self._select_mode, WorkbenchMode.EVIDENCE),
-                        )
-                        .props("flat no-caps")
-                        .classes("bp-mode-button")
-                        .mark("mode-evidence")
+                    self.evidence_mode_tab = self._build_mode_button(
+                        WorkbenchMode.EVIDENCE,
+                        "性能证据",
+                        "monitoring",
+                        "mode-evidence",
                     )
-                    self.float_mode_tab = (
-                        ui.button(
-                            "浮点分析",
-                            icon="calculate",
-                            on_click=partial(self._select_mode, WorkbenchMode.FLOAT),
-                        )
-                        .props("flat no-caps")
-                        .classes("bp-mode-button")
-                        .mark("mode-float")
+                    self.float_mode_tab = self._build_mode_button(
+                        WorkbenchMode.FLOAT,
+                        "浮点分析",
+                        "calculate",
+                        "mode-float",
                     )
                 self._mode_buttons = {
                     WorkbenchMode.ANALYSIS: self.analysis_mode_tab,
@@ -750,12 +734,32 @@ class BlueprintingWorkbench:
         self._render_sidebar_controls()
         self._render_workspace()
 
+    def _build_mode_button(self, mode: WorkbenchMode, label: str, icon: str, marker: str) -> Any:
+        button = (
+            ui.element("button")
+            .props("type=button")
+            .classes("bp-mode-button")
+            .mark(marker)
+            .on("click", lambda _: self._select_mode(mode))
+        )
+        with button:
+            ui.icon(icon).classes("bp-mode-icon")
+            ui.label(label).classes("bp-mode-label")
+        return button
+
     def _sync_mode_buttons(self) -> None:
         for mode, button in self._mode_buttons.items():
             if mode is self.mode:
                 button.classes(add="bp-mode-button--active")
             else:
                 button.classes(remove="bp-mode-button--active")
+
+    def _set_mode_buttons_busy(self, busy: bool) -> None:
+        for button in self._mode_buttons.values():
+            if busy:
+                button.props(add="disabled")
+            else:
+                button.props(remove="disabled")
 
     def _ensure_form(self, host: Any) -> None:
         if self.form is None:
@@ -1273,10 +1277,7 @@ class BlueprintingWorkbench:
         self.busy = True
         self.form.set_busy(True)
         self._set_quick_controls_busy(True)
-        self.analysis_mode_tab.disable()
-        self.sweep_mode_tab.disable()
-        self.evidence_mode_tab.disable()
-        self.float_mode_tab.disable()
+        self._set_mode_buttons_busy(True)
         self.config_dialog.close()
         self._render_workspace()
         try:
@@ -1293,10 +1294,7 @@ class BlueprintingWorkbench:
             self.busy = False
             self.form.set_busy(False)
             self._set_quick_controls_busy(False)
-            self.analysis_mode_tab.enable()
-            self.sweep_mode_tab.enable()
-            self.evidence_mode_tab.enable()
-            self.float_mode_tab.enable()
+            self._set_mode_buttons_busy(False)
             self._render_workspace()
 
     async def run_sweep(self) -> None:
@@ -1316,10 +1314,7 @@ class BlueprintingWorkbench:
         self.busy = True
         self.form.set_busy(True)
         self._set_quick_controls_busy(True)
-        self.analysis_mode_tab.disable()
-        self.sweep_mode_tab.disable()
-        self.evidence_mode_tab.disable()
-        self.float_mode_tab.disable()
+        self._set_mode_buttons_busy(True)
         self.config_dialog.close()
         self.progress_timer.activate()
         self._render_workspace()
@@ -1346,10 +1341,7 @@ class BlueprintingWorkbench:
             self.busy = False
             self.form.set_busy(False)
             self._set_quick_controls_busy(False)
-            self.analysis_mode_tab.enable()
-            self.sweep_mode_tab.enable()
-            self.evidence_mode_tab.enable()
-            self.float_mode_tab.enable()
+            self._set_mode_buttons_busy(False)
             self._render_workspace()
 
     def _render_loading(self) -> None:

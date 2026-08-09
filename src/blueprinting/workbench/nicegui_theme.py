@@ -134,28 +134,40 @@ body {
 }
 
 .bp-mode-switch .bp-mode-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   width: 100%;
   min-width: 0;
   min-height: 38px;
   margin: 0;
   padding: 0 6px;
+  appearance: none;
   color: var(--bp-sidebar-muted);
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 11px;
+  line-height: 1;
 }
 
-.bp-mode-switch .bp-mode-button .q-btn__content {
-  justify-content: center;
-  gap: 6px;
-  flex-wrap: nowrap;
+.bp-mode-switch .bp-mode-label {
+  min-width: 0;
   white-space: nowrap;
 }
 
-.bp-mode-switch .bp-mode-button .q-icon {
+.bp-mode-switch .bp-mode-icon {
+  position: static;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
   font-size: 18px;
+  line-height: 18px;
 }
 
 .bp-mode-switch .bp-mode-button--active {
@@ -164,8 +176,13 @@ body {
   background: rgba(37, 99, 235, .18);
 }
 
-.bp-mode-switch .bp-mode-button--active .q-icon {
+.bp-mode-switch .bp-mode-button--active .bp-mode-icon {
   color: #60a5fa;
+}
+
+.bp-mode-switch .bp-mode-button:disabled {
+  cursor: default;
+  opacity: .55;
 }
 
 .bp-sidebar-rule {

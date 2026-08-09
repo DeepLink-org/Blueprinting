@@ -180,6 +180,8 @@ def test_sidebar_mode_switch_uses_a_non_scrolling_two_by_two_grid() -> None:
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in WORKBENCH_CSS
     assert ".bp-mode-switch .bp-mode-button" in WORKBENCH_CSS
     assert ".bp-mode-switch .bp-mode-button--active" in WORKBENCH_CSS
+    assert ".bp-mode-switch .bp-mode-icon" in WORKBENCH_CSS
+    assert "position: static" in WORKBENCH_CSS
     assert "q-tabs__arrow" not in WORKBENCH_CSS
     assert "q-tab__indicator" not in WORKBENCH_CSS
 
