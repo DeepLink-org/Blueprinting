@@ -1,4 +1,4 @@
-"""Verify that the base wheel contains presets but excludes optional evidence."""
+"""Verify that the base wheel contains presets and only the pinned PoC evidence slice."""
 
 from __future__ import annotations
 
@@ -23,11 +23,22 @@ def main(argv: list[str]) -> int:
     for prefix in required_prefixes:
         if not any(name.startswith(prefix) and name.endswith(".json") for name in names):
             raise SystemExit(f"wheel is missing JSON presets under {prefix}")
-    forbidden_prefixes = (
-        "blueprinting/systems/",
-        "data/evidence/",
-        "blueprinting/presets/evidence/",
+    evidence_prefix = "blueprinting/presets/evidence/vidur/phi2_a100_tp1/"
+    required_evidence = {
+        f"{evidence_prefix}LICENSE.vidur",
+        f"{evidence_prefix}attention.csv",
+        f"{evidence_prefix}manifest.json",
+        f"{evidence_prefix}mlp.csv",
+    }
+    missing_evidence = required_evidence - set(names)
+    if missing_evidence:
+        raise SystemExit(f"wheel is missing pinned PoC evidence: {sorted(missing_evidence)!r}")
+    unexpected_evidence = tuple(
+        name for name in names if name.startswith("blueprinting/presets/evidence/") and name not in required_evidence
     )
+    if unexpected_evidence:
+        raise SystemExit(f"wheel contains unapproved evidence: {unexpected_evidence[:3]!r}")
+    forbidden_prefixes = ("blueprinting/systems/", "data/evidence/")
     leaked = tuple(name for name in names if name.startswith(forbidden_prefixes))
     if leaked:
         raise SystemExit(f"wheel contains optional evidence: {leaked[:3]!r}")

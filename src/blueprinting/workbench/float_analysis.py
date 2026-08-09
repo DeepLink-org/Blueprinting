@@ -230,55 +230,64 @@ class FloatAnalysisPanel:
         self.content: Any | None = None
 
     def build(self) -> None:
-        with ui.column().classes("w-full gap-4").mark("float-analysis"):
+        with ui.column().classes("w-full gap-3").mark("float-analysis"):
             with (
                 ui.element("section").classes("bp-evidence-surface"),
-                ui.element("div").classes("bp-evidence-section"),
+                ui.element("div").classes("bp-numeric-toolbar"),
             ):
-                ui.label("NUMERIC LENS").classes("bp-kicker")
-                ui.label("浮点数分析").classes("bp-result-title mt-1")
-                ui.label("探索格式位宽、数值编码、动态范围、可表示值分布和运算边界。 ").classes("bp-card-copy mt-1")
-                with ui.row().classes("w-full items-end gap-3 mt-3"):
-                    self.exponent_control = (
-                        ui.number(
-                            "指数位",
-                            value=self.spec.exponent_bits,
-                            min=2,
-                            max=6,
-                            step=1,
-                            precision=0,
-                            on_change=self._format_changed,
+                with ui.column().classes("bp-numeric-heading gap-1"):
+                    ui.label("NUMERIC LENS").classes("bp-kicker")
+                    ui.label("浮点数分析").classes("bp-result-title")
+                    ui.label("格式、编码、动态范围与运算边界。 ").classes("bp-card-copy")
+                with ui.element("div").classes("bp-numeric-controls"):
+                    with ui.column().classes("bp-numeric-control gap-1"):
+                        ui.label("指数位 E").classes("bp-summary-label")
+                        self.exponent_control = (
+                            ui.number(
+                                value=self.spec.exponent_bits,
+                                min=2,
+                                max=6,
+                                step=1,
+                                precision=0,
+                                on_change=self._format_changed,
+                            )
+                            .props("outlined dense")
+                            .classes("w-full")
+                            .mark("float-exponent-bits")
                         )
-                        .props("outlined dense")
-                        .mark("float-exponent-bits")
-                    )
-                    self.mantissa_control = (
-                        ui.number(
-                            "尾数位",
-                            value=self.spec.mantissa_bits,
-                            min=0,
-                            max=6,
-                            step=1,
-                            precision=0,
-                            on_change=self._format_changed,
+                    with ui.column().classes("bp-numeric-control gap-1"):
+                        ui.label("尾数位 M").classes("bp-summary-label")
+                        self.mantissa_control = (
+                            ui.number(
+                                value=self.spec.mantissa_bits,
+                                min=0,
+                                max=6,
+                                step=1,
+                                precision=0,
+                                on_change=self._format_changed,
+                            )
+                            .props("outlined dense")
+                            .classes("w-full")
+                            .mark("float-mantissa-bits")
                         )
-                        .props("outlined dense")
-                        .mark("float-mantissa-bits")
-                    )
-                    self.sign_control = ui.switch(
-                        "符号位", value=self.spec.sign_bit, on_change=self._format_changed
-                    ).mark("float-sign-bit")
-                    self.range_control = (
-                        ui.select(
-                            {0.001: "±0.001", 0.01: "±0.01", 0.1: "±0.1", 1.0: "±1", 10.0: "±10"},
-                            value=self.limit,
-                            label="观察范围",
-                            on_change=self._range_changed,
+                    with ui.column().classes("bp-numeric-control bp-numeric-control--sign gap-1"):
+                        ui.label("符号位 S").classes("bp-summary-label")
+                        self.sign_control = ui.switch(
+                            "启用", value=self.spec.sign_bit, on_change=self._format_changed
+                        ).props("dense").mark("float-sign-bit")
+                    with ui.column().classes("bp-numeric-control bp-numeric-control--range gap-1"):
+                        ui.label("观察范围").classes("bp-summary-label")
+                        self.range_control = (
+                            ui.select(
+                                {0.001: "±0.001", 0.01: "±0.01", 0.1: "±0.1", 1.0: "±1", 10.0: "±10"},
+                                value=self.limit,
+                                on_change=self._range_changed,
+                            )
+                            .props("outlined dense")
+                            .classes("w-full")
+                            .mark("float-range")
                         )
-                        .props("outlined dense")
-                        .mark("float-range")
-                    )
-            self.content = ui.column().classes("w-full gap-4")
+            self.content = ui.column().classes("w-full gap-3")
             self._render_content()
 
     def _format_changed(self, _: Any) -> None:
@@ -296,19 +305,19 @@ class FloatAnalysisPanel:
         self.limit = float(event.value)
         self._render_content()
 
-    def _set_sign(self, event: Any) -> None:
-        self.negative = bool(event.value)
+    def _toggle_sign(self) -> None:
+        self.negative = not self.negative
         self._render_content()
 
-    def _set_exponent_bit(self, index: int, event: Any) -> None:
+    def _toggle_exponent_bit(self, index: int) -> None:
         bits = list(self.exponent)
-        bits[index] = bool(event.value)
+        bits[index] = not bits[index]
         self.exponent = tuple(bits)
         self._render_content()
 
-    def _set_mantissa_bit(self, index: int, event: Any) -> None:
+    def _toggle_mantissa_bit(self, index: int) -> None:
         bits = list(self.mantissa)
-        bits[index] = bool(event.value)
+        bits[index] = not bits[index]
         self.mantissa = tuple(bits)
         self._render_content()
 
@@ -324,39 +333,56 @@ class FloatAnalysisPanel:
             mantissa=self.mantissa,
         )
         with self.content:
-            with (
-                ui.element("section").classes("bp-evidence-surface"),
-                ui.element("div").classes("bp-evidence-section"),
-            ):
-                ui.label("格式位宽对比").classes("bp-card-title")
-                ui.echart(format_layout_chart_options(self.spec), renderer="svg").classes("w-full h-80")
-            with (
-                ui.element("section").classes("bp-evidence-surface"),
-                ui.element("div").classes("bp-evidence-section"),
-            ):
-                ui.label(f"{self.spec.name} 位级计算器").classes("bp-card-title")
-                ui.label("指数全 0/全 1 分别按 subnormal/zero 与 Inf/NaN 处理。 ").classes("bp-card-copy")
-                with ui.row().classes("w-full items-start gap-5 mt-3"):
-                    ui.switch("S", value=self.negative, on_change=self._set_sign).mark("float-value-sign")
-                    with ui.column().classes("gap-1"):
-                        ui.label("Exponent").classes("bp-summary-label")
-                        with ui.row().classes("gap-1"):
-                            for index, value in enumerate(self.exponent):
-                                ui.checkbox(
-                                    f"E{index}",
-                                    value=value,
-                                    on_change=lambda event, i=index: self._set_exponent_bit(i, event),
-                                ).props("dense")
-                    with ui.column().classes("gap-1"):
-                        ui.label("Mantissa").classes("bp-summary-label")
-                        with ui.row().classes("gap-1"):
-                            for index, value in enumerate(self.mantissa):
-                                ui.checkbox(
-                                    f"M{index}",
-                                    value=value,
-                                    on_change=lambda event, i=index: self._set_mantissa_bit(i, event),
-                                ).props("dense")
-                with ui.element("div").classes("bp-chain-stats mt-3"):
+            with ui.element("section").classes("bp-evidence-surface bp-numeric-overview"):
+                with ui.element("div").classes("bp-evidence-section bp-numeric-chart-panel"):
+                    ui.label("格式位宽对比").classes("bp-card-title")
+                    ui.echart(format_layout_chart_options(self.spec), renderer="svg").classes(
+                        "w-full bp-format-chart"
+                    )
+                with ui.element("aside").classes("bp-numeric-spec-panel"):
+                    ui.label(self.spec.name).classes("bp-card-title")
+                    ui.label("当前格式摘要").classes("bp-card-copy")
+                    for label, value in (
+                        ("Total bits", str(self.spec.total_bits)),
+                        ("Exponent bias", str(self.spec.bias)),
+                        ("Min normal", f"{self.spec.min_normal:.3e}"),
+                        ("Max finite", f"{self.spec.max_finite:.3e}"),
+                        ("Finite values", f"{len(values):,}"),
+                    ):
+                        with ui.row().classes("bp-numeric-fact items-center no-wrap"):
+                            ui.label(label).classes("bp-summary-label")
+                            ui.space()
+                            ui.label(value).classes("bp-card-copy bp-mono")
+            with ui.element("section").classes("bp-evidence-surface"):
+                with ui.element("div").classes("bp-evidence-section bp-evidence-compact-head"):
+                    ui.label(f"{self.spec.name} 位级计算器").classes("bp-card-title")
+                    ui.label("MSB → LSB；指数全 0/全 1 分别按 zero/subnormal 与 Inf/NaN 处理。 ").classes(
+                        "bp-card-copy"
+                    )
+                with ui.element("div").classes("bp-bit-editor"):
+                    self._render_bit_group(
+                        "Sign",
+                        "S",
+                        (self.negative,),
+                        "sign",
+                        lambda _: self._toggle_sign(),
+                        marker="float-value-sign",
+                    )
+                    self._render_bit_group(
+                        "Exponent",
+                        "E",
+                        self.exponent,
+                        "exponent",
+                        lambda index: self._toggle_exponent_bit(index),
+                    )
+                    self._render_bit_group(
+                        "Mantissa",
+                        "M",
+                        self.mantissa,
+                        "mantissa",
+                        lambda index: self._toggle_mantissa_bit(index),
+                    )
+                with ui.element("div").classes("bp-numeric-decode-grid"):
                     for label, value in (
                         ("Category", decoded.category),
                         ("Raw exponent", str(decoded.raw_exponent)),
@@ -365,13 +391,14 @@ class FloatAnalysisPanel:
                     ):
                         with ui.column().classes("gap-0"):
                             ui.label(label).classes("bp-summary-label")
-                            ui.label(value).classes("bp-result-title bp-mono")
-            with (
-                ui.element("section").classes("bp-evidence-surface"),
-                ui.element("div").classes("bp-evidence-section"),
-            ):
-                ui.label("动态范围与可表示值").classes("bp-card-title")
-                with ui.element("div").classes("bp-chain-stats mt-2"):
+                            ui.label(value).classes("bp-numeric-decode-value bp-mono")
+            with ui.element("section").classes("bp-evidence-surface"):
+                with ui.element("div").classes("bp-evidence-section bp-evidence-compact-head"):
+                    ui.label("动态范围与可表示值").classes("bp-card-title")
+                    ui.label(f"当前观察窗口 ±{self.limit:g}；蓝色为 normal，红色为 subnormal。 ").classes(
+                        "bp-card-copy"
+                    )
+                with ui.element("div").classes("bp-numeric-range-metrics"):
                     for label, value in (
                         ("Bias", str(self.spec.bias)),
                         ("Min subnormal", f"{self.spec.min_subnormal:.4e}"),
@@ -381,8 +408,17 @@ class FloatAnalysisPanel:
                         with ui.column().classes("gap-0"):
                             ui.label(label).classes("bp-summary-label")
                             ui.label(value).classes("bp-card-copy bp-mono")
-                ui.echart(distribution_chart_options(values, self.spec, self.limit)).classes("w-full h-64")
-                ui.echart(quantization_chart_options(values, self.limit)).classes("w-full h-64")
+                with ui.element("div").classes("bp-numeric-chart-grid"):
+                    with ui.element("div").classes("bp-numeric-chart"):
+                        ui.label("Representable values").classes("bp-section-title")
+                        ui.echart(distribution_chart_options(values, self.spec, self.limit)).classes(
+                            "w-full bp-numeric-chart-canvas"
+                        )
+                    with ui.element("div").classes("bp-numeric-chart"):
+                        ui.label("Nearest-value quantization error").classes("bp-section-title")
+                        ui.echart(quantization_chart_options(values, self.limit)).classes(
+                            "w-full bp-numeric-chart-canvas"
+                        )
             with (
                 ui.element("section").classes("bp-evidence-surface"),
                 ui.element("div").classes("bp-evidence-section"),
@@ -405,6 +441,33 @@ class FloatAnalysisPanel:
                     },
                     theme="quartz",
                 ).classes("w-full").style("height: 250px")
+
+    @staticmethod
+    def _render_bit_group(
+        title: str,
+        prefix: str,
+        bits: tuple[bool, ...],
+        tone: str,
+        on_toggle: Any,
+        *,
+        marker: str | None = None,
+    ) -> None:
+        with ui.element("div").classes(f"bp-bit-group bp-bit-group--{tone}"):
+            ui.label(title).classes("bp-summary-label")
+            with ui.element("div").classes("bp-bit-row"):
+                for index, value in enumerate(bits):
+                    classes = "bp-bit-cell bp-bit-cell--on" if value else "bp-bit-cell"
+                    button = (
+                        ui.element("button")
+                        .props(f"type=button aria-label={title}-{index}")
+                        .classes(classes)
+                        .on("click", lambda _, i=index: on_toggle(i))
+                    )
+                    if marker is not None:
+                        button.mark(marker)
+                    with button:
+                        ui.label(f"{prefix}{index if len(bits) > 1 else ''}").classes("bp-bit-index")
+                        ui.label("1" if value else "0").classes("bp-bit-value")
 
 
 def _format_series(name: str, color: str, data: list[int]) -> dict[str, Any]:

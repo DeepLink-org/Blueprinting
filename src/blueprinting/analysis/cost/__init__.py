@@ -2,6 +2,15 @@
 
 from .aiconfigurator import AIConfiguratorPerformanceImporter, AIConfiguratorTable
 from .database import EvidenceProvenance, PerformanceDatabase, PerformanceDatabaseProvider, PerformanceRecord
+from .explorer import (
+    CostCurvePoint,
+    CostCurveReport,
+    EvidenceCoverage,
+    EvidenceDatabaseSummary,
+    build_gemm_comparison_curve,
+    comparable_gemm_semantics,
+    summarize_performance_database,
+)
 from .importers import (
     LatencyUnit,
     SimulatorPerformanceImporter,
@@ -37,6 +46,8 @@ __all__ = [
     "CostProvider",
     "CostQuery",
     "CostQueryContext",
+    "CostCurvePoint",
+    "CostCurveReport",
     "CostResolution",
     "CostResolver",
     "CostSubject",
@@ -45,6 +56,8 @@ __all__ = [
     "EstimateMethod",
     "EstimateUncertainty",
     "EvidenceProvenance",
+    "EvidenceCoverage",
+    "EvidenceDatabaseSummary",
     "InvalidCostEvidenceError",
     "LatencyUnit",
     "PerformanceDatabase",
@@ -56,4 +69,7 @@ __all__ = [
     "SupportStatus",
     "TabularImportSpec",
     "TabularPerformanceImporter",
+    "build_gemm_comparison_curve",
+    "comparable_gemm_semantics",
+    "summarize_performance_database",
 ]

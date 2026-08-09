@@ -28,6 +28,7 @@ from blueprinting.application import (
 
 from .catalog import ConfigCatalog, default_catalog
 from .chrome_trace import perfetto_open_javascript, portable_projection_trace_json
+from .evidence_lab import EvidenceLabPanel
 from .float_analysis import FloatAnalysisPanel
 from .nicegui_theme import METRIC_COLORS, WORKBENCH_CSS
 from .presentation import (
@@ -76,6 +77,7 @@ _BOTTLENECK_LABELS = {
 class WorkbenchMode(Enum):
     ANALYSIS = "analysis"
     SWEEP = "sweep"
+    EVIDENCE = "evidence"
     FLOAT = "float"
 
 
@@ -608,6 +610,7 @@ class BlueprintingWorkbench:
         self.batch_pp_filter: Any | None = None
         self.batch_dp_filter: Any | None = None
         self.batch_grid: Any | None = None
+        self.evidence_panel: EvidenceLabPanel | None = None
         self.float_panel: FloatAnalysisPanel | None = None
 
     def build(self) -> None:
@@ -626,29 +629,40 @@ class BlueprintingWorkbench:
                         ui.label("Blueprinting").classes("bp-brand-title")
                         ui.label("硬件架构探索工作台").classes("bp-brand-subtitle")
                 ui.separator().classes("bp-sidebar-rule")
-                ui.label("ANALYSIS LENS").classes("bp-sidebar-kicker")
+                ui.label("WORKBENCH LENS").classes("bp-sidebar-kicker")
                 ui.label("观察尺度").classes("bp-sidebar-title")
-                with (
-                    ui.tabs(value=self.mode.value, on_change=self._change_mode)
-                    .props("dense no-caps indicator-color=transparent")
-                    .classes("bp-mode-switch w-full mt-2")
-                    .mark("mode-switch") as self.mode_switch
-                ):
-                    self.analysis_mode_tab = ui.tab(
-                        WorkbenchMode.ANALYSIS.value,
+                with ui.element("div").classes("bp-mode-switch w-full mt-2").mark("mode-switch") as self.mode_switch:
+                    self.analysis_mode_tab = self._build_mode_button(
+                        WorkbenchMode.ANALYSIS,
                         "单点剖析",
-                        icon="query_stats",
-                    ).mark("mode-analysis")
-                    self.sweep_mode_tab = ui.tab(
-                        WorkbenchMode.SWEEP.value,
+                        "query_stats",
+                        "mode-analysis",
+                    )
+                    self.sweep_mode_tab = self._build_mode_button(
+                        WorkbenchMode.SWEEP,
                         "批量探索",
-                        icon="scatter_plot",
-                    ).mark("mode-sweep")
-                    self.float_mode_tab = ui.tab(
-                        WorkbenchMode.FLOAT.value,
+                        "scatter_plot",
+                        "mode-sweep",
+                    )
+                    self.evidence_mode_tab = self._build_mode_button(
+                        WorkbenchMode.EVIDENCE,
+                        "性能证据",
+                        "speed",
+                        "mode-evidence",
+                    )
+                    self.float_mode_tab = self._build_mode_button(
+                        WorkbenchMode.FLOAT,
                         "浮点分析",
-                        icon="calculate",
-                    ).mark("mode-float")
+                        "calculate",
+                        "mode-float",
+                    )
+                self._mode_buttons = {
+                    WorkbenchMode.ANALYSIS: self.analysis_mode_tab,
+                    WorkbenchMode.SWEEP: self.sweep_mode_tab,
+                    WorkbenchMode.EVIDENCE: self.evidence_mode_tab,
+                    WorkbenchMode.FLOAT: self.float_mode_tab,
+                }
+                self._sync_mode_buttons()
                 ui.separator().classes("bp-sidebar-rule")
                 self.sidebar_controls = ui.column().classes("w-full gap-2")
                 self.sidebar_summary = ui.column().classes("bp-sidebar-summary w-full gap-2")
@@ -708,17 +722,44 @@ class BlueprintingWorkbench:
                 ui.link("打开 localhost:8501", "http://127.0.0.1:8501", new_tab=True).classes("text-secondary")
                 ui.button("关闭", on_click=self.legacy_dialog.close).props("flat no-caps")
 
-    def _change_mode(self, event: Any) -> None:
-        if self.busy:
-            self.mode_switch.set_value(self.mode.value)
+    def _select_mode(self, mode: WorkbenchMode) -> None:
+        if self.busy or mode is self.mode:
             return
-        self.mode = WorkbenchMode(str(event.value))
+        self.mode = mode
+        self._sync_mode_buttons()
         self.local_error = None
         self.config_dialog.close()
-        if self.form is not None and self.mode is not WorkbenchMode.FLOAT:
+        if self.form is not None and self.mode in {WorkbenchMode.ANALYSIS, WorkbenchMode.SWEEP}:
             self.form.set_mode(self.mode)
         self._render_sidebar_controls()
         self._render_workspace()
+
+    def _build_mode_button(self, mode: WorkbenchMode, label: str, icon: str, marker: str) -> Any:
+        button = (
+            ui.element("button")
+            .props("type=button")
+            .classes("bp-mode-button")
+            .mark(marker)
+            .on("click", lambda _: self._select_mode(mode))
+        )
+        with button:
+            ui.icon(icon).classes("bp-mode-icon")
+            ui.label(label).classes("bp-mode-label")
+        return button
+
+    def _sync_mode_buttons(self) -> None:
+        for mode, button in self._mode_buttons.items():
+            if mode is self.mode:
+                button.classes(add="bp-mode-button--active")
+            else:
+                button.classes(remove="bp-mode-button--active")
+
+    def _set_mode_buttons_busy(self, busy: bool) -> None:
+        for button in self._mode_buttons.values():
+            if busy:
+                button.props(add="disabled")
+            else:
+                button.props(remove="disabled")
 
     def _ensure_form(self, host: Any) -> None:
         if self.form is None:
@@ -747,6 +788,14 @@ class BlueprintingWorkbench:
         self.quick_pp = None
         self.quick_dp = None
         self.quick_calibration = None
+        if self.mode is WorkbenchMode.EVIDENCE:
+            with self.sidebar_controls:
+                ui.label("EVIDENCE CONTROLS").classes("bp-sidebar-kicker")
+                with ui.element("section").classes("bp-sidebar-controls-card"):
+                    ui.label("只读证据目录").classes("bp-sidebar-title")
+                    ui.label("Vidur Phi-2 · A100 · exact selectors").classes("bp-sidebar-meta")
+                    ui.label("GEMM primitive 在主视图切换。 ").classes("bp-sidebar-meta")
+            return
         if self.mode is WorkbenchMode.FLOAT:
             with self.sidebar_controls:
                 ui.label("NUMERIC CONTROLS").classes("bp-sidebar-kicker")
@@ -940,6 +989,9 @@ class BlueprintingWorkbench:
         with self.workspace:
             if self.busy:
                 self._render_loading()
+            elif self.mode is WorkbenchMode.EVIDENCE:
+                self.evidence_panel = EvidenceLabPanel(self.catalog)
+                self.evidence_panel.build()
             elif self.mode is WorkbenchMode.FLOAT:
                 self.float_panel = FloatAnalysisPanel()
                 self.float_panel.build()
@@ -956,6 +1008,13 @@ class BlueprintingWorkbench:
         if self.sidebar_summary is None:
             return
         self.sidebar_summary.clear()
+        if self.mode is WorkbenchMode.EVIDENCE:
+            with self.sidebar_summary:
+                ui.label("EVIDENCE STATUS").classes("bp-sidebar-kicker")
+                ui.label("Pinned profile").classes("bp-sidebar-title")
+                ui.label("20 typed records · measured + analytical").classes("bp-sidebar-meta")
+                ui.label("只读 PoC").classes("bp-sidebar-state bp-sidebar-state--ready")
+            return
         if self.mode is WorkbenchMode.FLOAT:
             with self.sidebar_summary:
                 ui.label("NUMERIC STATUS").classes("bp-sidebar-kicker")
@@ -1007,7 +1066,7 @@ class BlueprintingWorkbench:
         if self.sidebar_action_host is None:
             return
         self.sidebar_action_host.clear()
-        if self.mode is WorkbenchMode.FLOAT:
+        if self.mode in {WorkbenchMode.EVIDENCE, WorkbenchMode.FLOAT}:
             return
         if self.form is None:
             return
@@ -1218,9 +1277,7 @@ class BlueprintingWorkbench:
         self.busy = True
         self.form.set_busy(True)
         self._set_quick_controls_busy(True)
-        self.analysis_mode_tab.disable()
-        self.sweep_mode_tab.disable()
-        self.float_mode_tab.disable()
+        self._set_mode_buttons_busy(True)
         self.config_dialog.close()
         self._render_workspace()
         try:
@@ -1237,9 +1294,7 @@ class BlueprintingWorkbench:
             self.busy = False
             self.form.set_busy(False)
             self._set_quick_controls_busy(False)
-            self.analysis_mode_tab.enable()
-            self.sweep_mode_tab.enable()
-            self.float_mode_tab.enable()
+            self._set_mode_buttons_busy(False)
             self._render_workspace()
 
     async def run_sweep(self) -> None:
@@ -1259,9 +1314,7 @@ class BlueprintingWorkbench:
         self.busy = True
         self.form.set_busy(True)
         self._set_quick_controls_busy(True)
-        self.analysis_mode_tab.disable()
-        self.sweep_mode_tab.disable()
-        self.float_mode_tab.disable()
+        self._set_mode_buttons_busy(True)
         self.config_dialog.close()
         self.progress_timer.activate()
         self._render_workspace()
@@ -1288,9 +1341,7 @@ class BlueprintingWorkbench:
             self.busy = False
             self.form.set_busy(False)
             self._set_quick_controls_busy(False)
-            self.analysis_mode_tab.enable()
-            self.sweep_mode_tab.enable()
-            self.float_mode_tab.enable()
+            self._set_mode_buttons_busy(False)
             self._render_workspace()
 
     def _render_loading(self) -> None:
@@ -1950,7 +2001,7 @@ class BlueprintingWorkbench:
             return
         self.form.load_point_parallelism(int(row["tp"]), int(row["pp"]), int(row["dp"]))
         self.mode = WorkbenchMode.ANALYSIS
-        self.mode_switch.set_value(self.mode.value)
+        self._sync_mode_buttons()
         self.form.set_mode(self.mode)
         self.local_error = None
         self._render_sidebar_controls()
