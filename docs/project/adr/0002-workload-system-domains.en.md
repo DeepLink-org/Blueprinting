@@ -40,9 +40,9 @@ Move workload-to-canonical-state adapters into `blueprinting.synthesizer.fronten
 
 Rename `HardwareProfile` to `SystemProfile` and remove its re-export from `blueprinting.analysis`. Analysis selects whether to apply profile efficiency evidence through an explicit policy argument; the system package does not import or choose `CalibrationMode`.
 
-Do not provide `blueprinting.synthesizer.models` or `blueprinting.analysis.SystemProfile` compatibility facades. The legacy `blueprinting.types.system` package remains only for the retained calculator path and is not an admissible dependency for new formal-analysis code.
+Do not provide `blueprinting.synthesizer.models` or `blueprinting.analysis.SystemProfile` compatibility facades. The former `blueprinting.types.system` package was removed with the calculator path; supported code imports `blueprinting.system` directly.
 
-Preserve the existing `compiler.transformer.*` and `compiler.analysis.*` codec tags, including `compiler.analysis.hardware_profile.v1`. They are opaque wire identities. The workload and system record fields remain unchanged, so canonical JSON and target-neutral plan digests remain stable.
+The initial package split preserved its contemporary codec tags. ADR-0004 supersedes that choice: workload and system records now use `blueprinting.workload.*` and `blueprinting.system.*` semantic identities.
 
 `SystemProfile` is explicitly an evidence-bearing compute/memory/network adapter. It is not the future hierarchical `ArchitectureBlueprint`, a deployment description, or a target binding.
 
@@ -52,7 +52,7 @@ Preserve the existing `compiler.transformer.*` and `compiler.analysis.*` codec t
 - Framework/model importers can grow under `workload` without becoming derivation passes.
 - Chip and interconnect contracts can evolve under `system` without being tied to roofline or database providers.
 - Existing Python callers must replace old package paths and the `HardwareProfile` class name.
-- Existing canonical JSON remains readable because codec tags and fields are preserved; pickle/module-path compatibility is not supported.
+- ADR-0004 defines the later wire-format boundary; pickle/module-path compatibility remains unsupported.
 - The current logical execution specs still combine workload scenario and mapping intent. Further separation into workload scenario and mapping strategy requires a later ADR if it changes serialized contracts.
 
 ## Migration

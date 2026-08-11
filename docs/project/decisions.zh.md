@@ -19,8 +19,12 @@
 | Runtime | 遵守 verified plan，并保留 contract 允许的 bounded mechanism decision | Runtime 不重复无界 global search，也不假装 backpressure/failure 不存在 |
 | Schema maturity | Internal schema version 不自动构成 public compatibility promise | Producer、独立 consumer、migration 与 conformance Gate 通过后才毕业为 stable contract |
 | Documentation | 同目录 suffix-based 双语 source | Navigation 与 language switching 始终按页面对齐 |
-| 形式化推导 package | Python path 硬切为 `blueprinting.synthesizer`；保留历史 codec tag | Source ownership 对齐 formal plan synthesis，同时不破坏未变化的 canonical snapshot；见 [ADR-0001](adr/0001-synthesizer-package.md) |
+| 形式化推导 package | Python path 硬切为 `blueprinting.synthesizer` | Source ownership 对齐 formal plan synthesis；见 [ADR-0001](adr/0001-synthesizer-package.md) |
 | Domain package | `blueprinting.workload` 拥有 target-neutral workload contract；`blueprinting.system` 拥有 chip/interconnect/system profile | Synthesis/analysis 消费显式 domain input，但不拥有它们；见 [ADR-0002](adr/0002-workload-system-domains.md) |
+| Derivation 调试 | 五层图、相邻映射与调试包是从 checkpoint/lineage 重建的 derived trace | UI/overlay 不进入 canonical IR；见 [ADR-0003](adr/0003-derivation-debug-trace.md) |
+| Canonical wire identity | 按领域归属的 `blueprinting.*` namespace，不保留废弃 alias | 序列化 identity 直接表达当前语义，旧产物在硬切边界重新生成；见 [ADR-0004](adr/0004-semantic-wire-identities.md) |
+| 代数化 canonical constructor | Scalar operation 与 concrete command semantic 使用 constructor-specific ADT；preservation claim 具有可执行 evidence | 消除非法 arity/payload 组合，schema 变更通过显式 migration 完成；见 [ADR-0005](adr/0005-algebraic-expression-command-schemas.md) |
+| 渐进式 typed Python | Runtime `Checked` contract 与 sealed core ADT 和可选标准 mypy analysis 共享 declaration；不使用自定义 plugin | Base installation 保留 contract check，预期失败显式化，static analysis 增加覆盖但不成为 runtime truth；见 [ADR-0006](adr/0006-progressive-typed-python-contracts.md) |
 
 ## 被拒绝方案
 

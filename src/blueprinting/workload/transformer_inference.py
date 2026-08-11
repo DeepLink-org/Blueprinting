@@ -24,10 +24,10 @@ from .transformer import TransformerModelSpec
 def _positive_integer(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer")
-    return value
+    return int(value)
 
 
-@record_type("compiler.transformer.inference_request_spec.v1")
+@record_type("blueprinting.workload.transformer-inference-request")
 @dataclass(frozen=True)
 class TransformerInferenceRequestSpec:
     """A homogeneous request cohort before online scheduling is applied."""
@@ -45,7 +45,8 @@ class TransformerInferenceRequestSpec:
 
     @property
     def bytes_per_element(self) -> int:
-        return {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}[self.datatype]
+        widths: dict[str, int] = {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}
+        return widths[self.datatype]
 
     @property
     def decode_iterations(self) -> int:

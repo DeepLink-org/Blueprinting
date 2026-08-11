@@ -80,18 +80,18 @@ def test_single_generated_token_stops_after_prefill():
 
 
 def test_service_accepts_canonical_inference_mapping_names():
-    legacy = _draft(generated_tokens=1)
-    execution = dict(legacy.execution_data.items())
+    preset = _draft(generated_tokens=1)
+    execution = dict(preset.execution_data.items())
     execution["tensor_parallel"] = execution.pop("tensor_par")
     execution["pipeline_parallel"] = execution.pop("pipeline_par")
     canonical = InferenceAnalysisDraft.from_mappings(
-        model_name=legacy.model_name,
-        model_data=dict(legacy.model_data.items()),
-        execution_name=legacy.execution_name,
+        model_name=preset.model_name,
+        model_data=dict(preset.model_data.items()),
+        execution_name=preset.execution_name,
         execution_data=execution,
-        request_data=dict(legacy.request_data.items()),
-        hardware_name=legacy.hardware_name,
-        hardware_data=dict(legacy.hardware_data.items()),
+        request_data=dict(preset.request_data.items()),
+        hardware_name=preset.hardware_name,
+        hardware_data=dict(preset.hardware_data.items()),
     )
 
     outcome = BlueprintingService().analyze_inference(canonical)
@@ -132,7 +132,7 @@ def test_service_routes_resolver_evidence_and_uncertainty_to_task_reports():
     provenance = EvidenceProvenance(
         source="fixture-simulator",
         source_revision="sim-r1",
-        importer="fixture-importer-v1",
+        importer="fixture-importer-v0",
         data_digest="fixture-data",
         method=EstimateMethod.SIMULATED,
     )
@@ -172,16 +172,3 @@ def test_service_routes_resolver_evidence_and_uncertainty_to_task_reports():
     assert attention.evidence_assumptions
     assert fallback.evidence_method == "analytical"
     assert outcome.report.evidence["cost_resolver_revision"] == resolver.revision
-
-
-def test_service_rejects_legacy_provider_and_resolver_together():
-    draft = _draft(generated_tokens=1)
-    hardware = SystemProfile.from_mapping(
-        draft.hardware_name,
-        dict(draft.hardware_data.items()),
-        datatype="float16",
-    )
-    resolver = CostResolver((RooflineCostProvider(hardware),))
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        BlueprintingService(inference_cost_provider=object(), inference_cost_resolver=resolver)

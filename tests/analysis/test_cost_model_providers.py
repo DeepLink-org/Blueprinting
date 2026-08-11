@@ -25,16 +25,26 @@ from blueprinting.analysis import (
     cost_query_for_inference_task,
     estimate_inference_phase,
 )
-from blueprinting.analysis.cost import InvalidCostEvidenceError
-from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.mapping import (
+    ForwardOnly,
+    NetworkTierBinding,
+    PipelineParallel,
+    ReplicaParallel,
+    TensorParallel,
+    TensorParallelCommunication,
+    TransformerInferenceMappingSpec,
+    TransformerInferenceParallelism,
+)
+from blueprinting.schema import Err
 from blueprinting.schema.frozen import FrozenDict
 from blueprinting.synthesizer.bindings import InferencePhase
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerInferencePass
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
 from blueprinting.workload import TransformerModelSpec
 
@@ -53,7 +63,7 @@ def _provenance(*, digest: str = "fixture-data") -> EvidenceProvenance:
     return EvidenceProvenance(
         source="fixture-simulator",
         source_revision="sim-r1",
-        importer="fixture-importer-v1",
+        importer="fixture-importer-v0",
         data_digest=digest,
         method=EstimateMethod.SIMULATED,
     )
@@ -160,8 +170,10 @@ def test_ambiguous_database_evidence_is_not_hidden_by_roofline_fallback():
         dimensions=FrozenDict({"m": 8}),
     )
 
-    with pytest.raises(InvalidCostEvidenceError, match="equally specific"):
-        resolver.resolve(query)
+    resolution = resolver.resolve(query)
+    assert isinstance(resolution, Err)
+    assert resolution.error.errors[0].code == "cost.invalid_evidence"
+    assert "equally specific" in resolution.error.errors[0].message
 
 
 def test_simulator_import_maps_units_and_communication_selectors(tmp_path: Path):
@@ -397,13 +409,15 @@ def _inference_fixture():
         block_count=8,
     )
     mapping = TransformerInferenceMappingSpec(
-        tensor_parallel=2,
-        pipeline_parallel=2,
-        replicas=1,
+        TransformerInferenceParallelism(
+            TensorParallel(2, TensorParallelCommunication.ALL_REDUCE),
+            PipelineParallel(2, ForwardOnly()),
+            ReplicaParallel(1),
+        )
     )
     plan = (
         PassManager()
-        .run(
+        .require_run(
             PassPipeline.of(DistributeTransformerInferencePass(), PlanTransformerInferencePass()),
             build_transformer_inference_model_ir(model),
             session=inference_synthesis_session_for(
@@ -424,7 +438,7 @@ def test_inference_costing_uses_database_then_explicit_roofline_fallback():
     model, mapping, plan = _inference_fixture()
     hardware = _hardware()
     network_binding = NetworkTierBinding()
-    attention_task = next(task for task in plan.tasks if task.workload.attributes.get("primitive") == "attention_core")
+    attention_task = next(task for task in plan.tasks if task.semantic.primitive == "attention_core")
     query = cost_query_for_inference_task(
         attention_task,
         hardware=hardware,

@@ -9,7 +9,7 @@ A Blueprinting `Pass` is the current implementation unit for a verified transact
 Every pass declares:
 
 ```text
-pass_id and revision
+pass identity and contract digest
 input IR type and accepted schema range
 output IR type and produced schema version
 required bindings
@@ -19,9 +19,25 @@ produced analyses
 mutation model
 verification policy
 determinism and seed usage
+typed lineage relations with independent semantic invariants
+an executable canonical normal form
 ```
 
 Pipeline composition follows these contracts rather than `isinstance` checks against concrete pass classes.
+
+Production passes use one low-noise authoring syntax. `relation()` declares a typed entity mapping, its independent executable semantic invariant, and optional named claims. `@derivation` derives IR types and exact schemas from `DerivationPass[SourceIR, TargetIR]` and binds a module-level pure normalizer. The normalizer establishes that the implementation produced the declared canonical construction; relation invariants establish semantic facts such as conservation, legality, and dependency correspondence without treating that implementation as its own proof. Bindings, analysis effects, and relation identities remain explicit. The sole pass decorator constructs metadata only; it neither wraps nor alters `run()`.
+
+Each pass is defined in its output stage:
+
+```text
+ModelIR producer            -> stages/model/passes.py
+DistributedTaskIR producer  -> stages/distributed/passes.py
+PortablePlanIR producer     -> stages/portable_plan/passes.py
+ConcretePlanIR producer     -> stages/concrete_plan/passes.py
+MachineIR producer          -> stages/machine/passes.py
+```
+
+A dialect module may provide pure derivation functions, but it may not own a second public pass class or hide a contract behind import forwarding.
 
 ## Transaction sequence
 
@@ -34,6 +50,9 @@ check input type/schema
   -> execute immutable or isolated mutation
   -> check output type/schema and input immutability
   -> verify output and parent lineage
+  -> resolve every cross-boundary lineage relation
+  -> re-evaluate the canonical normal form and require exact snapshot equality
+  -> run every relation's independent semantic invariant
   -> create PassRecord and PassCheckpoint
   -> invoke synchronous observers
   -> atomically preserve/publish analyses
@@ -66,7 +85,7 @@ Observers are read-only. They cannot rewrite a representation or publish analyse
 
 ## Determinism
 
-A pass declares whether it is deterministic and how it uses a seed. A deterministic pass over the same input digest, session fingerprint, pass revision, and required analyses must emit the same output digest or diagnostic.
+A pass declares whether it is deterministic and how it uses a seed. CI and opt-in `PassManager` verification execute deterministic passes twice against isolated analysis-store snapshots, then compare output digests and analysis-product digests. Normal production execution keeps replay disabled. A same-seed replay mismatch aborts before publication.
 
 Search passes may be seeded and budgeted. Candidate order, pruning, and rejection reasons remain provenance so a search result can be replayed.
 
@@ -86,4 +105,4 @@ Every production analysis or transformation design must include:
 
 ## Current implementation
 
-The repository implements `SchemaRange`, `PassContract`, `PassPipeline`, `PassManager`, content-addressed `AnalysisStore`, pass records, checkpoints, and observers in `src/blueprinting/synthesizer/passes/base.py`. Contract and failure behavior are covered by `tests/synthesizer/test_pass_manager.py`.
+The repository implements the transaction runner in `src/blueprinting/synthesizer/passes/base.py`, keeps the registry implementation in `passes/deriving.py`, and exposes only `@derivation`, `relation`, and `claim` to extension authors through `passes/authoring.py`. Public stage passes live in `stages/*/passes.py`. `tests/synthesizer/test_pass_manager.py` covers contract inference, failure behavior, and determinism.

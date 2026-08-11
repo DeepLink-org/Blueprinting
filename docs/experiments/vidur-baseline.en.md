@@ -17,7 +17,7 @@ Transformer semantics + mapping + phase context
   -> coverage and error report
 ```
 
-`InferenceCostProvider.resolve()` is the extension point for an admissible Blueprinting performance database or hardware simulator. `InferenceBaseline.lookup()` is the external-oracle interface. `VidurProfileBaseline` implements only `lookup()`, so it cannot be supplied to `estimate_inference_phase()` by accident.
+`CostResolver.resolve()` is the single extension point for an admissible Blueprinting performance database or hardware simulator. `InferenceBaseline.lookup()` is the external-oracle interface. `VidurProfileBaseline` implements only `lookup()`, so it cannot be supplied to `estimate_inference_phase()` by accident.
 
 The separate `VidurProfileImporter` can explicitly convert user-supplied profile rows into a `PerformanceDatabase`. That is a different workflow and policy decision: the resulting database affects costing only when its provider is deliberately installed in a `CostResolver`. This experiment continues to use `VidurProfileBaseline` only, so its oracle isolation is unchanged.
 

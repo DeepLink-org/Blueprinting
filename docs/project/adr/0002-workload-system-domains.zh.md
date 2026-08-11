@@ -40,9 +40,9 @@ Blueprinting 在两个独立 domain input 之间推导 mapping：workload 与 ca
 
 将 `HardwareProfile` 重命名为 `SystemProfile`，并移除 `blueprinting.analysis` 中的 re-export。Analysis 通过显式 policy argument 决定是否应用 profile efficiency evidence；system package 不导入也不选择 `CalibrationMode`。
 
-不提供 `blueprinting.synthesizer.models` 或 `blueprinting.analysis.SystemProfile` compatibility facade。Legacy `blueprinting.types.system` 只保留给旧 calculator path，新 formal-analysis code 不得依赖它。
+不提供 `blueprinting.synthesizer.models` 或 `blueprinting.analysis.SystemProfile` compatibility facade。原 `blueprinting.types.system` package 已随 calculator path 删除；受支持代码直接导入 `blueprinting.system`。
 
-保留现有 `compiler.transformer.*` 和 `compiler.analysis.*` codec tag，包括 `compiler.analysis.hardware_profile.v1`。它们是 opaque wire identity。Workload/system record field 不变，因此 canonical JSON 与 target-neutral plan digest 保持稳定。
+最初的 package split 保留了当时已有的 codec tag。ADR-0004 取代这一选择：workload 与 system record 现在分别使用 `blueprinting.workload.*` 和 `blueprinting.system.*` 语义 identity。
 
 `SystemProfile` 被明确限定为 evidence-bearing compute/memory/network adapter；它不是未来 hierarchical `ArchitectureBlueprint`、deployment description 或 target binding。
 
@@ -52,7 +52,7 @@ Blueprinting 在两个独立 domain input 之间推导 mapping：workload 与 ca
 - Framework/model importer 可以在 `workload` 下扩展，而不会变成 derivation pass。
 - Chip/interconnect contract 可以在 `system` 下演进，而不依赖 roofline/database provider。
 - 现有 Python caller 必须迁移旧 package path 与 `HardwareProfile` class name。
-- Codec tag/field 被保留，因此旧 canonical JSON 仍可读取；不支持 pickle/module-path compatibility。
+- ADR-0004 定义后续 wire-format 边界；仍不支持 pickle/module-path compatibility。
 - 当前 logical execution spec 仍混合 workload scenario 与 mapping intent。若后续拆分会改变 serialized contract，需要新的 ADR。
 
 ## 迁移

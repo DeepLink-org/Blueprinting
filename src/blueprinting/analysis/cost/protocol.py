@@ -13,8 +13,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
+from blueprinting.schema.authoring import adt, is_adt_variant, seal_adt, variant
 from blueprinting.schema.codec import content_digest, enum_type, record_type
+from blueprinting.schema.diagnostics import Diagnostic, DiagnosticSet
 from blueprinting.schema.frozen import FrozenDict
+from blueprinting.schema.result import Checked, Err, Ok
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
@@ -31,13 +34,13 @@ class InvalidCostEvidenceError(CostModelError):
     """Raised when available evidence is ambiguous or internally invalid."""
 
 
-@enum_type("compiler.analysis.cost.subject.v1")
+@enum_type("blueprinting.analysis.cost.subject")
 class CostSubject(Enum):
     OPERATOR = "operator"
     COMMUNICATION = "communication"
 
 
-@enum_type("compiler.analysis.cost.method.v1")
+@enum_type("blueprinting.analysis.cost.method")
 class EstimateMethod(Enum):
     MEASURED = "measured"
     SIMULATED = "simulated"
@@ -46,20 +49,13 @@ class EstimateMethod(Enum):
     VENDOR_MODEL = "vendor_model"
 
 
-@enum_type("compiler.analysis.cost.match.v1")
+@enum_type("blueprinting.analysis.cost.match")
 class EstimateMatch(Enum):
     EXACT_SELECTOR = "exact_selector"
     INTERPOLATED = "interpolated"
     EXTRAPOLATED = "extrapolated"
     ANALYTICAL = "analytical"
     FALLBACK = "fallback"
-
-
-@enum_type("compiler.analysis.cost.support_status.v1")
-class SupportStatus(Enum):
-    AVAILABLE = "available"
-    UNAVAILABLE = "unavailable"
-    INVALID = "invalid"
 
 
 _RESERVED_DIMENSIONS = frozenset(
@@ -101,7 +97,7 @@ def _non_negative_integer(value: int, name: str) -> None:
         raise ValueError(f"{name} must be a non-negative integer")
 
 
-@record_type("compiler.analysis.cost.query.v1")
+@record_type("blueprinting.analysis.cost.query")
 @dataclass(frozen=True)
 class CostQuery:
     """One fully identified task-cost question.
@@ -192,7 +188,7 @@ class CostQuery:
         return FrozenDict(context)
 
 
-@record_type("compiler.analysis.cost.query_context.v1")
+@record_type("blueprinting.analysis.cost.query-context")
 @dataclass(frozen=True)
 class CostQueryContext:
     """Deployment/implementation facts supplied after portable planning.
@@ -228,13 +224,19 @@ class CostQueryContext:
                 raise TypeError(f"operation dimensions for {operation!r} must be a mapping")
 
     def implementation_for(self, semantic_operation: str, operation: str) -> str:
-        return self.implementations.get(semantic_operation, self.implementations.get(operation, ""))
+        value = self.implementations.get(semantic_operation, self.implementations.get(operation, ""))
+        if not isinstance(value, str):
+            raise TypeError("implementation identity must be a string")
+        return value
 
     def implementation_revision_for(self, semantic_operation: str, operation: str) -> str:
-        return self.implementation_revisions.get(
+        value = self.implementation_revisions.get(
             semantic_operation,
             self.implementation_revisions.get(operation, ""),
         )
+        if not isinstance(value, str):
+            raise TypeError("implementation revision must be a string")
+        return value
 
     def dimensions_for(self, semantic_operation: str, operation: str) -> FrozenDict:
         result = self.dimensions.to_dict()
@@ -247,7 +249,7 @@ class CostQueryContext:
         return FrozenDict(result)
 
 
-@record_type("compiler.analysis.cost.uncertainty.v1")
+@record_type("blueprinting.analysis.cost.uncertainty")
 @dataclass(frozen=True)
 class EstimateUncertainty:
     sample_count: int = 0
@@ -279,7 +281,7 @@ class EstimateUncertainty:
             raise ValueError("uncertainty lower bound cannot exceed upper bound")
 
 
-@record_type("compiler.analysis.cost.estimate.v1")
+@record_type("blueprinting.analysis.cost.estimate")
 @dataclass(frozen=True)
 class CostEstimate:
     seconds: float
@@ -320,38 +322,60 @@ class CostEstimate:
             raise ValueError("assumptions must be non-empty strings")
 
 
-@dataclass(frozen=True)
+@adt(wire="blueprinting.analysis.cost.support")
 class CostSupport:
-    status: SupportStatus
+    """Closed provider coverage result with no status/payload mismatch."""
+
+    @classmethod
+    def available(cls, reason: str = "query is covered") -> CostSupportVariant:
+        return CostAvailable(reason)
+
+    @classmethod
+    def unavailable(cls, reason: str, *missing_fields: str) -> CostSupportVariant:
+        return CostUnavailable(reason, tuple(missing_fields))
+
+    @classmethod
+    def invalid(cls, reason: str) -> CostSupportVariant:
+        return InvalidCostSupport(reason)
+
+
+@variant("available")
+class CostAvailable(CostSupport):
+    reason: str
+
+    def __post_init__(self) -> None:
+        _required_text(self.reason, "support reason")
+
+
+@variant("unavailable")
+class CostUnavailable(CostSupport):
     reason: str
     missing_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, SupportStatus):
-            raise TypeError("status must be SupportStatus")
         _required_text(self.reason, "support reason")
         object.__setattr__(self, "missing_fields", tuple(self.missing_fields))
         if any(not isinstance(item, str) or not item for item in self.missing_fields):
             raise ValueError("missing fields must be non-empty strings")
 
-    @classmethod
-    def available(cls, reason: str = "query is covered") -> CostSupport:
-        return cls(SupportStatus.AVAILABLE, reason)
 
-    @classmethod
-    def unavailable(cls, reason: str, *missing_fields: str) -> CostSupport:
-        return cls(SupportStatus.UNAVAILABLE, reason, tuple(missing_fields))
+@variant("invalid")
+class InvalidCostSupport(CostSupport):
+    reason: str
 
-    @classmethod
-    def invalid(cls, reason: str) -> CostSupport:
-        return cls(SupportStatus.INVALID, reason)
+    def __post_init__(self) -> None:
+        _required_text(self.reason, "support reason")
+
+
+CostSupportVariant = CostAvailable | CostUnavailable | InvalidCostSupport
+seal_adt(CostSupport, CostSupportVariant)
 
 
 @dataclass(frozen=True)
 class ProviderAttempt:
     provider: str
     revision: str
-    support: CostSupport
+    support: CostSupportVariant
 
 
 @dataclass(frozen=True)
@@ -370,7 +394,7 @@ class CostProvider(Protocol):
     @property
     def revision(self) -> str: ...
 
-    def supports(self, query: CostQuery) -> CostSupport: ...
+    def supports(self, query: CostQuery) -> CostSupportVariant: ...
 
     def estimate(self, query: CostQuery) -> CostEstimate: ...
 
@@ -378,7 +402,7 @@ class CostProvider(Protocol):
 class CostResolver:
     """Ordered, deterministic provider selection without anonymous blending."""
 
-    def __init__(self, providers: tuple[CostProvider, ...], *, policy_name: str = "ordered-first-supported-v1") -> None:
+    def __init__(self, providers: tuple[CostProvider, ...], *, policy_name: str = "ordered-first-supported-v0") -> None:
         self._providers = tuple(providers)
         _required_text(policy_name, "policy_name")
         identities = tuple((provider.name, provider.revision) for provider in self._providers)
@@ -398,32 +422,78 @@ class CostResolver:
     def revision(self) -> str:
         return self._revision
 
-    def try_resolve(self, query: CostQuery) -> CostResolution | None:
+    def resolve(self, query: CostQuery) -> Checked[CostResolution]:
+        """Resolve expected availability and evidence failures as diagnostics."""
+
         if not isinstance(query, CostQuery):
             raise TypeError("query must be CostQuery")
         attempts: list[ProviderAttempt] = []
         for provider in self._providers:
             support = provider.supports(query)
-            if not isinstance(support, CostSupport):
+            if not is_adt_variant(support, CostSupport):
                 raise TypeError(f"provider {provider.name!r} returned an invalid support result")
             attempts.append(ProviderAttempt(provider.name, provider.revision, support))
-            if support.status is SupportStatus.INVALID:
-                raise InvalidCostEvidenceError(
-                    f"provider {provider.name!r} found invalid evidence for {query.digest}: {support.reason}"
+            match support:
+                case InvalidCostSupport(reason):
+                    return Err(
+                        DiagnosticSet.of(
+                            Diagnostic(
+                                "cost.invalid_evidence",
+                                f"provider {provider.name!r} found invalid evidence: {reason}",
+                                ("provider", provider.name),
+                            )
+                        )
+                    )
+                case CostUnavailable():
+                    continue
+                case CostAvailable():
+                    pass
+            try:
+                estimate = provider.estimate(query)
+            except InvalidCostEvidenceError as error:
+                return Err(
+                    DiagnosticSet.of(
+                        Diagnostic(
+                            "cost.invalid_evidence",
+                            f"provider {provider.name!r} rejected its selected evidence: {error}",
+                            ("provider", provider.name),
+                        )
+                    )
                 )
-            if support.status is SupportStatus.UNAVAILABLE:
-                continue
-            estimate = provider.estimate(query)
             if not isinstance(estimate, CostEstimate):
                 raise TypeError(f"provider {provider.name!r} returned an invalid estimate")
             if estimate.provider != provider.name or estimate.provider_revision != provider.revision:
-                raise InvalidCostEvidenceError(f"provider {provider.name!r} returned inconsistent provenance identity")
-            return CostResolution(query.digest, estimate, tuple(attempts), self.revision)
-        return None
+                return Err(
+                    DiagnosticSet.of(
+                        Diagnostic(
+                            "cost.inconsistent_provenance",
+                            f"provider {provider.name!r} returned inconsistent provenance identity",
+                            ("provider", provider.name),
+                        )
+                    )
+                )
+            return Ok(CostResolution(query.digest, estimate, tuple(attempts), self.revision))
+        attempted = ", ".join(provider.name for provider in self._providers) or "none"
+        return Err(
+            DiagnosticSet.of(
+                Diagnostic(
+                    "cost.unavailable",
+                    f"no cost provider covers query {query.digest}; attempted: {attempted}",
+                    ("query", query.digest),
+                )
+            )
+        )
 
-    def resolve(self, query: CostQuery) -> CostResolution:
-        resolution = self.try_resolve(query)
-        if resolution is None:
-            attempted = ", ".join(provider.name for provider in self._providers) or "none"
-            raise CostNotAvailableError(f"no cost provider covers query {query.digest}; attempted: {attempted}")
-        return resolution
+    def require(self, query: CostQuery) -> CostResolution:
+        """Explicit exception adapter for application boundaries."""
+
+        def exception(diagnostics: DiagnosticSet) -> CostModelError:
+            rendered = "; ".join(item.render() for item in diagnostics.errors)
+            if any(
+                item.code.startswith("cost.invalid") or item.code == "cost.inconsistent_provenance"
+                for item in diagnostics.errors
+            ):
+                return InvalidCostEvidenceError(rendered)
+            return CostNotAvailableError(rendered)
+
+        return self.resolve(query).or_raise(exception)

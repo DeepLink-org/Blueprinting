@@ -34,7 +34,7 @@ def test_inference_vidur_baseline_regression_gate():
 
 def test_regression_gate_reports_every_failed_predicate():
     gate = BaselineRegressionGate(
-        schema="blueprinting.baseline-regression-gate.v1",
+        schema="blueprinting.baseline-regression-gate.v0",
         domain="test/baseline",
         checks=(
             RegressionCheck("first", False, "<= 1", 2),

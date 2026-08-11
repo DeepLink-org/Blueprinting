@@ -12,6 +12,36 @@ Model names, Calculon durations, paper measurements, and per-case corrections ar
 
 Across the eight SeqSel Table 5 cases, the current system-evidence path is numerically equivalent to Calculon at floating-point precision. This means Blueprinting's workload and analytical mapping path independently reproduces the reference work, system curves, and schedule semantics; it is not evidence of zero error on real hardware or proof of broad architecture-exploration coverage. Against the paper's reported measurements, MAPE is 3.65% and maximum absolute error is 8.87%.
 
+## Experiment identity and metric definitions
+
+### Frozen provenance
+
+The machine-readable report schema is `blueprinting.calculon-calibration-experiment.v0`. The current oracle is vendored Calculon `0.1.0`, whose local Python source-tree SHA-256 is `c72cf8a0a0fc9f1fb9813a2248747d6242bbc664b665abe4b5fc6b6b18f5927b`; the hardware evidence revision is `eb1eb9fcc4a6e414e85b0252c23ea9ad2730aae2`. The JSON artifact also records SHA-256 values for every model, execution, and system input, plus the ModelIR, DistributedTaskIR, PortablePlanIR, and two PassCheckpoint digests for each case.
+
+The oracle is [Calculon](https://github.com/calculon-ai/calculon), and the paper holdout is Table 5 of Korthikanti et al., [Reducing Activation Recomputation in Large Transformer Models](https://arxiv.org/abs/2205.05198). Both Blueprinting estimates finish before Calculon runs; `test_oracle_runs_only_after_both_blueprinting_estimates` enforces this call order.
+
+### Error definitions
+
+For Blueprinting result $x_i$ and reference $r_i$, signed relative error and cross-case MAPE are
+
+$$
+e_i=100\frac{x_i-r_i}{r_i},\qquad
+\operatorname{MAPE}=\frac{1}{N}\sum_{i=1}^{N}|e_i|.
+$$
+
+When both the reference and estimate for a component are zero, its error is defined as zero. A non-zero estimate against a zero reference is infinite and fails the gate. Memory additionally reports absolute byte error so a large capacity cannot hide a small byte mismatch in a percentage.
+
+Alignment is not total-only: every case checks 19 operation/memory/message/capacity workload metrics, total memory, nine timing components, iteration total, and the paper holdout. This yields 152 workload comparisons.
+
+### Coverage matrix
+
+| Model | TP | PP | DP | Global batch | Microbatch | Interleave | Two modes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Megatron-22B | 8 | 1 | 1 | 4 | 4 | 1 | full / seqsel |
+| GPT-175B | 8 | 8 | 1 | 64 | 1 | 3 | full / seqsel |
+| Turing-530B | 8 | 35 | 1 | 280 | 1 | 3 | full / seqsel |
+| Megatron-1T | 8 | 64 | 1 | 512 | 1 | 1 | full / seqsel |
+
 ## Experiment path
 
 ```text
@@ -19,13 +49,13 @@ model.json
    | semantic import
    v
 ModelIR: transformer.decoder_training
-   | transformer-distribute-v2
+   | transformer-distribute
    | - decompose Transformer primitives
    | - insert explicit TP collectives
    | - clone selective/full recomputation primitives
    v
 DistributedTaskIR: local TP block task DAG
-   | transformer-plan-work-v2
+   | transformer-plan-work
    | - derive operations/read/write/message bytes
    | - do not bind GPU/LPU or write duration
    v
@@ -131,6 +161,22 @@ Summary:
 - system-evidence versus paper MAPE: **3.65%**;
 - system-evidence versus paper maximum absolute error: **8.87%**.
 
+### Component-level parity
+
+| Timing component | MAPE | Maximum absolute error | Maximum absolute time error |
+|---|---:|---:|---:|
+| forward | 0 | 0 | 0 s |
+| backward | 1.53e-14% | 2.80e-14% | 7.11e-15 s |
+| optimizer | 0 | 0 | 0 s |
+| recompute | 0 | 0 | 0 s |
+| tensor parallel | 6.49e-15% | 1.98e-14% | 8.88e-16 s |
+| pipeline parallel | 0 | 0 | 0 s |
+| data parallel | 0 | 0 | 0 s |
+| recommunication | 0 | 0 | 0 s |
+| pipeline bubble | 2.25e-15% | 1.80e-14% | 1.78e-15 s |
+
+All workload metrics and all eight memory totals match exactly; maximum absolute memory error is **0 bytes**. The non-zero timing differences are at the scale expected from floating-point reassociation rather than an observable model discrepancy.
+
 The two largest seqsel cases err in the same direction. The next investigation should prioritize sequence-parallel collectives, large-scale topology, or differences in the paper's environment rather than adding model-specific coefficients.
 
 ## Reproduction and artifacts
@@ -144,14 +190,18 @@ uv run python examples/calculon_calibration.py \
 uv run pytest -m baseline_regression tests/regression
 ```
 
-The original eight parametrized training regressions remain in `tests/synthesizer/test_calculon_calibration.py`. The repository-level gate additionally runs all eight cases as one experiment and evaluates `data/validation/baseline_regression_contract.json`: workload and Calculon equivalence, memory, paper-error budgets, evidence revision, case identity, aggregate goldens, and every `PortablePlanIR` digest are frozen together. Updating a golden is a reviewed contract change; the gate has no automatic accept-current-output mode.
+The eight parametrized training regressions live in `tests/validation/test_calculon.py`. The repository-level gate additionally runs all eight cases as one experiment and evaluates `data/validation/baseline_regression_contract.json`: report schema, oracle source digest, input provenance, oracle-isolation policy, workload/component/total Calculon equivalence, memory, paper-error budgets, evidence revision, case identity, aggregate goldens, and every `PortablePlanIR` digest are frozen together. Updating a golden is a reviewed contract change; the gate has no automatic accept-current-output mode.
+
+CI budgets cap workload, component timing, and Calculon total error at `1e-9%`, and absolute memory error at `1 byte`; current results are substantially tighter. The full machine-readable report is `examples/calculon_calibration_result.json`.
 
 Implementation map:
 
 - `workload/transformer.py`: typed workload and execution facts;
 - `synthesizer/frontend/transformer.py`: canonical import and binding adapter;
 - `synthesizer/dialects/transformer/training.py`: static operation/byte derivation;
-- `synthesizer/lowering/transformer.py`: the two canonical derivation passes;
+- `synthesizer/stages/distributed/passes.py`: the ModelIR-to-DistributedTaskIR pass contract;
+- `synthesizer/stages/portable_plan/passes.py`: the DistributedTaskIR-to-PortablePlanIR pass contract;
+- `synthesizer/dialects/transformer/training_derivation.py`: pure derivation and pattern matching;
 - `analysis/cost_model.py`: peak-only and evidence-backed views;
 - `validation/calculon.py`: oracle adapter, audit, and report.
 - `validation/regression.py`: strict cross-domain baseline gate and diagnostics.

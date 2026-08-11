@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field, replace
+from dataclasses import field, replace
 from enum import Enum
 from typing import Any
 
-from blueprinting.schema.codec import content_digest, enum_type, record_type
+from typing_extensions import assert_never
+
+from blueprinting.schema.authoring import adt, record, require_adt_variant, seal_adt, variant
+from blueprinting.schema.codec import content_digest, enum_type
 from blueprinting.schema.frozen import FrozenDict, freeze
 
 from .axes import BindingAxis
 from .errors import BindingError, MissingBindingError
-from .expr import Scalar, ScalarExpr, Symbol, free_symbols
+from .semantics import EMPTY_SEMANTIC, BindingSemantic
 
 
 def _frozen_map(value: Any) -> FrozenDict:
@@ -22,15 +24,66 @@ def _frozen_map(value: Any) -> FrozenDict:
     return frozen
 
 
-def _positive(value: Scalar, field_name: str) -> None:
-    if not isinstance(value, (int, float, Symbol, ScalarExpr)):
-        raise BindingError(f"{field_name} must be numeric or symbolic")
-    if isinstance(value, bool) or (
-        isinstance(value, (int, float)) and ((isinstance(value, float) and not math.isfinite(value)) or value <= 0)
-    ):
-        raise BindingError(f"{field_name} must be finite and greater than zero")
-    if any(symbol.axis is not BindingAxis.WORKLOAD for symbol in free_symbols(value)):
-        raise BindingError(f"{field_name} may only reference workload symbols")
+def _reject_reserved_attributes(attributes: FrozenDict, reserved: frozenset[str], field_name: str) -> None:
+    def walk(value: Any, path: tuple[str, ...]) -> None:
+        if isinstance(value, FrozenDict):
+            for key, item in value.items():
+                location = path + (key,)
+                if key.lower() in reserved:
+                    raise BindingError(
+                        f"{field_name}.{'.'.join(location)} is a typed semantic field and cannot be an attribute"
+                    )
+                walk(item, location)
+        elif isinstance(value, (tuple, frozenset)):
+            for index, item in enumerate(value):
+                walk(item, path + (str(index),))
+
+    walk(attributes, ())
+
+
+_WORKLOAD_RESERVED_ATTRIBUTES = frozenset(
+    {
+        "workload_spec",
+        "phase",
+        "inference_phase",
+        "batch_size",
+        "global_batch_size",
+        "microbatch_size",
+        "micro_batches",
+        "sequence_length",
+        "prompt_tokens",
+        "generated_tokens",
+        "query_tokens",
+        "context_tokens",
+        "datatype",
+    }
+)
+_STRATEGY_RESERVED_ATTRIBUTES = frozenset(
+    {
+        "mapping_spec",
+        "inference_mapping_spec",
+        "parallelism",
+        "tensor_parallel",
+        "tensor_par",
+        "pipeline_parallel",
+        "pipeline_par",
+        "data_parallel",
+        "data_par",
+        "replicas",
+        "recompute",
+        "recompute_policy",
+        "activation_recompute",
+        "pipeline_schedule",
+        "pipeline_interleaving",
+        "optimizer_sharding",
+        "tensor_parallel_communication",
+        "tensor_par_comm_type",
+        "world_size",
+        "num_procs",
+        "fused_activation",
+        "sequence_parallel_all_gather_redo",
+    }
+)
 
 
 def _string_set(value: Any, field_name: str) -> frozenset[str]:
@@ -45,75 +98,81 @@ def _string_set(value: Any, field_name: str) -> frozenset[str]:
     return result
 
 
-@enum_type("compiler.workload_mode")
-class WorkloadMode(Enum):
-    TRAINING = "training"
-    INFERENCE = "inference"
-
-
-@enum_type("compiler.inference_phase")
+@enum_type("blueprinting.binding.inference-phase")
 class InferencePhase(Enum):
     PREFILL = "prefill"
     DECODE = "decode"
 
 
-@record_type("compiler.binding.workload")
-@dataclass(frozen=True)
+@adt(wire="blueprinting.binding.workload-mode")
+class WorkloadMode:
+    """Closed workload specialization; inference always carries its phase."""
+
+
+@variant("training")
+class TrainingWorkload(WorkloadMode):
+    pass
+
+
+@variant("inference")
+class InferenceWorkload(WorkloadMode):
+    phase: InferencePhase
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.phase, InferencePhase):
+            raise BindingError("inference workload phase must be InferencePhase")
+
+
+WorkloadModeVariant = TrainingWorkload | InferenceWorkload
+seal_adt(WorkloadMode, WorkloadModeVariant)
+
+
+@record("blueprinting.binding.workload")
 class WorkloadBinding:
-    mode: WorkloadMode
-    batch_size: Scalar = 1
-    sequence_length: Scalar = 1
-    micro_batches: Scalar = 1
-    inference_phase: InferencePhase | None = None
+    mode: WorkloadModeVariant
+    semantic: BindingSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.mode, WorkloadMode):
-            raise BindingError("mode must be a WorkloadMode")
-        _positive(self.batch_size, "batch_size")
-        _positive(self.sequence_length, "sequence_length")
-        _positive(self.micro_batches, "micro_batches")
-        if self.mode is WorkloadMode.TRAINING and self.inference_phase is not None:
-            raise BindingError("training workload cannot define an inference phase")
-        object.__setattr__(self, "attributes", _frozen_map(self.attributes))
+        require_adt_variant(self.mode, WorkloadMode, "workload mode")
+        if not isinstance(self.semantic, BindingSemantic):
+            raise BindingError("workload semantic must be a BindingSemantic")
+        attributes = _frozen_map(self.attributes)
+        _reject_reserved_attributes(attributes, _WORKLOAD_RESERVED_ATTRIBUTES, "workload.attributes")
+        object.__setattr__(self, "attributes", attributes)
+
+    @property
+    def inference_phase(self) -> InferencePhase | None:
+        match self.mode:
+            case TrainingWorkload():
+                return None
+            case InferenceWorkload(phase):
+                return phase
+        assert_never(self.mode)
 
     @property
     def fingerprint(self) -> str:
         return content_digest(self, "workload-binding")
 
 
-@record_type("compiler.binding.strategy")
-@dataclass(frozen=True)
+@record("blueprinting.binding.strategy")
 class StrategyBinding:
-    tensor_parallel: int = 1
-    pipeline_parallel: int = 1
-    data_parallel: int = 1
-    recompute_policy: str = "none"
-    pipeline_policy: str = "none"
+    semantic: BindingSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        for name in ("tensor_parallel", "pipeline_parallel", "data_parallel"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise BindingError(f"{name} must be a positive integer")
-        if not isinstance(self.recompute_policy, str) or not isinstance(self.pipeline_policy, str):
-            raise BindingError("strategy policies must be strings")
-        if not self.recompute_policy or not self.pipeline_policy:
-            raise BindingError("strategy policies must not be empty")
-        object.__setattr__(self, "attributes", _frozen_map(self.attributes))
-
-    @property
-    def world_size(self) -> int:
-        return self.tensor_parallel * self.pipeline_parallel * self.data_parallel
+        if not isinstance(self.semantic, BindingSemantic):
+            raise BindingError("strategy semantic must be a BindingSemantic")
+        attributes = _frozen_map(self.attributes)
+        _reject_reserved_attributes(attributes, _STRATEGY_RESERVED_ATTRIBUTES, "strategy.attributes")
+        object.__setattr__(self, "attributes", attributes)
 
     @property
     def fingerprint(self) -> str:
         return content_digest(self, "strategy-binding")
 
 
-@record_type("compiler.target_requirements")
-@dataclass(frozen=True)
+@record("blueprinting.binding.target-requirements")
 class TargetRequirements:
     device_count_range: tuple[int, int] = (1, 2**31 - 1)
     minimum_memory_bytes: int = 0
@@ -152,8 +211,7 @@ class TargetRequirements:
         object.__setattr__(self, "attributes", _frozen_map(self.attributes))
 
 
-@record_type("compiler.binding.target", field_aliases={"compiler_abi": "target_abi"})
-@dataclass(frozen=True)
+@record("blueprinting.binding.target")
 class TargetProfile:
     name: str
     architecture: str
@@ -207,8 +265,7 @@ class TargetProfile:
         )
 
 
-@record_type("compiler.binding.deployment")
-@dataclass(frozen=True)
+@record("blueprinting.binding.deployment")
 class DeploymentProfile:
     name: str
     device_count: int
@@ -252,8 +309,7 @@ class DeploymentProfile:
         return all(item >= requirements.minimum_memory_bytes for item in memory)
 
 
-@record_type("compiler.binding.calibration")
-@dataclass(frozen=True)
+@record("blueprinting.binding.calibration")
 class CalibrationBinding:
     evidence_revision: str
     cost_model_revision: str
@@ -270,8 +326,7 @@ class CalibrationBinding:
 BindingValue = WorkloadBinding | StrategyBinding | TargetProfile | DeploymentProfile | CalibrationBinding
 
 
-@record_type("compiler.binding_set")
-@dataclass(frozen=True)
+@record("blueprinting.binding.set")
 class BindingSet:
     workload: WorkloadBinding | None = None
     strategy: StrategyBinding | None = None
@@ -293,7 +348,17 @@ class BindingSet:
                 raise BindingError(f"{name} binding must be {expected_type.__name__}")
 
     def get(self, axis: BindingAxis) -> BindingValue | None:
-        return getattr(self, axis.value)
+        if axis is BindingAxis.WORKLOAD:
+            return self.workload
+        if axis is BindingAxis.STRATEGY:
+            return self.strategy
+        if axis is BindingAxis.TARGET:
+            return self.target
+        if axis is BindingAxis.DEPLOYMENT:
+            return self.deployment
+        if axis is BindingAxis.CALIBRATION:
+            return self.calibration
+        raise TypeError(f"unsupported binding axis: {axis!r}")
 
     def has(self, axis: BindingAxis) -> bool:
         return self.get(axis) is not None

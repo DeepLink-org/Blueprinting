@@ -74,7 +74,7 @@ ConcretePlanIR + target plugin
 
 Simulation 是主要 exploration path；program emission 是可选能力，可以在 hardware/ABI 成熟后再出现。当二者都存在时，共享 command ID、dependency、queue、synchronization 与 buffer，使 measurement 能验证实际被 simulation 的 plan。
 
-当前 v1 schema 只实现通用 device/queue/buffer/command 骨架，尚无 production producer、route/resource-occupancy semantic 或 typed target extension。因此它是 **experimental contract**，不是已经冻结的跨 target ABI。
+当前 v1 schema 已包含通用 device/queue/buffer/command envelope、typed queue-order/slot-dataflow extension、target verifier 和两个 deterministic virtual reference binder；但仍无 production target plugin、resource scheduler、occupancy model 或硬件 legality proof。因此它是 **experimental contract**，不是已经冻结的跨 target ABI。
 
 ## Timeline 是阶段性产品
 

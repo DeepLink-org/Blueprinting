@@ -74,7 +74,7 @@ ConcretePlanIR + target plugin
 
 Simulation is the primary exploration path. Program emission is optional and can arrive after hardware/ABI maturity. When both exist, they share command IDs, dependencies, queues, synchronization, and buffers, so measurements can validate the plan that was actually simulated.
 
-The current v1 schema implements only a generic device/queue/buffer/command scaffold. It has no production producer, route or resource-occupancy semantics, or typed target extension. It is therefore an **experimental contract**, not a frozen cross-target ABI.
+The current v1 schema includes the common device/queue/buffer/command envelope, typed queue-order and slot/dataflow extensions, target verifiers, and two deterministic virtual reference binders. It still has no production target plugin, resource scheduler, occupancy model, or hardware-legality proof. It is therefore an **experimental contract**, not a frozen cross-target ABI.
 
 ## Timeline as a staged product
 

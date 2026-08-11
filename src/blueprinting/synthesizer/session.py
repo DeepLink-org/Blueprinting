@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import field, replace
 from typing import Any
 
-from blueprinting.schema.codec import content_digest, record_type
+from blueprinting.schema.authoring import record
+from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict, freeze
 
 from .axes import BindingAxis
@@ -13,8 +14,7 @@ from .bindings import BindingSet, BindingValue, TargetRequirements
 from .errors import BindingError
 
 
-@record_type("compiler.session")
-@dataclass(frozen=True)
+@record("blueprinting.synthesis.session")
 class SynthesisSession:
     bindings: BindingSet = field(default_factory=BindingSet)
     target_requirements: TargetRequirements = field(default_factory=TargetRequirements)
@@ -64,4 +64,4 @@ class SynthesisSession:
     def fingerprint(self) -> str:
         # The digest domain is a stable wire identity retained across the
         # Python package and public class rename.
-        return content_digest(self, "compilation-session")
+        return content_digest(self, "synthesis-session")

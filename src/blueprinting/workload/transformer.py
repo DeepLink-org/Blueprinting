@@ -17,10 +17,10 @@ from blueprinting.schema.codec import record_type
 def _positive_integer(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer")
-    return value
+    return int(value)
 
 
-@record_type("compiler.transformer.model_spec.v1")
+@record_type("blueprinting.workload.transformer-model")
 @dataclass(frozen=True)
 class TransformerModelSpec:
     """Target-independent decoder-only Transformer dimensions."""
@@ -61,7 +61,7 @@ class TransformerModelSpec:
         )
 
 
-@record_type("blueprinting.workload.transformer-training.v1")
+@record_type("blueprinting.workload.transformer-training")
 @dataclass(frozen=True)
 class TransformerTrainingWorkloadSpec:
     """Training scenario facts independent of parallel mapping and hardware."""

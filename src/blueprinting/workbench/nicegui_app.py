@@ -27,7 +27,7 @@ def run_workbench(
     show: bool = True,
     reload: bool = False,
 ) -> None:
-    """Run the primary Blueprinting UI; the legacy Streamlit app stays separate."""
+    """Run the Blueprinting NiceGUI workbench."""
 
     ui.run(
         workbench_root,

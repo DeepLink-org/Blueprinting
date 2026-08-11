@@ -57,7 +57,7 @@ Frontend 不读取 peak throughput、kernel catalog、physical topology 或 runt
 
 ## Analysis 与 Transformation 基础设施
 
-`PassManager` 执行 declarative `PassContract`。每个 contract 声明 input/output schema、required binding/analysis、preserved/produced analysis、mutation model、verification policy 和 determinism。
+`PassManager` 执行 declarative `PassContract`。每个 contract 声明 input/output schema、required binding/analysis、preserved/produced analysis、mutation model、verification policy、determinism，以及带可执行 predicate 的 typed lineage rule。跨 boundary 验证属于 commit gate；deterministic replay 在 CI 启用，也可以在 runtime 显式开启。
 
 `AnalysisStore` 通过 representation digest、analysis key 和 session fingerprint 进行 content addressing。Checkpoint observer 在 analysis 原子发布前检查 verified immutable output。详见[分析与变换基础设施](passes/index.md)。
 
@@ -94,7 +94,7 @@ Scheduler 消费 target-legal task、deployment resource 和 cost view，联合�
 
 Memory planner 必须分析合法 overlap 下的 lifetime，而不只是 aggregate peak-memory 公式。输出必须通过 DAG、queue、sync、buffer、capacity 和 target-legality verifier，才能成为 `ConcretePlanIR`。
 
-当前只有 queue-oriented experimental schema 与 structural verifier；typed target extension、production target binding 和 scheduling 尚未实现。
+Experimental contract 现在包含互斥的 queue-order 与 slot/dataflow typed extension、target verifier 和 deterministic virtual reference binder。它们用于验证 common envelope 能同时承载 queue-centric 与 queue-free semantic；production target plugin、resource scheduling、occupancy 和硬件 legality 仍未实现。
 
 ## Product、Simulation 与 Emission
 
@@ -143,16 +143,16 @@ schema ──► workload ──► mapping
 | Logical strategy 与显式 deployment mapping | `mapping/` | Implemented Transformer/network slice |
 | Chip、memory、interconnect 与聚合 system profile | `system/` | Implemented limited profile adapter |
 | ID、expression、lineage | `synthesizer/{ids,expr}.py` | Implemented |
-| Canonical 形式化表示（`*IR`） | `synthesizer/ir/` | Implemented contracts |
+| Canonical 形式化表示（`*IR`） | `synthesizer/stages/*/ir.py` | Implemented contracts |
 | Binding 与 session | `synthesizer/{bindings,session}.py` | Implemented |
 | Analysis/transformation transaction | `synthesizer/passes/base.py` | Implemented |
 | Workload-to-IR/session frontend | `synthesizer/frontend/` | Implemented Transformer slice |
 | Transformer exact-work dialect | `synthesizer/dialects/transformer/` | Implemented training/inference slice |
-| Transformer derivation pass | `synthesizer/lowering/` | Implemented through portable plan |
+| Stage-owned derivation pass | `synthesizer/stages/*/passes.py` | Implemented through portable plan |
 | 当前 system cost adapter | `analysis/cost_model.py`、`analysis/cost/` | Implemented slice |
 | Framework-neutral orchestration 与 report | `application/` | Implemented static analysis slice |
 | Calculon/Vidur comparison 与 regression gate | `validation/` | Implemented offline gate |
 | Optional external performance bundle | `data/evidence/` | 显式加载；从 base package 排除 |
 | Architecture model/search、evidence service、simulation、emission | Accepted boundary | Planned |
 
-`validation/legacy/` 保留 Calculon-only 的历史 SeqSel 图表复现。它们是 compatibility check，不构成 canonical Blueprinting derivation 正确性的证据；严格 gate 位于 `validation/calculon.py`、`validation/vidur.py` 与 `validation/regression.py`。
+`validation/calculon.py` 与 `validation/vidur.py` 把外部 reference implementation 隔离在推导后的 comparison boundary；`validation/regression.py` 冻结其严格 drift gate。它们属于 comparison check，不能证明 canonical derivation 天然正确。

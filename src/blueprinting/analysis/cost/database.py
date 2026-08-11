@@ -17,6 +17,7 @@ from .protocol import (
     CostQuery,
     CostSubject,
     CostSupport,
+    CostSupportVariant,
     EstimateMatch,
     EstimateMethod,
     EstimateUncertainty,
@@ -26,7 +27,7 @@ from .protocol import (
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@record_type("compiler.analysis.cost.provenance.v1")
+@record_type("blueprinting.analysis.cost.provenance")
 @dataclass(frozen=True)
 class EvidenceProvenance:
     source: str
@@ -46,7 +47,7 @@ class EvidenceProvenance:
         object.__setattr__(self, "metadata", FrozenDict(self.metadata))
 
 
-@record_type("compiler.analysis.cost.performance_record.v1")
+@record_type("blueprinting.analysis.cost.performance-record")
 @dataclass(frozen=True)
 class PerformanceRecord:
     record_id: str
@@ -82,7 +83,7 @@ class PerformanceRecord:
             raise ValueError(f"record selector duplicates core identity: {', '.join(sorted(duplicate_identity))}")
 
 
-@record_type("compiler.analysis.cost.performance_database.v1")
+@record_type("blueprinting.analysis.cost.performance-database")
 @dataclass(frozen=True)
 class PerformanceDatabase:
     name: str
@@ -140,7 +141,13 @@ class PerformanceDatabaseProvider(CostProvider):
         self._database = database
         self._name = f"performance-db:{database.name}"
         self._revision = database.revision
-        index = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        index: defaultdict[
+            tuple[CostSubject, str, str, str],
+            defaultdict[
+                tuple[str, ...],
+                defaultdict[tuple[tuple[type[object], object], ...], list[PerformanceRecord]],
+            ],
+        ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for record in database.records:
             core = (record.subject, record.operation, record.hardware, record.datatype)
             selector_keys = tuple(record.selector)
@@ -207,7 +214,7 @@ class PerformanceDatabaseProvider(CostProvider):
             )
         return tuple(next(iter(groups.values())))
 
-    def supports(self, query: CostQuery) -> CostSupport:
+    def supports(self, query: CostQuery) -> CostSupportVariant:
         try:
             records = self._selected_records(query)
         except InvalidCostEvidenceError as error:
@@ -226,7 +233,7 @@ class PerformanceDatabaseProvider(CostProvider):
         provenance = records[0].provenance
         selector = records[0].selector
         uncovered = tuple(sorted(set(query.match_context) - set(selector)))
-        assumptions = ()
+        assumptions: tuple[str, ...] = ()
         if uncovered:
             assumptions = (
                 "evidence matches an exact declared selector; dimensions not declared by the source are not "

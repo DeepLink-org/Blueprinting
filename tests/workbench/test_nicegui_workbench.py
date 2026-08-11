@@ -91,6 +91,56 @@ async def test_nicegui_analysis_reuses_one_result_across_views(
         await user.should_see("模型语义", retries=100)
         await user.should_see("分布式任务", retries=100)
         await user.should_see("可移植计划", retries=100)
+        await user.should_see("IR Explorer", retries=100)
+        await user.should_see("Canonical IR 表达", retries=100)
+        await user.should_see("Short · 语义骨架", retries=100)
+        await user.should_see("Detailed · typed entities", retries=100)
+        await user.should_see(marker="ir-short-expression", retries=100)
+        user.find(marker="ir-expression-detailed-tab").click()
+        await user.should_see(marker="ir-detailed-expression", retries=100)
+        await user.should_see("本层回答", retries=100)
+        await user.should_see("本次结果", retries=100)
+        await user.should_see("边界与下一步", retries=100)
+        await user.should_see("模型数据流结构", retries=100)
+        await user.should_see("列表示 phase，行固定为 subsystem × entity kind", retries=100)
+        await user.should_see("这一步做了什么", retries=100)
+        await user.should_see("Lowering 形态", retries=100)
+        await user.should_see("查看 canonical entity 映射与 pass contract", retries=100)
+        await user.should_see(marker="ir-layer-graph", retries=100)
+        await user.should_see("Lowering 对应关系", retries=100)
+        await user.should_see("Verified lowering 表达", retries=100)
+        await user.should_see("Short · pass contract", retries=100)
+        await user.should_see("Detailed · rules & evidence", retries=100)
+        await user.should_see(marker="lowering-short-expression", retries=100)
+        user.find(marker="lowering-expression-detailed-tab").click()
+        await user.should_see(marker="lowering-detailed-expression", retries=100)
+        await user.should_see("内部 name、参数和括号由连续的语义 span 分块", retries=100)
+        await user.should_see(marker="ir-boundary-table", retries=100)
+        lowering_grid = next(iter(user.find(marker="ir-boundary-table").elements))
+        lowering_options = lowering_grid.options
+        assert lowering_options["enableCellSpan"]
+        assert [column["headerName"] for column in lowering_options["columnDefs"]] == ["Source", "Pass", "Target"]
+        assert lowering_options["columnDefs"][0]["spanRows"]
+        assert lowering_options["columnDefs"][1]["spanRows"]
+        assert "spanRows" not in lowering_options["columnDefs"][2]
+        assert "source_type" not in lowering_options["columnDefs"][0][":cellRenderer"]
+        assert "token.name + '=' + token.value" in lowering_options["columnDefs"][0][":cellRenderer"]
+        assert "expression.appendChild(component)" in lowering_options["columnDefs"][0][":cellRenderer"]
+        assert "token.category || 'property'" in lowering_options["columnDefs"][0][":cellRenderer"]
+        assert "pass_expression_parameters" in lowering_options["columnDefs"][1][":cellRenderer"]
+        assert "target_type" not in lowering_options["columnDefs"][2][":cellRenderer"]
+        await user.should_see(marker="download-derivation-bundle", retries=100)
+        await user.should_see(marker="upload-derivation-bundle", retries=100)
+        concrete_stage = next(iter(user.find(marker="ir-stage-concrete").elements))
+        machine_stage = next(iter(user.find(marker="ir-stage-machine").elements))
+        assert concrete_stage._props["disable"]
+        assert machine_stage._props["disable"]
+
+        user.find(marker="ir-stage-distributed").click()
+        await user.should_see("逻辑任务结构", retries=100)
+
+        user.find(marker="ir-stage-portable").click()
+        await user.should_see(marker="ir-overlay-toggle", retries=100)
 
 
 async def test_nicegui_marks_results_stale_after_configuration_change(
@@ -185,6 +235,21 @@ def test_sidebar_mode_switch_uses_a_non_scrolling_two_by_two_grid() -> None:
     assert "position: static" in WORKBENCH_CSS
     assert "q-tabs__arrow" not in WORKBENCH_CSS
     assert "q-tab__indicator" not in WORKBENCH_CSS
+
+
+def test_lowering_expressions_use_nested_semantic_highlights() -> None:
+    assert ".bp-expression-stack {\n  display: block;" in WORKBENCH_CSS
+    assert ".bp-expression-stack {\n  display: flex;" not in WORKBENCH_CSS
+    assert ".bp-expression {" in WORKBENCH_CSS
+    assert "display: inline" in WORKBENCH_CSS
+    assert "box-decoration-break: clone" in WORKBENCH_CSS
+    assert ".bp-expression-component--name" in WORKBENCH_CSS
+    assert ".bp-expression-component--structure" in WORKBENCH_CSS
+    assert ".bp-expression-component--type" in WORKBENCH_CSS
+    assert ".bp-expression-component--topology" in WORKBENCH_CSS
+    assert ".bp-expression-component--workload" in WORKBENCH_CSS
+    assert ".bp-expression-component--mapping" in WORKBENCH_CSS
+    assert ".bp-pass-cell" in WORKBENCH_CSS
 
 
 def test_workbench_cli_accepts_server_overrides() -> None:

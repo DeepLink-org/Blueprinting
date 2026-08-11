@@ -23,28 +23,15 @@ T = TypeVar("T")
 
 _RECORD_TYPES: dict[str, type[Any]] = {}
 _RECORD_TAGS: dict[type[Any], str] = {}
-_RECORD_FIELD_ALIASES: dict[str, dict[str, str]] = {}
 _ENUM_TYPES: dict[str, type[Enum]] = {}
 _ENUM_TAGS: dict[type[Enum], str] = {}
 
 
-def record_type(
-    tag: str,
-    *,
-    field_aliases: Mapping[str, str] | None = None,
-) -> Callable[[type[T]], type[T]]:
-    """Register a frozen dataclass and optional legacy field aliases."""
+def record_type(tag: str) -> Callable[[type[T]], type[T]]:
+    """Register a frozen dataclass under one canonical semantic identity."""
 
     if not isinstance(tag, str) or not tag:
         raise TypeError("canonical record tag must be a non-empty string")
-    aliases = dict(field_aliases or {})
-    if any(
-        not isinstance(legacy, str) or not legacy or not isinstance(current, str) or not current or legacy == current
-        for legacy, current in aliases.items()
-    ):
-        raise TypeError("canonical field aliases must map distinct non-empty strings")
-    if len(set(aliases.values())) != len(aliases):
-        raise TypeError("canonical field aliases must have unique destinations")
 
     def decorate(cls: type[T]) -> type[T]:
         if not is_dataclass(cls):
@@ -52,24 +39,11 @@ def record_type(
         parameters = getattr(cls, "__dataclass_params__", None)
         if parameters is None or not parameters.frozen:
             raise TypeError(f"canonical record {cls.__name__} must be frozen")
-        init_fields = {item.name for item in fields(cls) if item.init}
-        unknown_destinations = set(aliases.values()) - init_fields
-        if unknown_destinations:
-            rendered = ", ".join(sorted(unknown_destinations))
-            raise TypeError(f"canonical field aliases target unknown fields: {rendered}")
-        conflicting_sources = set(aliases) & init_fields
-        if conflicting_sources:
-            rendered = ", ".join(sorted(conflicting_sources))
-            raise TypeError(f"canonical field aliases shadow current fields: {rendered}")
         previous = _RECORD_TYPES.get(tag)
         if previous is not None and previous is not cls:
             raise RuntimeError(f"canonical record tag {tag!r} is already registered")
-        previous_aliases = _RECORD_FIELD_ALIASES.get(tag)
-        if previous_aliases is not None and previous_aliases != aliases:
-            raise RuntimeError(f"canonical record tag {tag!r} has conflicting field aliases")
         _RECORD_TYPES[tag] = cls
         _RECORD_TAGS[cls] = tag
-        _RECORD_FIELD_ALIASES[tag] = aliases
         return cls
 
     return decorate
@@ -87,8 +61,8 @@ def enum_type(tag: str) -> Callable[[type[T]], type[T]]:
         previous = _ENUM_TYPES.get(tag)
         if previous is not None and previous is not cls:
             raise RuntimeError(f"canonical enum tag {tag!r} is already registered")
-        _ENUM_TYPES[tag] = cls  # type: ignore[assignment]
-        _ENUM_TAGS[cls] = tag  # type: ignore[index]
+        _ENUM_TYPES[tag] = cls
+        _ENUM_TAGS[cls] = tag
         return cls
 
     return decorate
@@ -210,15 +184,11 @@ def _decode(value: Any) -> Any:
         if not isinstance(payload, dict):
             raise SerializationError(f"fields for canonical record {tag!r} must be an object")
         try:
-            aliases = _RECORD_FIELD_ALIASES.get(tag, {})
-            decoded = {}
+            decoded: dict[str, Any] = {}
             for name, item in payload.items():
-                current_name = aliases.get(name, name)
-                if current_name in decoded:
-                    raise SerializationError(
-                        f"canonical record {tag!r} supplies both a current field and its legacy alias: {current_name!r}"
-                    )
-                decoded[current_name] = _decode(item)
+                if not isinstance(name, str):
+                    raise SerializationError(f"field names for canonical record {tag!r} must be strings")
+                decoded[name] = _decode(item)
             return record_cls(**decoded)
         except SerializationError:
             raise
@@ -236,6 +206,12 @@ def canonical_dumps(value: Any) -> str:
 
 def canonical_loads(payload: str) -> Any:
     """Deserialize canonical JSON using the closed-world type registry."""
+
+    return canonical_decode(canonical_parse(payload))
+
+
+def canonical_parse(payload: str) -> Any:
+    """Parse canonical JSON without constructing registered Python records."""
 
     def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result = {}
@@ -258,7 +234,19 @@ def canonical_loads(payload: str) -> Any:
         raise
     except (TypeError, ValueError) as error:
         raise SerializationError("invalid canonical JSON") from error
+    return raw
+
+
+def canonical_decode(raw: Any) -> Any:
+    """Decode an already duplicate-checked canonical JSON tree."""
+
     return _decode(raw)
+
+
+def canonical_dump_raw(raw: Any) -> str:
+    """Serialize a raw canonical JSON tree deterministically."""
+
+    return json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def content_digest(value: Any, domain: str = "blueprinting") -> str:
@@ -268,4 +256,22 @@ def content_digest(value: Any, domain: str = "blueprinting") -> str:
     hasher.update(domain.encode("utf-8"))
     hasher.update(b"\x00")
     hasher.update(canonical_dumps(value).encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def canonical_type_manifest() -> tuple[tuple[str, str, type[Any]], ...]:
+    """Return deterministic record/enum registrations for contract compilation."""
+
+    records = tuple(("record", tag, value) for tag, value in _RECORD_TYPES.items())
+    enums = tuple(("enum", tag, value) for tag, value in _ENUM_TYPES.items())
+    return tuple(sorted(records + enums, key=lambda item: (item[0], item[1])))
+
+
+def raw_content_digest(raw: Any, domain: str = "blueprinting") -> str:
+    """Digest an already parsed canonical node without constructing its Python record."""
+
+    hasher = hashlib.blake2b(digest_size=20)
+    hasher.update(domain.encode("utf-8"))
+    hasher.update(b"\x00")
+    hasher.update(canonical_dump_raw(raw).encode("utf-8"))
     return hasher.hexdigest()

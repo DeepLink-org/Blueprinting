@@ -77,15 +77,15 @@ For development and documentation tooling:
 pip install -e ".[dev,docs]"
 ```
 
+Static source analysis is an independent optional layer: `pip install -e ".[typing]"`. Runtime type-contract checks do not require mypy.
+
 ## Build the current Transformer workload blueprint
 
 ```python
-from blueprinting.synthesizer.lowering import (
-    DistributeTransformerTrainingPass,
-    PlanTransformerTrainingPass,
-)
 from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerTrainingPass
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerTrainingPass
 from blueprinting.mapping import TransformerTrainingMappingSpec
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
@@ -101,11 +101,11 @@ result = PassManager().run(
     ),
     source,
     session=synthesis_session_for(model, workload, mapping),
-)
+).or_raise()
 
 portable_plan = result.ir
 for checkpoint in result.checkpoints:
-    print(checkpoint.pass_name, checkpoint.ir.digest)
+    print(checkpoint.record.pass_name, checkpoint.ir.digest)
 ```
 
 The adapter reads the retained model/execution JSON presets in `data/`, then separates workload facts from the
@@ -139,14 +139,8 @@ TP/PP/DP strategy exploration, and a read-only performance-evidence lab. The evi
 Vidur Phi-2/A100 records and compares exact GEMM samples with the analytical roofline on identical workload facts.
 Analysis runs outside the UI event loop, and failed candidates remain visible as structured diagnostics.
 
-The existing Calculon Streamlit tools remain isolated as an optional legacy interface. Floating-point analysis is available in the primary NiceGUI workbench:
-
-```bash
-uv sync --extra legacy-ui
-uv run streamlit run streamlit_app.py
-```
-
 Calculon remains an adjacent calibration utility and does not participate in the Blueprinting product analysis path.
+Floating-point analysis is available directly in the primary NiceGUI workbench.
 
 ## Repository layout
 
@@ -159,7 +153,7 @@ src/blueprinting/synthesizer/  # canonical IR, exact-work dialects, and verified
 src/blueprinting/analysis/     # evidence protocols, cost resolution, and projections
 src/blueprinting/application/  # framework-neutral analysis services and reports
 src/blueprinting/validation/   # external baselines and strict regression gates
-src/blueprinting/workbench/    # NiceGUI workbench and legacy presentation adapters
+src/blueprinting/workbench/    # NiceGUI workbench and presentation adapters
 
 data/evidence/                 # optional external evidence, excluded from the base package
 tests/                         # domain, derivation, application, and regression contracts
@@ -176,8 +170,13 @@ explicit system, deployment mapping, and evidence snapshot. External oracles rem
 pytest
 ruff check src/ tests/ examples/calculon_calibration.py
 ruff format --check src/ tests/ examples/calculon_calibration.py
+uv run python scripts/check_type_contracts.py
+# Optional static layer:
+uv sync --locked --group typing
+uv run mypy src/blueprinting
 uv run python scripts/check_docs_i18n.py
 uv run mkdocs build --strict
+uv run python scripts/check_rendered_code_docs.py
 ```
 
 ## License

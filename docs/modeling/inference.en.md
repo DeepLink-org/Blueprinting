@@ -102,7 +102,7 @@ case = VidurExperimentCase(
 report = run_vidur_experiment((case,), baseline)
 ```
 
-The API boundary is intentional: an admissible internal `InferenceCostProvider` exposes `resolve()`, while an external `InferenceBaseline` exposes `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the estimated latency.
+The API boundary is intentional: production evidence enters through `CostResolver.resolve()`, while an external `InferenceBaseline` exposes only `lookup()`. `run_vidur_experiment()` completes lowering and both Blueprinting cost modes before calling `lookup()`. Vidur therefore cannot alter operations, bytes, dependencies, the plan digest, or the estimated latency.
 
 Comparison is over an explicit semantic intersection. The report contains matched component count, coverage, Blueprinting's comparable subtotal, Vidur's comparable subtotal, excluded Blueprinting work, signed comparable-subtotal error, and non-cancelling component MAPE/max error. Missing records remain `not-covered`; they are never converted to zero. This matters because Vidur's public block aggregation has one `add_time`, whereas Blueprinting deliberately keeps both residual additions explicit, and the current CSV adapter does not yet ingest collective profiles.
 

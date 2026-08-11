@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 
-from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.schema.authoring import record
+from blueprinting.schema.codec import enum_type
 
 # Codec tags retain their legacy namespace as stable serialized identities.
 
 
-@enum_type("compiler.analysis.engine_kind")
+@enum_type("blueprinting.analysis.transformer.engine-kind")
 class EngineKind(Enum):
     MATRIX = "matrix"
     VECTOR = "vector"
     COLLECTIVE = "collective"
 
 
-@record_type("compiler.analysis.phase_work.v1")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.transformer.phase-work")
 class PhaseWork:
     """Exact work for one invocation, before target binding."""
 

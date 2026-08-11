@@ -19,25 +19,31 @@ from blueprinting.analysis import CalibrationMode, CostQueryContext, CostResolve
 from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
 from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict, freeze, thaw
+from blueprinting.synthesizer.dialects.transformer import TransformerTrainingPlanTaskSemantic
 from blueprinting.synthesizer.errors import (
     IRVerificationError,
     PassExecutionError,
     SynthesisError,
 )
 from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
-from blueprinting.synthesizer.ir import PortablePlanIR
-from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
 from blueprinting.synthesizer.passes import AnalysisStore, PassManager, PassPipeline
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerTrainingPass
+from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR, require_concrete_quantity
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerTrainingPass
 from blueprinting.system import SystemProfile
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
+from .derivation import (
+    DerivationTrace,
+    build_derivation_trace,
+    portable_cost_overlay,
+    with_overlays,
+)
 from .reporting import AnalysisDiagnostic, DiagnosticLevel, IRStageReport, TaskReport, stage_report
 
 LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from blueprinting.analysis import InferenceCostProvider
-
     from .inference import InferenceAnalysisDraft, InferenceAnalysisOutcome, InferenceAnalysisService
 
 
@@ -107,13 +113,13 @@ class AnalysisDraft:
                     "seed": self.seed,
                 }
             ),
-            "blueprinting-analysis-request-v1",
+            "blueprinting-analysis-request-v0",
         )
 
     def normalized_execution(self) -> dict[str, Any]:
         """Make world size a derived fact instead of a second source of truth."""
 
-        data = thaw(self.execution_data)
+        data = self.execution_data.to_dict()
         data.pop("num_procs", None)
         mapping = TransformerTrainingMappingSpec.from_mapping(data)
         data["num_procs"] = mapping.world_size
@@ -163,6 +169,7 @@ class AnalysisReport:
     workload: FrozenDict
     evidence: FrozenDict
     configuration: FrozenDict
+    derivation_trace: DerivationTrace
     stages: tuple[IRStageReport, ...]
     tasks: tuple[TaskReport, ...]
     limitations: tuple[str, ...]
@@ -219,7 +226,7 @@ class SweepRequest:
                     "data_parallel": self.data_parallel,
                 }
             ),
-            "blueprinting-sweep-request-v1",
+            "blueprinting-sweep-request-v0",
         )
 
 
@@ -262,7 +269,6 @@ class BlueprintingService:
         self,
         analyses: AnalysisStore | None = None,
         *,
-        inference_cost_provider: InferenceCostProvider | None = None,
         inference_cost_resolver: CostResolver | None = None,
         inference_cost_context: CostQueryContext = CostQueryContext(),
     ) -> None:
@@ -275,7 +281,6 @@ class BlueprintingService:
         )
         self._inference: InferenceAnalysisService = InferenceAnalysisService(
             analyses,
-            cost_provider=inference_cost_provider,
             cost_resolver=inference_cost_resolver,
             cost_context=inference_cost_context,
         )
@@ -358,7 +363,7 @@ class BlueprintingService:
         source = build_transformer_model_ir(model, datatype=workload_spec.datatype)
         frontend_duration = time.perf_counter_ns() - frontend_started
         session = replace(synthesis_session_for(model, workload_spec, mapping), seed=draft.seed)
-        pipeline = self._manager.run(self._pipeline, source, session=session)
+        pipeline = self._manager.require_run(self._pipeline, source, session=session)
         plan = pipeline.ir
         if not isinstance(plan, PortablePlanIR):
             raise TypeError(f"analysis pipeline returned {type(plan).__name__}, expected PortablePlanIR")
@@ -415,21 +420,48 @@ class BlueprintingService:
                 task_id=str(task.id),
                 operation=str(task.operation),
                 kind=task.kind.value,
-                phase=str(task.workload.attributes.get("phase", "unknown")),
-                engine=str(task.workload.attributes.get("engine", "unknown")),
-                source_layer=str(task.workload.attributes.get("source_layer", "")),
+                phase=(
+                    task.semantic.phase.value
+                    if isinstance(task.semantic, TransformerTrainingPlanTaskSemantic)
+                    else "unknown"
+                ),
+                engine=(
+                    task.semantic.engine.value
+                    if isinstance(task.semantic, TransformerTrainingPlanTaskSemantic)
+                    else "unknown"
+                ),
+                source_layer=(
+                    task.semantic.source_layer if isinstance(task.semantic, TransformerTrainingPlanTaskSemantic) else ""
+                ),
                 dependencies=tuple(str(item) for item in task.dependencies),
                 concurrency_group=task.concurrency_group or "",
-                operations=task.workload.operations,
-                read_bytes=task.workload.read_bytes,
-                write_bytes=task.workload.write_bytes,
-                message_bytes=task.workload.message_bytes,
+                operations=require_concrete_quantity(task.workload.operations, f"task {task.id} operations"),
+                read_bytes=require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes"),
+                write_bytes=require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes"),
+                message_bytes=require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes"),
                 compute_seconds=task_estimate.compute_seconds,
                 memory_seconds=task_estimate.memory_seconds,
                 network_seconds=task_estimate.network_seconds,
                 total_seconds=task_estimate.total_seconds,
             )
             for task, task_estimate in zip(plan.tasks, estimate.block.tasks)
+        )
+        derivation_trace = build_derivation_trace(
+            source,
+            self._pipeline,
+            pipeline,
+            request_digest=draft.fingerprint,
+            session_fingerprint=session.fingerprint,
+            source_duration_ns=frontend_duration,
+        )
+        derivation_trace = with_overlays(
+            derivation_trace,
+            portable_cost_overlay(
+                plan.digest,
+                tasks,
+                provider=f"cost-model:{draft.calibration_mode.value}",
+                revision=hardware.evidence_revision,
+            ),
         )
         workload = FrozenDict(
             {
@@ -483,7 +515,7 @@ class BlueprintingService:
             }
         )
         report = AnalysisReport(
-            schema="blueprinting.analysis-report.v1",
+            schema="blueprinting.analysis-report.v0",
             request_digest=draft.fingerprint,
             session_fingerprint=session.fingerprint,
             plan_digest=plan.digest,
@@ -503,6 +535,7 @@ class BlueprintingService:
             workload=workload,
             evidence=evidence,
             configuration=configuration,
+            derivation_trace=derivation_trace,
             stages=tuple(stages),
             tasks=tasks,
             limitations=(
@@ -560,20 +593,29 @@ class BlueprintingService:
                 on_progress(index, len(candidates))
 
         feasible = tuple(case for case in cases if case.status == "success" and case.feasible)
+
+        def dominates(other: SweepCase, case: SweepCase) -> bool:
+            if (
+                other.total_seconds is None
+                or other.memory_bytes is None
+                or case.total_seconds is None
+                or case.memory_bytes is None
+            ):
+                return False
+            return (
+                other.total_seconds <= case.total_seconds
+                and other.memory_bytes <= case.memory_bytes
+                and (other.total_seconds < case.total_seconds or other.memory_bytes < case.memory_bytes)
+            )
+
         pareto_digests = {
             case.request_digest
             for case in feasible
-            if not any(
-                other.request_digest != case.request_digest
-                and other.total_seconds <= case.total_seconds
-                and other.memory_bytes <= case.memory_bytes
-                and (other.total_seconds < case.total_seconds or other.memory_bytes < case.memory_bytes)
-                for other in feasible
-            )
+            if not any(other.request_digest != case.request_digest and dominates(other, case) for other in feasible)
         }
         cases = [replace(case, pareto=case.request_digest in pareto_digests) for case in cases]
         return SweepReport(
-            schema="blueprinting.strategy-sweep.v1",
+            schema="blueprinting.strategy-sweep.v0",
             request_digest=request.fingerprint,
             cases=tuple(cases),
         )

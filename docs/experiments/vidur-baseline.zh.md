@@ -17,7 +17,7 @@ Transformer semantics + mapping + phase context
   -> coverage and error report
 ```
 
-`InferenceCostProvider.resolve()` 是 Blueprinting 自有性能数据库或硬件仿真器的扩展点；`InferenceBaseline.lookup()` 是外部 oracle 接口。`VidurProfileBaseline` 只实现 `lookup()`，因此不能被意外传入 `estimate_inference_phase()`。
+`CostResolver.resolve()` 是 Blueprinting 自有性能数据库或硬件仿真器的唯一扩展点；`InferenceBaseline.lookup()` 是外部 oracle 接口。`VidurProfileBaseline` 只实现 `lookup()`，因此不能被意外传入 `estimate_inference_phase()`。
 
 独立的 `VidurProfileImporter` 可以显式把用户提供的 profile row 转换成 `PerformanceDatabase`。这是另一条 workflow，也是一项明确 policy decision：只有用户刻意把该 database provider 安装进 `CostResolver`，它才会影响 costing。本实验仍只使用 `VidurProfileBaseline`，因此 oracle isolation 不变。
 

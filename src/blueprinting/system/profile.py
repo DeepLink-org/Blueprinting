@@ -13,7 +13,7 @@ from .chip import EfficiencyCurve, EfficiencyPoint, MemoryProfile, ProcessorProf
 from .interconnect import NetworkOperationProfile, NetworkProfile
 
 
-@record_type("compiler.analysis.hardware_profile.v1")
+@record_type("blueprinting.system.profile")
 @dataclass(frozen=True)
 class SystemProfile:
     """One accelerator system used for analytical evaluation.

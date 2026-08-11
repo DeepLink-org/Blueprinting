@@ -8,21 +8,18 @@ baselines without allowing those baselines to change workload semantics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from blueprinting.mapping import TransformerInferenceMappingSpec
-from blueprinting.schema.codec import record_type
+from blueprinting.schema.authoring import record
 from blueprinting.workload import TransformerModelSpec
 
 from ...bindings import InferencePhase
-from ...ir import CollectiveKind
+from ...stages.distributed.ir import CollectiveKind
 from .common import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@record_type("blueprinting.transformer.inference-invocation.v2")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.inference-invocation")
 class InferenceInvocation:
     """One target-neutral component invocation for a single decoder block."""
 
@@ -52,8 +49,7 @@ class InferenceInvocation:
             raise ValueError("local invocations cannot carry collective metadata")
 
 
-@record_type("compiler.analysis.inference_block_memory_facts.v1")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.inference-block-memory")
 class InferenceBlockMemoryFacts:
     """Per-rank storage for one tensor-parallel block shard and phase."""
 

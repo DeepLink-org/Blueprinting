@@ -10,8 +10,11 @@ import pytest
 import blueprinting.analysis as analysis
 import blueprinting.mapping as mapping
 import blueprinting.schema as schema
+import blueprinting.schema.authoring as schema_authoring
 import blueprinting.synthesizer as synthesizer
 import blueprinting.synthesizer.frontend as frontend
+import blueprinting.synthesizer.passes as passes
+import blueprinting.synthesizer.passes.authoring as pass_authoring
 import blueprinting.system as system
 import blueprinting.workload as workload
 
@@ -66,6 +69,15 @@ def test_synthesizer_is_the_only_formal_synthesis_package() -> None:
 def test_legacy_public_symbols_are_not_reexported() -> None:
     assert not hasattr(synthesizer, "CompilationSession")
     assert not hasattr(synthesizer, "CompilerError")
+    assert not hasattr(analysis, "InferenceCostProvider")
+
+
+def test_decorator_authoring_surfaces_are_explicitly_separated() -> None:
+    assert not any(hasattr(schema, name) for name in ("record", "adt", "variant", "record_type", "enum_type"))
+    assert all(hasattr(schema_authoring, name) for name in ("record", "adt", "variant", "seal_adt"))
+    assert not any(hasattr(passes, name) for name in ("derivation", "relation", "claim", "rule"))
+    assert all(hasattr(pass_authoring, name) for name in ("derivation", "relation", "claim"))
+    assert not hasattr(pass_authoring, "rule")
 
 
 def test_workload_and_system_are_top_level_domain_packages() -> None:
@@ -90,6 +102,37 @@ def test_domain_ownership_is_not_hidden_by_compatibility_reexports() -> None:
     assert not hasattr(analysis, "PrimitiveInvocation")
 
 
+def test_canonical_wire_identities_are_domain_owned_and_versionless() -> None:
+    tags: list[str] = []
+    adt_families: list[str] = []
+    for source in PACKAGE_ROOT.rglob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        for class_node in (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)):
+            for decorator in class_node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                name = decorator.func.id if isinstance(decorator.func, ast.Name) else None
+                if name in {"record", "record_type", "enum_type"}:
+                    assert (
+                        decorator.args
+                        and isinstance(decorator.args[0], ast.Constant)
+                        and isinstance(decorator.args[0].value, str)
+                    )
+                    tags.append(decorator.args[0].value)
+                    assert all(keyword.arg != "field_aliases" for keyword in decorator.keywords)
+                elif name == "adt":
+                    arguments = {keyword.arg: keyword.value for keyword in decorator.keywords}
+                    wire = arguments.get("wire")
+                    assert isinstance(wire, ast.Constant) and isinstance(wire.value, str)
+                    assert "version" not in arguments
+                    adt_families.append(wire.value)
+
+    assert len(tags) >= 70
+    assert all(tag.startswith("blueprinting.") and "_" not in tag for tag in tags)
+    assert all(not tag.rpartition(".")[2].removeprefix("v").isdigit() for tag in tags)
+    assert all(wire.startswith("blueprinting.") and "_" not in wire for wire in adt_families)
+
+
 def test_supported_architecture_dependencies_are_acyclic_and_layered() -> None:
     _assert_only_domain_dependencies("schema", ("schema",))
     _assert_only_domain_dependencies("workload", ("schema", "workload"))
@@ -108,3 +151,23 @@ def test_supported_architecture_dependencies_are_acyclic_and_layered() -> None:
 def test_validation_is_outside_the_synthesizer_dependency_closure() -> None:
     assert importlib.util.find_spec("blueprinting.validation") is not None
     assert not any(name.startswith("blueprinting.validation") for name in _imports("synthesizer"))
+
+
+def test_calculon_is_confined_to_one_post_derivation_validation_adapter() -> None:
+    importers = []
+    for source in PACKAGE_ROOT.rglob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        imports_calculon = any(
+            (isinstance(node, ast.Import) and any(alias.name == "calculon" for alias in node.names))
+            or (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module is not None
+                and node.module.startswith("calculon")
+            )
+            for node in ast.walk(tree)
+        )
+        if imports_calculon:
+            importers.append(source.relative_to(PACKAGE_ROOT).as_posix())
+
+    assert importers == ["validation/calculon.py"]

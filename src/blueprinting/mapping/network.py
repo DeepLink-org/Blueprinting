@@ -3,26 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
-from blueprinting.schema.codec import record_type
+from blueprinting.schema.authoring import record
 
 
 def _tier(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{name} must be a non-negative integer")
-    return value
+    return int(value)
 
 
 def _aliased_tier(data: Mapping[str, Any], canonical: str, legacy: str) -> int:
     if canonical in data and legacy in data and data[canonical] != data[legacy]:
         raise ValueError(f"{canonical} conflicts with legacy alias {legacy}")
-    return data.get(canonical, data.get(legacy, 0))
+    return _tier(data.get(canonical, data.get(legacy, 0)), canonical)
 
 
-@record_type("blueprinting.mapping.network-tier-binding.v1")
-@dataclass(frozen=True)
+@record("blueprinting.mapping.network-tier-binding")
 class NetworkTierBinding:
     """Map logical parallel domains to ordered tiers of one bound system.
 

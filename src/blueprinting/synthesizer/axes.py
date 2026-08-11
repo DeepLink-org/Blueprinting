@@ -5,7 +5,7 @@ from enum import Enum
 from blueprinting.schema.codec import enum_type
 
 
-@enum_type("compiler.binding_axis")
+@enum_type("blueprinting.binding.axis")
 class BindingAxis(Enum):
     WORKLOAD = "workload"
     STRATEGY = "strategy"

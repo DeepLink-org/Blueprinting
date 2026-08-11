@@ -1,8 +1,8 @@
-"""Normalized latency evidence contracts with an explicit oracle boundary.
+"""Normalized latency evidence contracts for read-only comparison oracles.
 
-Cost providers are admissible inputs to Blueprinting's estimator.  Baselines
-are read-only comparison oracles and therefore expose a different method name;
-they cannot be passed accidentally as cost providers.
+Production costing uses the shared :class:`~blueprinting.analysis.cost.CostResolver`
+protocol. Baselines expose only ``lookup`` and therefore cannot be passed to a
+costing path accidentally.
 """
 
 from __future__ import annotations
@@ -82,16 +82,6 @@ class InferenceEvidenceResult:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must not be empty")
-
-
-@runtime_checkable
-class InferenceCostProvider(Protocol):
-    """Admissible Blueprinting cost source, such as its performance database."""
-
-    @property
-    def revision(self) -> str: ...
-
-    def resolve(self, query: InferenceEvidenceQuery) -> InferenceEvidenceResult | None: ...
 
 
 @runtime_checkable

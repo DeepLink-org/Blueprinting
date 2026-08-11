@@ -16,8 +16,10 @@ docs/
 │   ├── passes/                      transformation contracts
 │   └── performance/                 evidence and simulation contracts
 ├── experiments/                     reproducible validation reports
+├── reference/                       源码生成的 IR/Pass API 与公式
 ├── project/                         status, roadmap, decisions
 ├── contributing/                    maintenance guides
+├── javascripts/mathjax.js            确定性数学渲染配置
 ├── overrides/home.html              双语产品首页
 └── assets/
     ├── architecture/                共享技术图
@@ -91,6 +93,21 @@ Compiler 不得被描述为系统组件或顶层产品定义。产品方法是�
 
 `scripts/check_docs_i18n.py` 会强制完整 pair、唯一 H1、一致 heading shape 与 canonical link usage；正是这个 gate 使 shared-asset fallback 不会污染正文。它不能证明语义等价，因此 reviewer 仍需人工比较 claim 和 status。
 
+## 代码 API 与 Pass 理论文档
+
+代码参考页使用 `mkdocstrings` directive，直接从 `src/` 解析对象；不得把生成后的 signature 或 source listing 复制到 Markdown。Canonical IR 页面记录所属 `stages/<layer>/ir.py` module；公开 Pass 页面直接记录 `stages/<layer>/passes.py` 中的具体 class，不通过 compatibility facade。
+
+每个导出的 canonical `DerivationPass` class 必须在 class docstring 中包含：
+
+- 表示的 source/target boundary 与明确 scope；
+- symbol 定义和可渲染的 `$$...$$` 核心公式；
+- 足够的中间推导，使每一项能映射到产出的 work、memory、communication、placement 或 scheduling fact；
+- 实现来自公开研究时引用 primary paper；
+- 对 mechanical/reference Pass 明确写出“internal contract；不声明论文算法”，不得为了填引用而伪造来源；
+- executable rule verifier 保持的 semantic fact，以及明确推迟到后续 stage 的行为。
+
+`tests/docs/test_code_documentation.py` 会发现五层 `passes.py` 导出的全部 class；缺失公式、来源、API 页面收录或双语页面都会失败。Arithmatex 转换公式 block，MathJax 在浏览器端完成渲染；strict build 后应检查生成的 `reference/passes/index.html` 是否包含 `arithmatex` container 与源码 anchor。
+
 ## 状态与决策更新
 
 描述未来架构的文档要在相应章节附近标记 **Planned** 或 **Contract Only**。只有仓库代码和相称 test 才能证明 **Implemented**。连接或移除 capability 的同一个 change 必须更新[实现状态](../project/status.md)。
@@ -105,9 +122,10 @@ Compiler 不得被描述为系统组件或顶层产品定义。产品方法是�
 uv sync --locked --no-dev --extra docs
 uv run --no-dev --extra docs python scripts/check_docs_i18n.py
 uv run --no-dev --extra docs mkdocs build --strict
+uv run --no-dev --extra docs python scripts/check_rendered_code_docs.py
 ```
 
-同时运行形式化分析 test suite 的 contributor 可以去掉 `--no-dev`；default development dependency group 包含测试与 legacy workbench 依赖。
+同时运行形式化分析 test suite 的 contributor 可以去掉 `--no-dev`；default development group 包含测试与 lint 工具。Static analysis 被刻意设为可选层，通过 `uv sync --locked --group typing` 安装。
 
 只预览单一语言时：
 
@@ -131,7 +149,8 @@ BUILD_ONLY_LOCALE=zh uv run mkdocs serve
 - Figure 有有意义的 alt text，在 light/dark context 中均清晰。
 - 可复现结果标明 command、input、revision 与 claim boundary。
 - Design change 映射到 source/test，或明确声明尚无实现。
-- `check_docs_i18n.py` 与 `mkdocs build --strict` 通过。
+- 每个公开 canonical Pass 都有渲染公式、推导过程、来源与生成的 API source。
+- `check_docs_i18n.py`、`mkdocs build --strict` 与 `check_rendered_code_docs.py` 通过。
 - 首页与普通文档页在两种 color scheme 和窄屏下均保持可用。
 
 文档债务应像工程债务一样处理：明确 ownership boundary，增加能发现 regression 的 gate，并删除被取代 source，而不是维护有歧义的 duplicate。

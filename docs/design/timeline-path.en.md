@@ -66,7 +66,7 @@ Although a timeline is not canonical execution truth, it still creates the first
 5. it validates the planning contract with a virtual target and replay before a real target ABI exists; and
 6. it leaves an entry point for continued lowering from the same concrete plan into an LPU backend.
 
-It is a staged hardware-exploration product, not a redefinition of the project as a timeline compiler.
+It is a staged hardware-exploration product, not a redefinition of the project as a timeline blueprinting.
 
 ## Stages and acceptance gates
 
@@ -97,7 +97,7 @@ The first two levels do not need to wait for LPU hardware. Conversely, interest 
 
 The common layer should express only a coordination kernel that is stable across targets: identity, dependencies, resource claims, buffer references, synchronization, and lineage. Spatial dataflow, routes, issue slots, collective micro-protocols, and special memory movement belong in a namespaced **typed target extension** verified by the target plugin.
 
-The current `ConcretePlanIR` v1 has only a generic device/queue/buffer/command schema. It has neither this typed extension nor a production producer. It is an implementation scaffold, not a frozen cross-target ABI. Before introducing the first non-queue-centric virtual target, the common core must be tested against the risk of forcing every architecture into a GPU-stream model.
+The current `ConcretePlanIR` v1 now has typed queue-order and slot/dataflow extensions with deterministic virtual reference binders. This closes the schema-level queue-centric versus queue-free test, but not production scheduling, resource occupancy, target-plugin legality, simulation, or emission. It remains an implementation scaffold rather than a frozen cross-target ABI.
 
 ## How each stage connects to observation
 

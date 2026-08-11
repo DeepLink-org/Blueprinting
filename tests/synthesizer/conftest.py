@@ -15,52 +15,61 @@ from blueprinting.synthesizer.ids import (
     TokenId,
     ValueId,
 )
-from blueprinting.synthesizer.ir import (
-    AbstractStorageClass,
+from blueprinting.synthesizer.stages.common import OperationName, TensorType
+from blueprinting.synthesizer.stages.concrete_plan.ir import (
     AccessMode,
     BufferBinding,
     BufferUse,
-    CollectiveKind,
-    CollectiveSpec,
-    CommandKind,
+    CollectiveCommand,
     ConcreteCommand,
     ConcretePlanIR,
     DevicePlacement,
+    ImplementationRef,
+    Launch,
+    MemoryRegion,
+    QueueIssueOrder,
+    QueueKind,
+    QueueScheduleExtension,
+    QueueSpec,
+    SignalAfter,
+    WaitFor,
+)
+from blueprinting.synthesizer.stages.distributed.ir import (
+    Collective,
+    CollectiveKind,
     DistributedTask,
     DistributedTaskIR,
-    DistributedTaskKind,
     DistributedValue,
-    ImplementationRef,
-    ImplementationRequirement,
+    LocalCompute,
     LogicalMesh,
+    MeshAxis,
+    ReductionKind,
+    ShardingSpec,
+    make_collective_spec,
+)
+from blueprinting.synthesizer.stages.machine.ir import (
     MachineEntryPoint,
     MachineInstruction,
     MachineIR,
     MachineOpcode,
     MachineSection,
     MachineSectionKind,
-    MemoryRegion,
-    MeshAxis,
-    ModelIR,
-    ModelOperation,
-    ModelValue,
+)
+from blueprinting.synthesizer.stages.model.ir import ModelIR, ModelOperation, ModelValue, ValueRole
+from blueprinting.synthesizer.stages.portable_plan.ir import (
+    AbstractStorageClass,
+    CollectiveTask,
+    ComputeTask,
+    ImplementationRequirement,
     ObjectiveDirection,
     ObjectiveKind,
-    OperationName,
     PlanBuffer,
     PlanBufferRole,
     PlanObjective,
     PlanTask,
-    PlanTaskKind,
     PortablePlanIR,
-    QueueKind,
-    QueueSpec,
-    ReductionKind,
     ResourceKind,
     ResourceRequirement,
-    ShardingSpec,
-    TensorType,
-    ValueRole,
     WorkloadFacts,
 )
 
@@ -147,7 +156,7 @@ def distributed_ir(model_ir: ModelIR) -> DistributedTaskIR:
         tasks=(
             DistributedTask(
                 compute_id,
-                DistributedTaskKind.LOCAL_COMPUTE,
+                LocalCompute(),
                 OperationName("core", "matmul"),
                 (0, 1),
                 (input_id, weight_id),
@@ -157,19 +166,20 @@ def distributed_ir(model_ir: ModelIR) -> DistributedTaskIR:
             ),
             DistributedTask(
                 collective_id,
-                DistributedTaskKind.COLLECTIVE,
+                Collective(
+                    make_collective_spec(
+                        CollectiveKind.ALL_REDUCE,
+                        (0, 1),
+                        64,
+                        reduction=ReductionKind.SUM,
+                    )
+                ),
                 OperationName("collective", "all_reduce"),
                 (0, 1),
                 (partial_id,),
                 (output_id,),
                 (compute_id,),
                 Lineage.lowered("insert-collective", (model_ir.operations[0].id,)),
-                collective=CollectiveSpec(
-                    CollectiveKind.ALL_REDUCE,
-                    (0, 1),
-                    64,
-                    reduction=ReductionKind.SUM,
-                ),
             ),
         ),
         inputs=(input_id, weight_id),
@@ -189,11 +199,11 @@ def portable_ir(distributed_ir: DistributedTaskIR) -> PortablePlanIR:
         name="fixture-portable",
         source_distributed_digest=distributed_ir.digest,
         strategy_fingerprint="a" * 40,
-        planner_revision="fixture-planner-v1",
+        planner_revision="fixture-planner-v0",
         tasks=(
             PlanTask(
                 compute_id,
-                PlanTaskKind.COMPUTE,
+                ComputeTask(),
                 OperationName("core", "matmul"),
                 (),
                 (input_id, weight_id),
@@ -207,7 +217,7 @@ def portable_ir(distributed_ir: DistributedTaskIR) -> PortablePlanIR:
             ),
             PlanTask(
                 collective_id,
-                PlanTaskKind.COLLECTIVE,
+                CollectiveTask(),
                 OperationName("collective", "all_reduce"),
                 (compute_id,),
                 (partial_id,),
@@ -282,9 +292,9 @@ def concrete_ir(portable_ir: PortablePlanIR) -> ConcretePlanIR:
         source_portable_digest=portable_ir.digest,
         target_fingerprint="b" * 40,
         deployment_fingerprint="c" * 40,
-        abi_revision="virtual-abi-v1",
-        evidence_revision="fixture-evidence-v1",
-        planner_revision="fixture-planner-v1",
+        abi_revision="virtual-abi-v0",
+        evidence_revision="fixture-evidence-v0",
+        planner_revision="fixture-planner-v0",
         devices=(
             DevicePlacement(device_0, 0, "virtual:0"),
             DevicePlacement(device_1, 1, "virtual:1"),
@@ -306,31 +316,33 @@ def concrete_ir(portable_ir: PortablePlanIR) -> ConcretePlanIR:
         commands=(
             ConcreteCommand(
                 compute_command,
-                CommandKind.LAUNCH,
+                Launch(ImplementationRef("virtual", "matmul", "0", "virtual-abi-v0"), compute_queue),
                 (),
-                compute_queue,
-                ImplementationRef("virtual", "matmul", "1", "virtual-abi-v1"),
                 (
                     BufferUse(input_buffer, AccessMode.READ),
                     BufferUse(weight_buffer, AccessMode.READ),
                     BufferUse(partial_buffer, AccessMode.WRITE),
                 ),
                 Lineage.lowered("bind-command", (portable_ir.tasks[0].id,)),
-                signal_tokens=(ready,),
+                SignalAfter((ready,)),
             ),
             ConcreteCommand(
                 collective_command,
-                CommandKind.COLLECTIVE,
+                CollectiveCommand(ImplementationRef("virtual", "all-reduce", "0", "virtual-abi-v0"), collective_queue),
                 (compute_command,),
-                collective_queue,
-                ImplementationRef("virtual", "all-reduce", "1", "virtual-abi-v1"),
                 (
                     BufferUse(partial_buffer, AccessMode.READ),
                     BufferUse(output_buffer, AccessMode.WRITE),
                 ),
                 Lineage.lowered("bind-command", (portable_ir.tasks[1].id,)),
-                wait_tokens=(ready,),
+                WaitFor((ready,)),
             ),
+        ),
+        target_extension=QueueScheduleExtension(
+            (
+                QueueIssueOrder(compute_queue, (compute_command,)),
+                QueueIssueOrder(collective_queue, (collective_command,)),
+            )
         ),
     )
 
@@ -345,8 +357,8 @@ def machine_ir(concrete_ir: ConcretePlanIR) -> MachineIR:
         target_fingerprint=concrete_ir.target_fingerprint,
         target_plugin="virtual",
         target_abi=concrete_ir.abi_revision,
-        emitter_revision="fixture-emitter-v1",
-        program_format="virtual-json-v1",
+        emitter_revision="fixture-emitter-v0",
+        program_format="virtual-json-v0",
         sections=(
             MachineSection(
                 ".text",

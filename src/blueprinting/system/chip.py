@@ -18,7 +18,7 @@ def _non_negative_integer(value: int, name: str) -> None:
         raise ValueError(f"{name} must be a non-negative integer")
 
 
-@record_type("compiler.analysis.efficiency_point.v1")
+@record_type("blueprinting.system.efficiency-point")
 @dataclass(frozen=True)
 class EfficiencyPoint:
     """Measured or simulated efficiency above one work-size threshold."""
@@ -38,7 +38,7 @@ class EfficiencyPoint:
             raise ValueError("efficiency must be finite and in (0, 1]")
 
 
-@record_type("compiler.analysis.efficiency_curve.v1")
+@record_type("blueprinting.system.efficiency-curve")
 @dataclass(frozen=True)
 class EfficiencyCurve:
     """Piecewise-constant utilization evidence indexed by exact work size."""
@@ -64,7 +64,7 @@ class EfficiencyCurve:
         raise AssertionError("zero-threshold curve failed to cover work")
 
 
-@record_type("compiler.analysis.processor_profile.v1")
+@record_type("blueprinting.system.processor-profile")
 @dataclass(frozen=True)
 class ProcessorProfile:
     """One chip compute engine and its size-dependent utilization evidence."""
@@ -85,7 +85,7 @@ class ProcessorProfile:
         return self.peak_operations_per_second * efficiency
 
 
-@record_type("compiler.analysis.memory_profile.v1")
+@record_type("blueprinting.system.memory-profile")
 @dataclass(frozen=True)
 class MemoryProfile:
     """One chip-visible memory tier and its transfer-efficiency evidence."""

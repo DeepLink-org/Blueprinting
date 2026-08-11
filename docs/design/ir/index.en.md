@@ -33,6 +33,10 @@ payload
 
 Entities use stable typed IDs. Decomposition records one-to-many lineage; fusion records many-to-one lineage. Snapshots are immutable or transactionally isolated. Types, effects, dependencies, memory semantics, and compatibility-relevant extensions use typed fields rather than free-form dictionaries.
 
+## Python definition sites
+
+The five layers are defined in `src/blueprinting/synthesizer/stages/<layer>/ir.py`; transformations producing each layer are defined directly in the adjacent `passes.py`. The old `synthesizer.ir` and `synthesizer.lowering` compatibility paths are gone, including from internal baseline adapters. See [Python Algebraic IR Authoring](python-algebra.md).
+
 ## Ownership summary
 
 | Layer | Owns | Must not own |
@@ -63,9 +67,12 @@ Every mature canonical contract must verify schema identity, ID uniqueness, refe
 
 ## Schema evolution
 
-A backward-compatible addition increments the minor schema version and is guarded by a feature. A breaking change increments the major version or supplies an explicit upgrader. Serialized package paths are implementation details and are not schema identities. Internal `1.0.0` identifies a serialization schema only; public stability also requires producer, independent consumer, negative-test, migration, and cross-target conformance gates.
+The codec exposes duplicate-safe raw parsing, and `SchemaMigrationRegistry` can register deterministic, acyclic, uniquely resolved version steps. Explicit migrated loads verify the source digest, every intermediate snapshot, the final digest, and the ordered migration IDs. A synthetic test schema exercises chaining, ambiguity rejection, no-op loading, and tamper rejection.
+
+All five IR roots are currently at `0.0.0`. Canonical record and ADT identities are semantic, versionless names; they do not maintain independent component counters. The production migration registry is empty until a schema is graduated and a real compatibility boundary exists. Snapshots missing required features are still rejected.
 
 ## Reference pages
 
 - [Model and Distributed IR](model-distributed.md) defines target-neutral program and logical-distribution semantics.
 - [Planning and Execution IR](planning-execution.md) defines portable planning, the target-binding gate, concrete commands, MachineIR, and derived products.
+- [Python Algebraic IR Authoring](python-algebra.md) defines source layout, record/ADT deriving, and the explicit semantic boundary.

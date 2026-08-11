@@ -16,8 +16,10 @@ docs/
 │   ├── passes/                      transformation contracts
 │   └── performance/                 evidence and simulation contracts
 ├── experiments/                     reproducible validation reports
+├── reference/                       source-generated IR/pass API and equations
 ├── project/                         status, roadmap, decisions
 ├── contributing/                    maintenance guides
+├── javascripts/mathjax.js            deterministic math rendering setup
 ├── overrides/home.html              bilingual product landing page
 └── assets/
     ├── architecture/                shared technical diagrams
@@ -91,6 +93,21 @@ The English and Chinese pages are peers in structure and technical meaning. A ch
 
 `scripts/check_docs_i18n.py` enforces complete pairs, one H1, matching heading shapes, and canonical link usage. This gate is also what makes shared-asset fallback safe for prose. It cannot prove semantic equivalence, so reviewers still compare claims and status manually.
 
+## Code API and pass theory
+
+Code reference pages use `mkdocstrings` directives and resolve objects directly from `src/`; do not paste generated signatures or source listings into Markdown. Canonical IR pages document the owning `stages/<layer>/ir.py` module. Public pass pages document the concrete class from `stages/<layer>/passes.py`, never a compatibility facade.
+
+Every exported canonical `DerivationPass` class must include in its class docstring:
+
+- the represented source/target boundary and explicit scope;
+- symbols and rendered `$$...$$` core equations;
+- enough intermediate reasoning to map each term to produced work, memory, communication, placement, or scheduling facts;
+- primary research references when the implementation derives from published work;
+- an explicit “internal contract; no paper claim” statement for mechanical/reference passes where inventing a citation would be misleading;
+- the semantic facts preserved by the executable rule verifier and the behavior deliberately deferred to later stages.
+
+`tests/docs/test_code_documentation.py` discovers every class exported by the five stage `passes.py` modules. It fails if a pass lacks equations, provenance, API-page inclusion, or a bilingual page. Arithmatex converts formula blocks and MathJax performs browser rendering; after a strict build, inspect generated `reference/passes/index.html` for `arithmatex` containers and source anchors.
+
 ## Status and decision updates
 
 A document that describes future architecture marks it **Planned** or **Contract Only** near the affected section. Only repository code plus proportionate tests may justify **Implemented**. The [implementation status](../project/status.md) is updated in the same change that connects or removes a capability.
@@ -105,9 +122,10 @@ Install and validate with:
 uv sync --locked --no-dev --extra docs
 uv run --no-dev --extra docs python scripts/check_docs_i18n.py
 uv run --no-dev --extra docs mkdocs build --strict
+uv run --no-dev --extra docs python scripts/check_rendered_code_docs.py
 ```
 
-Contributors who also run the formal-analysis test suite may omit `--no-dev`; the default development dependency group includes the test and legacy-workbench dependencies.
+Contributors who also run the formal-analysis test suite may omit `--no-dev`; the default development group contains test and lint tools. Static analysis is deliberately optional and is installed with `uv sync --locked --group typing`.
 
 For focused local preview:
 
@@ -131,7 +149,8 @@ Before review, inspect both locale routes, page-to-page language switching, navi
 - Figures have meaningful alt text and remain legible in light/dark contexts.
 - Reproducible results identify commands, inputs, revisions, and claim boundaries.
 - Design changes map to source/tests or explicitly state that no implementation exists.
-- `check_docs_i18n.py` and `mkdocs build --strict` pass.
+- Every public canonical pass has rendered equations, derivation reasoning, provenance, and generated API source.
+- `check_docs_i18n.py`, `mkdocs build --strict`, and `check_rendered_code_docs.py` pass.
 - The landing page and ordinary documentation pages remain usable in both color schemes and at narrow widths.
 
 Documentation debt is handled like engineering debt: make the ownership boundary explicit, add a gate that detects regression, and remove the superseded source instead of maintaining ambiguous duplicates.

@@ -39,7 +39,53 @@ jobs:
         run: uv run pytest -m baseline_regression tests/regression
 
   test-suite:
-    name: Full test suite
+    name: Full test suite (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Lint supported architecture boundary
+        run: >-
+          uv run ruff check
+          src/blueprinting
+          tests
+          examples/calculon_calibration.py
+          scripts
+
+      - name: Check source formatting
+        run: >-
+          uv run ruff format --check
+          src/blueprinting
+          tests
+          examples/calculon_calibration.py
+          scripts
+
+      - name: Compile runtime type contracts (without mypy)
+        run: uv run python scripts/check_type_contracts.py
+
+      - name: Run tests
+        run: uv run pytest
+
+  static-typing:
+    name: Optional static typing layer
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -55,32 +101,11 @@ jobs:
       - name: Install Python
         run: uv python install 3.12
 
-      - name: Install locked dependencies
-        run: uv sync --locked
+      - name: Install optional static-typing dependencies
+        run: uv sync --locked --group typing
 
-      - name: Lint supported architecture boundary
-        run: >-
-          uv run ruff check
-          src/blueprinting/__init__.py
-          src/blueprinting/__main__.py
-          src/blueprinting/cli
-          src/blueprinting/schema
-          src/blueprinting/workload
-          src/blueprinting/mapping
-          src/blueprinting/system
-          src/blueprinting/synthesizer
-          src/blueprinting/analysis
-          src/blueprinting/validation
-          src/blueprinting/application
-          src/blueprinting/workbench
-          tests/synthesizer
-          tests/analysis
-          tests/application
-          tests/regression
-          tests/workbench
-
-      - name: Run tests
-        run: uv run pytest
+      - name: Type-check Blueprinting source
+        run: uv run mypy src/blueprinting
 
   package-contract:
     name: Base wheel contract
@@ -104,3 +129,26 @@ jobs:
 
       - name: Verify wheel contents and size
         run: uv run python scripts/check_wheel_contract.py dist/*.whl
+
+  performance-data-contract:
+    name: Optional performance-data contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install locked dependencies with performance-data support
+        run: uv sync --locked --extra performance-data
+
+      - name: Run performance-data provider tests
+        run: uv run pytest tests/analysis/test_cost_model_providers.py

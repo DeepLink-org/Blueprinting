@@ -3,7 +3,7 @@
 Architecture binding 是从 portable workload mapping 到 architecture-bound simulation plan 的形式化桥梁。它针对 candidate hardware blueprint、deployment 与 evidence policy 检查已验证的 `PortablePlanIR`，构造唯一权威的 `ConcretePlanIR` envelope，再从中派生 timing、simulation 与 optional target program。
 
 !!! warning "设计状态"
-    迟绑定边界和 experimental schema 已经存在；typed target extension、production producer 和后续 analysis/transformation chain 均为 **Planned**。
+    迟绑定边界、experimental schema、queue/slot 两个 deterministic reference binder 已存在；target plugin registry、production producer 和后续 analysis/transformation chain 仍为 **Planned**。
 
 ## 为什么必须做成一条纵向切片
 
@@ -67,6 +67,25 @@ Command DAG 验证完成后，timing projection 计算预测 interval、contenti
 预测 timestamp 是 annotation，不是 readiness semantic。移除它们后仍必须保留可 replay 的 dependency/queue program。正因为如此，新 evidence revision 可以改变预期 duration，而不会改变执行正确性。
 
 如果某个 target 把 cycle/slot 作为 correctness constraint，它在 binding 后进入 typed target extension，而不是 `TimingProjection`。Projection 与 trace 连同 concrete/evidence/policy digest 发布为 `TimelineBundle`；详细语义见 [Timeline 阶段路径](../timeline-path.md)。
+
+## 已实现的 Reference Binder Pass
+
+`stages/concrete_plan/passes.py` 直接定义两个用于验证 contract 的 deterministic pass：
+
+- `BindReferenceQueueTargetPass`：产生 queue-centric `QueueScheduleExtension`；
+- `BindReferenceSlotTargetPass`：产生 non-queue `SlotDataflowExtension`。
+
+两者都保持 `PlanTask -> ConcreteCommand` 的 1:1 identity、dependency topology 和 buffer use，不声称是 production scheduler。Buffer 使用稳定顺序与 alignment 做线性分配：
+
+```text
+offset_0 = 0
+bound_i = align_up(offset_i, alignment_i)
+offset_(i+1) = bound_i + size_i
+```
+
+每个 command 的 implementation 与 placement 都来自显式 target/deployment binding；commit gate 使用同一个纯 normalizer 重建完整 concrete plan，并要求 source buffer identity、exact size、task lineage、command mapping 与 typed extension 全部相等。独立 relation invariant 另外检查 portable-to-concrete buffer identity/capacity/alignment、dependency correspondence、buffer access、operation identity 与 target ABI。两个 pass 使用相同 portable input 产生不同 typed extension，用于证明 common envelope 不依赖 queue-only 假设。
+
+这是 contract reference implementation，不引用性能论文，也不以 heuristic quality 为设计声明。源码在 `src/blueprinting/synthesizer/stages/concrete_plan/passes.py`，positive/negative、lineage 与 deterministic replay 测试在 `tests/synthesizer/test_reference_targets.py`。
 
 ## Machine Lowering 与 Artifact Emission
 

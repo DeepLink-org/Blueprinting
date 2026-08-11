@@ -1,7 +1,7 @@
 # ADR-0001：将形式化推导包命名为 Synthesizer
 
 - 日期：2026-08-09
-- 状态：Accepted
+- 状态：Accepted；codec identity 条款由 ADR-0004 取代
 - 范围：Python package identity、public symbol、report vocabulary 与一个 serialized field name
 
 ## 背景
@@ -48,9 +48,9 @@ Public implementation symbol 使用 synthesis vocabulary：
 
 当 `Pass`、`PassManager`、`lowering` 与 `IR` 精确描述借用机制时继续保留。Calculon 的 `model.compile()`、Python 的 `compile()` 等外部 API 也保持原名。
 
-保留所有既有 `compiler.*` canonical codec tag 与 `compilation-session` digest domain，把它们视为稳定 wire identity。它们是历史 opaque identifier，不是当前 Python package name。改写这些 tag 会在语义未变化时破坏 snapshot/digest，没有额外价值。
+最初的 package 迁移保留了当时已有的 codec tag 与 session digest domain。ADR-0004 取代这一兼容决策：当前产物使用按领域归属的语义化 identity 与 `synthesis-session` digest domain。
 
-将 `TargetProfile.compiler_abi` 重命名为 `target_abi`，因为 ABI 属于绑定后的 target，而不属于 Blueprinting Compiler 组件。Decoder 将旧 field 作为 alias 接受，遇到两种拼写同时出现时拒绝 payload；encoder 只输出 `target_abi`。这个有意的 field-level schema change 会改变包含 `TargetProfile` 的 value digest；target-neutral representation digest 必须保持不变。
+将原 target ABI field 重命名为 `target_abi`，因为 ABI 属于绑定后的 target。最初迁移曾让 decoder 接受旧拼写；ADR-0004 删除该 runtime alias，当前 payload 只使用 `target_abi`。
 
 Report vocabulary 区分事实与预测：exact work 使用 `derived_*`，timing/memory prediction 使用 `estimated_*`，comparison 中 Blueprinting 一侧使用 `blueprinting`。Calculon 与 Vidur report 因输出 field name 改变升级为 v2。
 
@@ -58,8 +58,8 @@ Report vocabulary 区分事实与预测：exact work 使用 `derived_*`，timing
 
 - `blueprinting.compiler` import 立即失败，下游 Python caller 必须原子迁移。
 - 源码结构明确表达目标边界：`synthesizer` 负责 canonical derivation，`analysis` 负责 rebuildable evaluation 与 evidence resolution。
-- 使用历史 `compiler.*` tag 的 canonical snapshot 仍可读取。
-- 包含 `compiler_abi` 的旧 canonical JSON 仍可读取，但新序列化 target profile 与 target-bound session fingerprint 会改变。
+- 最初的 package 迁移保持了当时 snapshot 的可读性；ADR-0004 后续建立明确的 wire-format 边界。
+- 当前 target-profile payload 只使用 `target_abi`，不再接受废弃 field 拼写。
 - 不提供 pickle/module-path compatibility；canonical JSON 是受支持的 persistence boundary。
 - 既有 v1 experiment report consumer 必须迁移到 v2 field name。
 
@@ -67,20 +67,20 @@ Report vocabulary 区分事实与预测：exact work 使用 `derived_*`，timing
 
 1. 将 Python import 从 `blueprinting.compiler` 替换为 `blueprinting.synthesizer`。
 2. 按上表替换 public symbol。
-3. 将 `compiler_abi=` constructor argument 与 attribute read 改为 `target_abi=` 和 `.target_abi`。
+3. Constructor argument 与 attribute read 使用 `target_abi=` 和 `.target_abi`。
 4. Calculon consumer 将 `compiled` 改为 `blueprinting`、`compiled_breakdown_seconds` 改为 `estimated_breakdown_seconds`、`compiled_explicit_operations` 改为 `derived_explicit_operations`。
 5. Vidur consumer 将 `compiled_*` 改为对应的 `estimated_*` field。
-6. 重新生成 v2 experiment artifact；不要仅为了替换 opaque codec tag 而改写旧 canonical input snapshot。
+6. 重新生成 v2 experiment artifact。
 
 ## 验证
 
 - Package-boundary test 要求 `blueprinting.synthesizer` 存在且 `blueprinting.compiler` 不存在。
 - Public API test 要求新 symbol 存在，并拒绝 legacy re-export。
-- Canonical round-trip test 解码旧 `compiler_abi` payload，并验证新输出只包含 `target_abi`。
-- Golden target-neutral IR snapshot 与 baseline regression digest 守护被保留的 wire tag 与 digest domain。
+- Canonical round-trip test 验证 target profile 只编码 `target_abi`。
+- Golden target-neutral IR snapshot 与 baseline regression digest 守护当前语义化 wire identity。
 - Calculon/Vidur test 守护 v2 report vocabulary 与数值等价性。
 - Ruff、完整 pytest、双语文档一致性与 strict MkDocs build 是 release gate。
 
 ## 状态
 
-本 ADR 于 2026-08-09 被接受，约束随 package rename 一起交付的 hard-cut migration。未来若修改 package boundary、保留的 codec tag 或 alias policy，必须创建 superseding ADR。
+本 ADR 于 2026-08-09 被接受。ADR-0004 取代本 ADR 的 codec-tag 与 field-alias 兼容条款；`synthesizer` package 决策继续有效。

@@ -9,6 +9,8 @@ on:
       - "mkdocs.yml"
       - "pyproject.toml"
       - "scripts/check_docs_i18n.py"
+      - "scripts/check_rendered_code_docs.py"
+      - "src/blueprinting/**"
       - "uv.lock"
   pull_request:
     branches: [main]
@@ -18,6 +20,8 @@ on:
       - "mkdocs.yml"
       - "pyproject.toml"
       - "scripts/check_docs_i18n.py"
+      - "scripts/check_rendered_code_docs.py"
+      - "src/blueprinting/**"
       - "uv.lock"
   workflow_dispatch:
 
@@ -60,6 +64,9 @@ jobs:
 
       - name: Build documentation
         run: uv run --no-dev --extra docs mkdocs build --strict
+
+      - name: Check rendered code documentation
+        run: uv run --no-dev --extra docs python scripts/check_rendered_code_docs.py
 
       - name: Upload documentation preview artifact
         if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'

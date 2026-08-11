@@ -33,6 +33,10 @@ payload
 
 Entity 使用稳定 typed ID。Decomposition 记录 one-to-many lineage；fusion 记录 many-to-one lineage。Snapshot 必须 immutable 或 transactionally isolated。Type、effect、dependency、memory semantic 和影响兼容性的 extension 使用 typed field，而不是 free-form dictionary。
 
+## Python 定义位置
+
+五层的真实定义分别位于 `src/blueprinting/synthesizer/stages/<layer>/ir.py`，产生该层的变换直接定义在相邻的 `passes.py`。旧的 `synthesizer.ir` 与 `synthesizer.lowering` compatibility path 已完全删除，内部 baseline adapter 也直接导入所属 stage。详见 [Python 代数化 IR 编写约定](python-algebra.md)。
+
 ## 所有权摘要
 
 | 层 | 拥有 | 不得拥有 |
@@ -63,9 +67,12 @@ Entity 使用稳定 typed ID。Decomposition 记录 one-to-many lineage；fusion
 
 ## Schema 演进
 
-Backward-compatible addition 提升 minor schema version 并由 feature 保护。Breaking change 提升 major version 或提供显式 upgrader。Serialized package path 是实现细节，不是 schema identity。内部 `1.0.0` 只标识 serialization schema；public stability 还需要 producer、独立 consumer、negative test、migration 与 cross-target conformance Gate。
+Codec 提供 duplicate-safe raw parsing；`SchemaMigrationRegistry` 可以注册 deterministic、无环且路径唯一的版本步骤。显式 migrated load 会验证 source digest、每个中间 snapshot、最终 digest 与有序 migration ID。Synthetic test schema 覆盖链式迁移、歧义拒绝、no-op load 与篡改拒绝。
+
+五层 IR root 当前统一为 `0.0.0`。Canonical record 与 ADT identity 使用无版本的语义名，不各自维护 component counter。Production migration registry 在 schema graduation 并出现真实 compatibility boundary 前保持为空。缺少 required feature 的 snapshot 仍会被拒绝。
 
 ## 参考页面
 
 - [模型与分布式 IR](model-distributed.md)定义 target-neutral program 和 logical distribution semantic。
 - [规划与执行 IR](planning-execution.md)定义 portable planning、target-binding gate、concrete command、MachineIR 和 derived product。
+- [Python 代数化 IR 编写约定](python-algebra.md)定义源码布局、record/ADT deriving 和显式语义边界。

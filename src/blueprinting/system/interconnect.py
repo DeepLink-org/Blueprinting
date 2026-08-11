@@ -9,7 +9,7 @@ from blueprinting.schema.codec import record_type
 from blueprinting.schema.frozen import FrozenDict
 
 
-@record_type("compiler.analysis.network_operation.v1")
+@record_type("blueprinting.system.network-operation")
 @dataclass(frozen=True)
 class NetworkOperationProfile:
     """Explicit byte-volume rule for one point-to-point or collective operation."""
@@ -29,7 +29,7 @@ class NetworkOperationProfile:
             raise TypeError("participant_offset must be an integer")
 
 
-@record_type("compiler.analysis.network_profile.v1")
+@record_type("blueprinting.system.network-profile")
 @dataclass(frozen=True)
 class NetworkProfile:
     """One interconnect tier with bandwidth, latency, capacity, and volume rules."""

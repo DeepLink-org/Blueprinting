@@ -12,16 +12,17 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 from blueprinting.mapping import RecomputePolicy, TensorParallelCommunication, TransformerTrainingMappingSpec
-from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.schema.authoring import record
+from blueprinting.schema.codec import enum_type
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
-from ...ir import CollectiveKind
+from ...stages.distributed.ir import CollectiveKind
 from .common import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@enum_type("compiler.analysis.training_phase")
+@enum_type("blueprinting.analysis.transformer.training-phase")
 class TrainingPhase(Enum):
     FORWARD = "forward"
     RECOMPUTE = "recompute"
@@ -31,8 +32,7 @@ class TrainingPhase(Enum):
     RECOMMUNICATION = "recommunication"
 
 
-@record_type("blueprinting.transformer.primitive-invocation.v2")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.primitive-invocation")
 class PrimitiveInvocation:
     """One structurally selected operation in a local block program."""
 
@@ -61,8 +61,7 @@ class PrimitiveInvocation:
             raise ValueError("local invocations cannot carry collective metadata")
 
 
-@record_type("compiler.analysis.block_memory_facts.v1")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.training-block-memory")
 class BlockMemoryFacts:
     """Storage quantities for one local tensor-parallel block shard."""
 

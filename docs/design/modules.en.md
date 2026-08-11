@@ -57,7 +57,7 @@ It has no dependency on Transformer-specific derivation, target plugins, perform
 
 ## Analysis and transformation infrastructure
 
-`PassManager` executes declarative `PassContract` objects. Each contract declares input/output schemas, required bindings and analyses, preserved and produced analyses, mutation model, verification policy, and determinism.
+`PassManager` executes declarative `PassContract` objects. Each contract declares input/output schemas, required bindings and analyses, preserved and produced analyses, mutation model, verification policy, determinism, and typed lineage rules with executable predicates. Cross-boundary verification is part of the commit gate; deterministic replay is enabled in CI and optionally at runtime.
 
 `AnalysisStore` is content-addressed by representation digest, analysis key, and session fingerprint. Checkpoint observers inspect verified immutable outputs before analyses are atomically published. See [analysis and transformation infrastructure](passes/index.md).
 
@@ -94,7 +94,7 @@ The scheduler consumes target-legal tasks, deployment resources, and cost views.
 
 The memory planner reasons over lifetimes under legal overlap, not only an aggregate peak-memory formula. The output must satisfy DAG, queue, synchronization, buffer, capacity, and target-legality verifiers before becoming `ConcretePlanIR`.
 
-Only a queue-oriented experimental schema and structural verifiers exist; typed target extensions, production target binding, and scheduling are planned.
+The experimental contract now includes mutually exclusive queue-order and slot/dataflow typed extensions, target verifiers, and deterministic virtual reference binders. They exercise the common envelope against queue-centric and queue-free semantics; production target plugins, resource scheduling, occupancy, and hardware legality remain planned.
 
 ## Products, simulation, and emission
 
@@ -143,16 +143,16 @@ The dependency direction is explicit: workload contracts do not depend on mappin
 | Logical strategies and explicit deployment mapping | `mapping/` | Implemented Transformer/network slice |
 | Chip, memory, interconnect, and aggregate system profile | `system/` | Implemented limited profile adapter |
 | IDs, expressions, lineage | `synthesizer/{ids,expr}.py` | Implemented |
-| Canonical formal representations (`*IR`) | `synthesizer/ir/` | Implemented contracts |
+| Canonical formal representations (`*IR`) | `synthesizer/stages/*/ir.py` | Implemented contracts |
 | Bindings and sessions | `synthesizer/{bindings,session}.py` | Implemented |
 | Analysis/transformation transactions | `synthesizer/passes/base.py` | Implemented |
 | Workload-to-IR/session frontends | `synthesizer/frontend/` | Implemented Transformer slice |
 | Transformer exact-work dialect | `synthesizer/dialects/transformer/` | Implemented training/inference slice |
-| Transformer derivation passes | `synthesizer/lowering/` | Implemented through portable plan |
+| Stage-owned derivation passes | `synthesizer/stages/*/passes.py` | Implemented through portable plan |
 | Current system cost adapters | `analysis/cost_model.py`, `analysis/cost/` | Implemented slice |
 | Framework-neutral orchestration and reports | `application/` | Implemented static analysis slice |
 | Calculon/Vidur comparisons and regression gates | `validation/` | Implemented offline gates |
 | Optional external performance bundles | `data/evidence/` | Explicitly loaded; excluded from base package |
 | Architecture model/search, evidence service, simulation, emission | Accepted boundaries | Planned |
 
-`validation/legacy/` contains retained Calculon-only reproductions of historical SeqSel figures. They are compatibility checks, not evidence that the canonical Blueprinting derivation path is correct; the strict gates are `validation/calculon.py`, `validation/vidur.py`, and `validation/regression.py`.
+`validation/calculon.py` and `validation/vidur.py` keep external reference implementations behind post-derivation comparison boundaries; `validation/regression.py` freezes their strict drift gates. They are comparison checks, not evidence that the canonical derivation path is correct by construction.

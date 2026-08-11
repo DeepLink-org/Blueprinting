@@ -3,7 +3,7 @@
 Architecture binding is the formal bridge from a portable workload mapping to an architecture-bound simulation plan. It checks a verified `PortablePlanIR` against a candidate hardware blueprint, deployment, and evidence policy, then constructs one authoritative `ConcretePlanIR` envelope from which timing, simulation, and optional target programs are derived.
 
 !!! warning "Design status"
-    The late-binding boundary and experimental schemas exist; typed target extensions, a production producer, and the downstream analysis/transformation chain are **Planned**.
+    The late-binding boundary, experimental schemas, and deterministic queue/slot reference binders exist. The target-plugin registry, a production producer, and the downstream analysis/transformation chain remain **Planned**.
 
 ## Why this is one vertical slice
 
@@ -67,6 +67,25 @@ After the command DAG is verified, timing projection computes predicted interval
 Predicted timestamps are annotations, not readiness semantics. Removing them must leave a replayable dependency/queue program. This is what allows a new evidence revision to change expected duration without changing execution correctness.
 
 If a target makes a cycle or slot a correctness constraint, it enters a typed target extension after binding rather than `TimingProjection`. The projection and trace are published with concrete, evidence, and policy digests in a `TimelineBundle`; see the [timeline staging path](../timeline-path.md) for the complete semantics.
+
+## Implemented reference-binder passes
+
+`stages/concrete_plan/passes.py` directly defines two deterministic contract-validation passes:
+
+- `BindReferenceQueueTargetPass` produces a queue-centric `QueueScheduleExtension`;
+- `BindReferenceSlotTargetPass` produces a non-queue `SlotDataflowExtension`.
+
+Both preserve a 1:1 `PlanTask -> ConcreteCommand` identity, dependency topology, and buffer uses. Neither claims to be a production scheduler. Buffers use stable-order aligned linear allocation:
+
+```text
+offset_0 = 0
+bound_i = align_up(offset_i, alignment_i)
+offset_(i+1) = bound_i + size_i
+```
+
+Every command implementation and placement comes from explicit target/deployment bindings. The commit gate rebuilds the complete concrete plan with the same pure normalizer and requires equality of source-buffer identity, exact size, task lineage, command mapping, and the typed extension. Separately, relation invariants check portable-to-concrete buffer identity/capacity/alignment, dependency correspondence, buffer access, operation identity, and target ABI. The two passes map the same portable input into different typed extensions, proving that the common envelope does not assume queue-only targets.
+
+This is a contract reference implementation, not a paper-derived performance heuristic. Source is `src/blueprinting/synthesizer/stages/concrete_plan/passes.py`; positive/negative, lineage, and deterministic replay tests are in `tests/synthesizer/test_reference_targets.py`.
 
 ## Machine lowering and artifact emission
 

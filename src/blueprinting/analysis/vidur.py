@@ -138,7 +138,7 @@ class VidurProfileBaseline:
         self._revision = content_digest(
             FrozenDict(
                 {
-                    "adapter": "blueprinting-vidur-baseline-v1",
+                    "adapter": "blueprinting-vidur-baseline-v0",
                     "upstream_revision": source_revision,
                     "data_digest": data_digest,
                     "model_name": model_name,
@@ -329,7 +329,7 @@ class VidurProfileImporter:
     admissible to a ``CostResolver``; baseline lookup remains post-hoc only.
     """
 
-    IMPORTER_REVISION = "blueprinting-vidur-profile-v1"
+    IMPORTER_REVISION = "blueprinting-vidur-profile-v0"
 
     @classmethod
     def from_csv(

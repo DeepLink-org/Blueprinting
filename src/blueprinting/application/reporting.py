@@ -7,7 +7,10 @@ from enum import Enum
 from typing import Any
 
 from blueprinting.schema.frozen import FrozenDict
-from blueprinting.synthesizer.ir import DistributedTaskIR, ModelIR, PortablePlanIR
+from blueprinting.synthesizer.stages.common import CanonicalIRMixin
+from blueprinting.synthesizer.stages.distributed.ir import DistributedTaskIR
+from blueprinting.synthesizer.stages.model.ir import ModelIR
+from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR
 
 
 class DiagnosticLevel(Enum):
@@ -101,7 +104,7 @@ def _diagnostics_from_verification(
             path=item.path,
             hint=item.hint,
         )
-        for item in ir.verify().diagnostics
+        for item in ir.diagnostics().diagnostics
     )
 
 
@@ -109,7 +112,7 @@ def stage_report(
     stage: str,
     label: str,
     pass_name: str,
-    ir: ModelIR | DistributedTaskIR | PortablePlanIR,
+    ir: CanonicalIRMixin,
     duration_ns: int,
 ) -> IRStageReport:
     """Build an inspectable report for one verified derivation boundary."""
@@ -118,8 +121,10 @@ def stage_report(
         node_count, value_count = len(ir.operations), len(ir.values)
     elif isinstance(ir, DistributedTaskIR):
         node_count, value_count = len(ir.tasks), len(ir.values)
-    else:
+    elif isinstance(ir, PortablePlanIR):
         node_count, value_count = len(ir.tasks), len(ir.buffers)
+    else:
+        raise TypeError(f"application stage reports do not support {type(ir).__name__}")
     return IRStageReport(
         stage=stage,
         label=label,

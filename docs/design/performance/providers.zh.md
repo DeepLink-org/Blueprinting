@@ -140,7 +140,7 @@ AIConfigurator 的最终 `best_config_topn.csv` 与 Pareto output 描述的是 s
 
 ## 在 Inference Costing 中使用 Resolver
 
-Static inference 已可使用新 resolver，同时保留 legacy `InferenceCostProvider` seam：
+Static inference 与其他 production cost path 使用同一个 resolver：
 
 ```python
 resolver = CostResolver((
@@ -168,7 +168,7 @@ estimate = estimate_inference_phase(
 )
 ```
 
-Application 入口同样接受 `cost_resolver` 与 `cost_context`，因此导入 database 的证据不需要绕过 `InferenceAnalysisService`。Legacy `InferenceCostProvider` 仍作为互斥的兼容 seam 保留。Resolver 返回的 provider/source revision、raw record ID、method、match、assumption 与逐 task uncertainty 会进入 application task report；在没有相关性模型时，service 不会擅自合成 phase-level variance。
+Application 入口同样接受 `cost_resolver` 与 `cost_context`，因此导入 database 的证据不需要绕过 `InferenceAnalysisService`。原有 inference-only provider seam 已删除：`CostResolver` 是唯一 production evidence path，`InferenceBaseline.lookup()` 只用于 comparison。Resolver 返回的 provider/source revision、raw record ID、method、match、assumption 与逐 task uncertainty 会进入 application task report；在没有相关性模型时，service 不会擅自合成 phase-level variance。
 
 Inference task query 直接从 canonical `PlanTask.workload` 推导；GEMM dimension 与 local attention-head dimension 来自 model 和 TP facts。Tensor-parallel collective 与 pipeline P2P 使用同一个 resolver。所有 task 都必须被已安装的 provider 覆盖——通常是 exact database 后接 roofline——unknown task 不会被静默变成零。
 

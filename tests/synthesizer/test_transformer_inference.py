@@ -1,24 +1,46 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from blueprinting.analysis import (
-    InferenceCostProvider,
     InferenceEvidenceQuery,
     VidurProfileBaseline,
     estimate_inference_phase,
 )
-from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
+from blueprinting.mapping import (
+    ForwardOnly,
+    NetworkTierBinding,
+    PipelineParallel,
+    ReplicaParallel,
+    SingleStage,
+    TensorParallel,
+    TensorParallelCommunication,
+    TransformerInferenceMappingSpec,
+    TransformerInferenceParallelism,
+)
 from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.dialects.transformer import (
+    TransformerBufferSemantic,
+    TransformerInferencePlanSemantic,
+    TransformerInferencePlanTaskSemantic,
+)
+from blueprinting.synthesizer.errors import PassContractError
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.passes import (
+    DeterminismPolicy,
+    PassManager,
+    PassPipeline,
+    TransitionVerifier,
+)
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerInferencePass
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
 from blueprinting.validation import (
     VidurExperimentCase,
@@ -47,47 +69,65 @@ def _model() -> TransformerModelSpec:
 
 def _execution() -> TransformerInferenceMappingSpec:
     return TransformerInferenceMappingSpec(
-        tensor_parallel=2,
-        pipeline_parallel=2,
-        replicas=1,
+        TransformerInferenceParallelism(
+            TensorParallel(2, TensorParallelCommunication.ALL_REDUCE),
+            PipelineParallel(2, ForwardOnly()),
+            ReplicaParallel(1),
+        )
     )
 
 
 def _derive(phase: InferencePhase, context_tokens: int):
-    model = _model()
-    execution = _execution()
-    source = build_transformer_inference_model_ir(model)
-    result = PassManager().run(
-        PassPipeline.of(DistributeTransformerInferencePass(), PlanTransformerInferencePass()),
-        source,
-        session=inference_synthesis_session_for(
-            model,
-            execution,
-            phase=phase,
-            batch_size=3,
-            context_tokens=context_tokens,
-            datatype="float16",
-        ),
-    )
+    source, result, _ = _derive_result(phase, context_tokens)
     return source, result.ir
 
 
+def _derive_result(phase: InferencePhase, context_tokens: int):
+    model = _model()
+    execution = _execution()
+    source = build_transformer_inference_model_ir(model)
+    session = inference_synthesis_session_for(
+        model,
+        execution,
+        phase=phase,
+        batch_size=3,
+        context_tokens=context_tokens,
+        datatype="float16",
+    )
+    result = PassManager(determinism=DeterminismPolicy.VERIFY).require_run(
+        PassPipeline.of(DistributeTransformerInferencePass(), PlanTransformerInferencePass()),
+        source,
+        session=session,
+    )
+    return source, result, session
+
+
 def _task(plan, primitive: str):
-    return next(task for task in plan.tasks if task.workload.attributes.get("primitive") == primitive)
+    return next(
+        task
+        for task in plan.tasks
+        if isinstance(task.semantic, TransformerInferencePlanTaskSemantic) and task.semantic.primitive == primitive
+    )
 
 
 @pytest.mark.parametrize("phase", tuple(InferencePhase))
 def test_inference_lowering_has_valid_auditable_phase_plans(phase: InferencePhase):
     source, plan = _derive(phase, 64)
 
-    assert source.verify().ok
-    assert plan.verify().ok
-    assert plan.attributes["inference_phase"] is phase
+    assert source.verify().is_ok
+    assert plan.verify().is_ok
+    assert isinstance(plan.semantic, TransformerInferencePlanSemantic)
+    assert plan.semantic.phase is phase
     assert all("invocation" not in task.attributes for task in plan.tasks)
-    assert all(task.workload.attributes.get("phase") == phase.value for task in plan.tasks)
+    assert all(
+        isinstance(task.semantic, TransformerInferencePlanTaskSemantic) and task.semantic.phase is phase
+        for task in plan.tasks
+    )
     assert all("network_tier" not in task.workload.attributes for task in plan.tasks)
     assert all("network_tier" not in resource.capabilities for task in plan.tasks for resource in task.resources)
-    assert {buffer.attributes.get("semantic") for buffer in plan.buffers} >= {
+    assert {
+        buffer.semantic.role for buffer in plan.buffers if isinstance(buffer.semantic, TransformerBufferSemantic)
+    } >= {
         "block_weights",
         "block_working_upper_bound",
         "kv_cache",
@@ -113,13 +153,38 @@ def test_prefill_attention_is_quadratic_and_decode_attention_is_linear_in_contex
 
 def test_kv_cache_capacity_is_derived_from_shape_not_a_correction_factor():
     _, plan = _derive(InferencePhase.DECODE, 96)
-    kv_buffer = next(buffer for buffer in plan.buffers if buffer.attributes.get("semantic") == "kv_cache")
+    kv_buffer = next(
+        buffer
+        for buffer in plan.buffers
+        if isinstance(buffer.semantic, TransformerBufferSemantic) and buffer.semantic.role == "kv_cache"
+    )
     workspace = next(
-        buffer for buffer in plan.buffers if buffer.attributes.get("semantic") == "block_working_upper_bound"
+        buffer
+        for buffer in plan.buffers
+        if isinstance(buffer.semantic, TransformerBufferSemantic)
+        and buffer.semantic.role == "block_working_upper_bound"
     )
 
     assert kv_buffer.size_bytes == 2 * 3 * 96 * (64 // 2) * 2
     assert workspace.size_bytes > 0
+
+
+@pytest.mark.parametrize("role", ("block_weights", "block_working_upper_bound"))
+def test_normal_form_rejects_generated_buffer_capacity_mutation(role: str) -> None:
+    _, result, session = _derive_result(InferencePhase.DECODE, 96)
+    distributed = result.checkpoints[0].ir
+    plan = result.ir
+    index = next(
+        index
+        for index, buffer in enumerate(plan.buffers)
+        if isinstance(buffer.semantic, TransformerBufferSemantic) and buffer.semantic.role == role
+    )
+    broken_buffer = replace(plan.buffers[index], size_bytes=plan.buffers[index].size_bytes + 16)
+    broken = replace(plan, buffers=(*plan.buffers[:index], broken_buffer, *plan.buffers[index + 1 :]))
+    broken.require_valid()
+
+    with pytest.raises(PassContractError, match="canonical normal form"):
+        TransitionVerifier.verify(distributed, broken, PlanTransformerInferencePass.contract, session)
 
 
 def test_network_tier_binding_changes_cost_without_changing_portable_plan():
@@ -151,9 +216,11 @@ def test_request_semantics_count_prefill_as_the_first_output_token():
 def test_invalid_mapping_is_rejected_before_lowering():
     model = _model()
     invalid = TransformerInferenceMappingSpec(
-        tensor_parallel=3,
-        pipeline_parallel=1,
-        replicas=1,
+        TransformerInferenceParallelism(
+            TensorParallel(3, TensorParallelCommunication.ALL_REDUCE),
+            PipelineParallel(1, SingleStage()),
+            ReplicaParallel(1),
+        )
     )
 
     with pytest.raises(ValueError, match="hidden_size must be divisible"):
@@ -243,7 +310,7 @@ def test_vidur_adapter_uses_only_exact_shape_matches(tmp_path: Path):
     assert attention_estimate.evidence_provider == "analytical-system-profile"
     assert attention_comparison.baseline_seconds == pytest.approx(0.00025)
     assert attention_comparison.estimated_seconds == attention_estimate.total_seconds
-    assert not isinstance(baseline, InferenceCostProvider)
+    assert not hasattr(baseline, "resolve")
     assert plan.digest == digest_before
 
     experiment = run_vidur_experiment(

@@ -16,7 +16,7 @@ from blueprinting.application import AnalysisReport
 
 from .presentation import task_dependency_projection
 
-TRACE_SCHEMA = "blueprinting.chrome-trace.portable-projection.v1"
+TRACE_SCHEMA = "blueprinting.chrome-trace.portable-projection.v0"
 TRACE_KIND = "portable_dependency_projection"
 
 

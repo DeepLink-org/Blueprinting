@@ -76,7 +76,7 @@ ConcretePlanIR
 └── lineage to portable tasks
 ```
 
-初始 command 包括 `Launch`、`Collective`、`Transfer`、`Barrier`、`Signal`、`Wait` 和 `HostCall`。Planned allocation 可以是 static buffer binding，不要求 runtime allocation command。
+初始 command-body constructor 包括 `Launch`、`CollectiveCommand`、`Transfer`、`Barrier`、`Signal`、`Wait` 和 `HostCall`。图 envelope 只包含一个 body，不再使用 `CommandKind` 加 optional payload；可执行 body 必须携带 `ImplementationRef`，queue 只存在于支持 queue 的 body。正交 synchronization ADT 表达无同步、wait、signal 与 wait-and-signal，替代两组互不约束的 optional token tuple。Planned allocation 可以是 static buffer binding，不要求 runtime allocation command。
 
 ### Operational Meaning
 
@@ -86,7 +86,7 @@ Command 在 dependency、ordering、synchronization、resource 和 buffer contra
 
 完整 producer 的 verifier 必须检查 DAG acyclicity、dependency-token production/consumption、ordering legality、cross-resource synchronization、implementation coverage、placement、buffer lifetime/overlap、address bound、resource capacity、target fingerprint、typed extension 和 lineage。
 
-当前仓库只实现通用 device/queue/buffer/command schema 与一组 structural verifier；尚无 production portable-to-concrete construction pass、route/resource-occupancy semantic、typed target extension 或 end-to-end target conformance。这个 v1 是 experimental serialization contract，不是 frozen public ABI。
+当前仓库已实现通用 device/queue/buffer/command schema、typed queue-order/slot-dataflow extension、extension verifier 与 deterministic virtual portable-to-concrete reference binder。`ConcretePlanIR` 保持在初始 `0.0.0` epoch，不存在 production migration history；仓库尚无 production target plugin、通用 route/resource-occupancy model、scheduler 或端到端硬件 conformance。该 contract 仍是 experimental serialization contract，不是 frozen public ABI。
 
 ## MachineIR
 

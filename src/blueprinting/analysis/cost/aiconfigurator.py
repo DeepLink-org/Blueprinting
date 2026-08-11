@@ -99,7 +99,7 @@ def _runtime_selector(row: dict[str, Any], row_number: int) -> dict[str, Any]:
 
 
 class AIConfiguratorPerformanceImporter:
-    IMPORTER_REVISION = "blueprinting-aiconfigurator-perf-v1"
+    IMPORTER_REVISION = "blueprinting-aiconfigurator-perf-v0"
 
     @classmethod
     def from_file(

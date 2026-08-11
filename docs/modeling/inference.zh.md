@@ -102,7 +102,7 @@ case = VidurExperimentCase(
 report = run_vidur_experiment((case,), baseline)
 ```
 
-这个 API 边界是刻意设计的：Blueprinting 内部可接受的 `InferenceCostProvider` 暴露 `resolve()`，外部 `InferenceBaseline` 只暴露 `lookup()`。`run_vidur_experiment()` 会先完成 lowering 和两种 Blueprinting cost mode，再调用 `lookup()`；因此 Vidur 无法改变 operations、bytes、dependency、plan digest 或 estimated latency。
+这个 API 边界是刻意设计的：production evidence 通过 `CostResolver.resolve()` 进入，外部 `InferenceBaseline` 只暴露 `lookup()`。`run_vidur_experiment()` 会先完成 lowering 和两种 Blueprinting cost mode，再调用 `lookup()`；因此 Vidur 无法改变 operations、bytes、dependency、plan digest 或 estimated latency。
 
 Comparison 只发生在显式 semantic intersection 上。Report 给出 matched component count、coverage、Blueprinting comparable subtotal、Vidur comparable subtotal、被排除的 Blueprinting work、signed comparable-subtotal error，以及不可相互抵消的 component MAPE/max error。缺失 record 保持 `not-covered`，绝不会被当作零。这个区别很重要：Vidur 公开的 block aggregation 只有一个 `add_time`，而 Blueprinting 刻意保留两个 residual addition；当前 CSV adapter 也尚未读取 collective profile。
 

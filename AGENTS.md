@@ -173,9 +173,13 @@ interconnect 与 system profile 位于 `src/blueprinting/system/`；canonical �
   `src/blueprinting/synthesizer/`；cost/evidence analysis 进入 `src/blueprinting/analysis/`。不得新建平行表示栈。
 - `SystemProfile` 是当前有限的 compute/memory/network evidence-bearing adapter，不得被描述成已经实现的完整
   `ArchitectureBlueprint`；`src/blueprinting/types/system/` 只服务 legacy calculator，新代码不得依赖它。
-- `blueprinting.compiler` Python path 已硬切删除；历史 `compiler.*` canonical codec tag 作为 wire identity 保留，
-  未经迁移 ADR 不得改写。
+- Canonical codec tag 必须位于与领域 ownership 一致的 `blueprinting.*` namespace；不得新增历史 package-derived
+  tag 或兼容 alias。Pre-graduation 阶段 nested type identity 不携带独立版本号，五层 IR root 统一使用 `0.0.0`；
+  首次 schema increment 必须有 ADR、真实 migration、产物再生成方案和 conformance gate。
 - IR 对象默认 frozen；语义字段使用 typed dataclass/enum/ID，不使用自由字典代替 contract。
+- 普通应用代码不得依赖 authoring decorator；canonical schema/dialect 作者只从 `blueprinting.schema.authoring`
+  使用 `record/adt/variant`，pass/target extension 作者只从 `blueprinting.synthesizer.passes.authoring`
+  使用 `derivation/relation/claim`。Codec registry、manifest 与 pass registry 是内部实现，不得从 package root 转发。
 - 所有公共 derivation/transformation 和 verifier 必须有 positive、negative、round-trip 与 lineage 测试。
 - Python 最低版本为 3.10；不得使用只在更高版本解析的语法，除非先更新 packaging contract。
 - 修改后至少运行相关 pytest 与 Ruff；文档修改运行双语一致性检查和 `mkdocs build --strict`。

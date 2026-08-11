@@ -23,11 +23,22 @@ This page covers decoder-only training at block scope; the repository separately
 
 ## Typed semantic import
 
-`TransformerModelSpec` owns dimensions and model semantics. `TransformerTrainingWorkloadSpec` owns global/micro batch size and datatype. `TransformerTrainingMappingSpec` owns TP/PP/DP, recomputation, pipeline interleaving, optimizer sharding, and tensor-parallel communication mode. `synthesis_session_for()` converts these independent contracts into explicit workload and strategy bindings.
+`TransformerModelSpec` owns dimensions and model semantics. `TransformerTrainingWorkloadSpec` owns global/micro batch size and datatype. `TransformerTrainingMappingSpec.parallelism` projects configuration into `TensorParallel × PipelineParallel × DataParallel × RecomputePolicy`, with a closed pipeline-schedule ADT. `synthesis_session_for()` converts these independent contracts into explicit workload and strategy bindings.
 
 Physical network-tier selection is deliberately absent. `NetworkTierBinding` is supplied only when a portable plan is evaluated against a `SystemProfile`; changing it cannot change the model, distributed, or portable-plan digest.
 
 The importer rejects invalid dimensions, TP divisibility failures, sequence dimensions that cannot be evenly partitioned under RS+AG, invalid parallel topology, and inconsistent workload or strategy facts before a pass runs. At TP=1, AR and RS+AG have identical local work and memory semantics. `build_transformer_model_ir()` then creates a coarse, target-neutral `transformer.decoder_training` operation. No target name, peak rate, kernel ID, or latency enters this snapshot.
+
+Composition obeys:
+
+```text
+world_size = TP × PP × DP
+local_batch = global_batch / DP
+microbatch_count = global_batch / (DP × microbatch_size)
+blocks_per_virtual_chunk = block_count / (PP × virtual_stages)
+```
+
+Every division must be integral. See [Typed Transformer Parallel Strategies](../ir/parallel-strategy.md) for the complete types, schedule constructors, and Megatron mapping.
 
 ## Static workload derivation
 
@@ -35,11 +46,16 @@ The importer rejects invalid dimensions, TP divisibility failures, sequence dime
 
 The analysis follows data dependencies rather than fitted ratios. For a linear layer `Y[M,K] = X[M,N] x W[N,K]`, forward, activation-gradient, and weight-gradient work are three explicit matrix multiplications. Attention, normalization, activation, dropout, residual, and optimizer work are represented separately.
 
+```text
+F_forward = F_dgrad = F_wgrad = 2 M N K
+F_local_tensor_parallel = 2 M N K / TP
+```
+
 Recomputation is also structural. Full recomputation clones the required forward invocations; selective recomputation clones only the selected attention path. Sequence-parallel recommunication is a distinct collective invocation. Consequently every added operation and byte remains attributable to a semantic cause.
 
 ## Distribution derivation
 
-`DistributeTransformerTrainingPass` consumes `ModelIR` plus workload and strategy bindings and introduces:
+`DistributeTransformerTrainingPass` is defined in the target stage's `stages/distributed/passes.py`. It consumes `ModelIR` plus workload and strategy bindings, uses `match` to destructure typed TP/PP/DP strategies, local/collective invocations, and the `TaskBody` ADT, and introduces:
 
 - a logical TP mesh and logical ranks;
 - forward, recompute, backward, optimizer, and recommunication tasks;
@@ -59,7 +75,7 @@ The pass must preserve workload semantics and satisfy these checks:
 
 ## Portable-plan derivation
 
-`PlanTransformerTrainingPass` converts each distributed task into a `PlanTask`. It retains `WorkloadFacts`, declares abstract resource demand, creates capability-based implementation requirements, assigns logical concurrency groups, and introduces boundary buffers and objectives.
+`PlanTransformerTrainingPass` is defined in `stages/portable_plan/passes.py` and converts each distributed task into a `PlanTask`. It retains `WorkloadFacts`, declares abstract resource demand, creates capability-based implementation requirements, assigns logical concurrency groups, and introduces boundary buffers and objectives.
 
 The pass may say that a task needs `matrix-multiply`, `vector-elementwise`, or a collective capability. It may not select a CUDA kernel, LPU opcode, physical device, memory bank, queue, or duration. Those are decisions of the portable-to-concrete gate.
 
@@ -84,6 +100,15 @@ Typed inconsistency is reported at the earliest boundary: missing strategy bindi
 
 The derivation does not compensate for a discrepancy by reading a reference latency or attaching a case-specific coefficient. A disagreement is localized to semantic import, work derivation, distribution, cost evidence, or schedule composition and fixed at that boundary.
 
+## Papers and formula provenance
+
+- [Megatron-LM 2019](https://arxiv.org/abs/1909.08053): Transformer column/row tensor-parallel partitioning and collective boundaries.
+- [Megatron-LM 2021](https://arxiv.org/abs/2104.04473): TP × PP × DP composition, 1F1B, and interleaved pipelines.
+- [GPipe](https://arxiv.org/abs/1811.06965): microbatch pipelines and the basic bubble model.
+- [Selective recomputation and sequence parallelism](https://arxiv.org/abs/2205.05198): selective recomputation and RS/AG sequence-parallel semantics.
+
+Citations explain the design provenance; they do not replace verifiers. Work conservation, lineage, round trips, deterministic replay, and the Calculon regression gate check the implemented formulas.
+
 ## Implementation map
 
 | Concern | Source | Tests |
@@ -92,7 +117,10 @@ The derivation does not compensate for a discrepancy by reading a reference late
 | Logical mapping contract | `src/blueprinting/mapping/transformer.py` | boundary and validation tests |
 | Workload-to-IR frontend | `src/blueprinting/synthesizer/frontend/transformer.py` | canonical representation and calibration tests |
 | Workload algebra | `src/blueprinting/synthesizer/dialects/transformer/training.py` | `tests/validation/test_calculon.py` |
-| Two derivation passes | `src/blueprinting/synthesizer/lowering/transformer.py` | `tests/synthesizer/test_transformer_training.py` and calibration tests |
+| typed TP/PP/DP strategy | `src/blueprinting/mapping/transformer.py` | `tests/analysis/test_domain_contracts.py` |
+| distributed pass definition | `src/blueprinting/synthesizer/stages/distributed/passes.py` | `tests/synthesizer/test_transformer_training.py` |
+| portable pass definition | `src/blueprinting/synthesizer/stages/portable_plan/passes.py` | same |
+| pure derivation and pattern matching | `src/blueprinting/synthesizer/dialects/transformer/training_derivation.py` | same and calibration tests |
 | Transaction/checkpoints | `src/blueprinting/synthesizer/passes/base.py` | `tests/synthesizer/test_pass_manager.py` |
 | Evidence-derived estimates | `src/blueprinting/analysis/cost_model.py` | validation tests |
 | Calculon/SeqSel oracle gate | `src/blueprinting/validation/calculon.py` | `tests/validation/test_calculon.py` |

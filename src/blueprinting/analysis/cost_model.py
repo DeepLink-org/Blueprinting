@@ -31,17 +31,20 @@ from blueprinting.synthesizer.dialects.transformer import (
     PhaseWork,
     PrimitiveInvocation,
     TrainingPhase,
+    TransformerTrainingPlanSemantic,
+    TransformerTrainingPlanTaskSemantic,
 )
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
-from ..synthesizer.ir import CollectiveKind, PlanTask, PortablePlanIR
+from ..synthesizer.stages.distributed.ir import CollectiveKind
+from ..synthesizer.stages.portable_plan.ir import PlanTask, PortablePlanIR, require_concrete_quantity
 from ..system import SystemProfile
 
 # Codec tags are stable wire identities; the legacy namespace survives the
 # Python package move so existing snapshots and performance evidence still load.
 
 
-@enum_type("compiler.analysis.calibration_mode")
+@enum_type("blueprinting.analysis.cost.calibration-mode")
 class CalibrationMode(Enum):
     PEAK_ONLY = "peak_only"
     SYSTEM_EVIDENCE = "system_evidence"
@@ -155,40 +158,22 @@ def _task_estimate(
 def _invocation_from_plan_task(task: PlanTask) -> PrimitiveInvocation:
     """Reconstruct a cost view from canonical portable workload facts."""
 
-    attributes = task.workload.attributes
-    try:
-        phase = TrainingPhase(attributes["phase"])
-        engine = EngineKind(attributes["engine"])
-        name = attributes["name"]
-        primitive = attributes["primitive"]
-        source_layer = attributes["source_layer"]
-    except (KeyError, ValueError) as error:
-        raise ValueError(f"portable training task {task.id} has invalid semantic workload metadata") from error
-    for field_name, value in (("name", name), ("primitive", primitive), ("source_layer", source_layer)):
-        if not isinstance(value, str) or not value:
-            raise ValueError(f"portable training task {task.id} has invalid {field_name}")
-    collective_value = attributes.get("collective", "")
-    collective = None
-    if engine is EngineKind.COLLECTIVE:
-        try:
-            collective = CollectiveKind(collective_value)
-        except ValueError as error:
-            raise ValueError(f"portable training task {task.id} has invalid collective metadata") from error
-    elif collective_value != "":
-        raise ValueError(f"local portable training task {task.id} carries collective metadata")
+    semantic = task.semantic
+    if not isinstance(semantic, TransformerTrainingPlanTaskSemantic):
+        raise ValueError(f"portable training task {task.id} is missing typed Transformer semantics")
     return PrimitiveInvocation(
-        name=name,
-        source_layer=source_layer,
-        primitive=primitive,
-        phase=phase,
-        engine=engine,
+        name=semantic.name,
+        source_layer=semantic.source_layer,
+        primitive=semantic.primitive,
+        phase=semantic.phase,
+        engine=semantic.engine,
         work=PhaseWork(
-            operations=task.workload.operations,
-            read_bytes=task.workload.read_bytes,
-            write_bytes=task.workload.write_bytes,
-            message_bytes=task.workload.message_bytes,
+            operations=require_concrete_quantity(task.workload.operations, f"task {task.id} operations"),
+            read_bytes=require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes"),
+            write_bytes=require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes"),
+            message_bytes=require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes"),
         ),
-        collective=collective,
+        collective=semantic.collective,
     )
 
 
@@ -199,9 +184,10 @@ def estimate_block(
     *,
     network_binding: NetworkTierBinding,
 ) -> BlockEstimate:
-    mapping = plan.attributes.get("mapping_spec")
-    if not isinstance(mapping, TransformerTrainingMappingSpec):
+    semantic = plan.semantic
+    if not isinstance(semantic, TransformerTrainingPlanSemantic):
         raise TypeError("portable plan is missing TransformerTrainingMappingSpec")
+    mapping = semantic.mapping
     if not isinstance(network_binding, NetworkTierBinding):
         raise TypeError("network_binding must be NetworkTierBinding")
     tasks = []
@@ -292,18 +278,13 @@ def estimate_iteration(
 ) -> IterationEstimate:
     """Apply an explicit 1F1B/interleaved schedule to a derived block plan."""
 
-    model = plan.attributes.get("model_spec")
-    workload = plan.attributes.get("workload_spec")
-    mapping = plan.attributes.get("mapping_spec")
-    block_memory = plan.attributes.get("block_memory")
-    if not isinstance(model, TransformerModelSpec):
-        raise TypeError("portable plan is missing TransformerModelSpec")
-    if not isinstance(workload, TransformerTrainingWorkloadSpec):
-        raise TypeError("portable plan is missing TransformerTrainingWorkloadSpec")
-    if not isinstance(mapping, TransformerTrainingMappingSpec):
-        raise TypeError("portable plan is missing TransformerTrainingMappingSpec")
-    if not isinstance(block_memory, BlockMemoryFacts):
-        raise TypeError("portable plan is missing BlockMemoryFacts")
+    semantic = plan.semantic
+    if not isinstance(semantic, TransformerTrainingPlanSemantic):
+        raise TypeError("portable plan is missing typed Transformer training semantics")
+    model = semantic.model
+    workload = semantic.workload
+    mapping = semantic.mapping
+    block_memory = semantic.block_memory
     if hardware.datatype != workload.datatype:
         raise ValueError("system profile datatype does not match workload datatype")
     if not isinstance(network_binding, NetworkTierBinding):

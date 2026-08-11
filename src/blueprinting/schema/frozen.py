@@ -38,7 +38,7 @@ def thaw(value: Any) -> Any:
     return value
 
 
-class FrozenDict(Mapping):
+class FrozenDict(Mapping[str, Any]):
     """A compact, hashable mapping with recursively frozen values."""
 
     __slots__ = ("_hash", "_items")
@@ -59,8 +59,8 @@ class FrozenDict(Mapping):
             if key in copied:
                 raise ValueError(f"duplicate FrozenDict key: {key!r}")
             copied[key] = freeze(value)
-        self._items = tuple(sorted(copied.items(), key=lambda pair: pair[0]))
-        self._hash = None
+        self._items: tuple[tuple[str, Any], ...] = tuple(sorted(copied.items(), key=lambda pair: pair[0]))
+        self._hash: int | None = None
 
     def __getitem__(self, key: str) -> Any:
         for item_key, value in self._items:
@@ -83,7 +83,7 @@ class FrozenDict(Mapping):
         body = ", ".join(f"{key!r}: {value!r}" for key, value in self._items)
         return f"FrozenDict({{{body}}})"
 
-    def __reduce__(self):
+    def __reduce__(self) -> tuple[type[FrozenDict], tuple[dict[str, Any]]]:
         """Use the public constructor for process and UI cache round-trips."""
 
         return FrozenDict, (dict(self._items),)

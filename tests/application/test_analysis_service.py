@@ -71,11 +71,19 @@ def test_analysis_service_is_the_complete_client_boundary() -> None:
     assert all(stage.valid for stage in report.stages)
     assert report.tasks
     assert report.evidence_revision == report.evidence["revision"]
+    assert report.schema == "blueprinting.analysis-report.v0"
+    assert tuple(stage.stage.value for stage in report.derivation_trace.stages) == (
+        "model",
+        "distributed",
+        "portable",
+    )
+    assert len(report.derivation_trace.transitions) == 2
+    assert report.derivation_trace.overlays[0].stage_digest == report.plan_digest
 
 
 def test_analysis_service_accepts_canonical_mapping_names_and_sweeps_them() -> None:
-    legacy = _draft()
-    execution = dict(legacy.execution_data.items())
+    preset = _draft()
+    execution = dict(preset.execution_data.items())
     for canonical, alias in (
         ("tensor_parallel", "tensor_par"),
         ("pipeline_parallel", "pipeline_par"),
@@ -85,12 +93,12 @@ def test_analysis_service_accepts_canonical_mapping_names_and_sweeps_them() -> N
     ):
         execution[canonical] = execution.pop(alias)
     canonical = AnalysisDraft.from_mappings(
-        model_name=legacy.model_name,
-        model_data=dict(legacy.model_data.items()),
-        execution_name=legacy.execution_name,
+        model_name=preset.model_name,
+        model_data=dict(preset.model_data.items()),
+        execution_name=preset.execution_name,
         execution_data=execution,
-        hardware_name=legacy.hardware_name,
-        hardware_data=dict(legacy.hardware_data.items()),
+        hardware_name=preset.hardware_name,
+        hardware_data=dict(preset.hardware_data.items()),
     )
 
     outcome = BlueprintingService().analyze(canonical.with_parallelism(4, 1, 2))
