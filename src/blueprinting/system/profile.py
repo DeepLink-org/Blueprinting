@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from blueprinting.schema.codec import content_digest, record_type
+from blueprinting.schema.authoring import NonEmptyText, record
+from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict
 
 from .chip import EfficiencyCurve, EfficiencyPoint, MemoryProfile, ProcessorProfile
 from .interconnect import NetworkOperationProfile, NetworkProfile
 
 
-@record_type("compiler.analysis.hardware_profile.v1")
-@dataclass(frozen=True)
+@record("blueprinting.system.profile")
 class SystemProfile:
     """One accelerator system used for analytical evaluation.
 
@@ -23,32 +22,14 @@ class SystemProfile:
     exact imported system evidence snapshot.
     """
 
-    name: str
-    datatype: str
+    name: NonEmptyText
+    datatype: NonEmptyText
     matrix: ProcessorProfile
     vector: ProcessorProfile
     memory: MemoryProfile
-    processing_mode: str
+    processing_mode: Literal["roofline", "no_overlap"]
     networks: tuple[NetworkProfile, ...]
-    evidence_revision: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("system profile name must not be empty")
-        if not isinstance(self.datatype, str) or not self.datatype:
-            raise ValueError("system profile datatype must not be empty")
-        if not isinstance(self.matrix, ProcessorProfile) or not isinstance(self.vector, ProcessorProfile):
-            raise TypeError("matrix and vector must be ProcessorProfile")
-        if not isinstance(self.memory, MemoryProfile):
-            raise TypeError("memory must be MemoryProfile")
-        if self.processing_mode not in {"roofline", "no_overlap"}:
-            raise ValueError("processing_mode must be roofline or no_overlap")
-        networks = tuple(self.networks)
-        if any(not isinstance(network, NetworkProfile) for network in networks):
-            raise TypeError("networks must contain NetworkProfile values")
-        object.__setattr__(self, "networks", networks)
-        if not isinstance(self.evidence_revision, str) or not self.evidence_revision:
-            raise ValueError("evidence_revision must not be empty")
+    evidence_revision: NonEmptyText
 
     @classmethod
     def from_mapping(

@@ -19,7 +19,7 @@ from blueprinting.schema.frozen import FrozenDict
 from ..synthesizer.bindings import InferencePhase
 from .cost.database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .cost.protocol import CostSubject, EstimateMethod
-from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult
+from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult, inference_cost_operation
 
 _COMPUTE_COLUMNS = {
     "input_layernorm": "time_stats.input_layernorm.median",
@@ -44,15 +44,6 @@ _SOURCE_LAYERS = {
     "mlp_down_projection": "mlp.down",
     "residual_add": "mlp.residual",
 }
-
-_GEMM_PRIMITIVES = frozenset(
-    {
-        "attention_pre_projection",
-        "attention_post_projection",
-        "mlp_up_projection",
-        "mlp_down_projection",
-    }
-)
 
 
 def _read_rows(path: Path, *, required: frozenset[str], timing_columns: frozenset[str]) -> tuple[dict[str, str], ...]:
@@ -138,7 +129,7 @@ class VidurProfileBaseline:
         self._revision = content_digest(
             FrozenDict(
                 {
-                    "adapter": "blueprinting-vidur-baseline-v1",
+                    "adapter": "blueprinting-vidur-baseline-v0",
                     "upstream_revision": source_revision,
                     "data_digest": data_digest,
                     "model_name": model_name,
@@ -329,7 +320,7 @@ class VidurProfileImporter:
     admissible to a ``CostResolver``; baseline lookup remains post-hoc only.
     """
 
-    IMPORTER_REVISION = "blueprinting-vidur-profile-v1"
+    IMPORTER_REVISION = "blueprinting-vidur-profile-v0"
 
     @classmethod
     def from_csv(
@@ -553,7 +544,7 @@ class VidurProfileImporter:
                 milliseconds = _milliseconds(row, metric)
                 if milliseconds is None:
                     continue
-                operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+                operation = inference_cost_operation(primitive)
                 selector = {
                     **shared_selector,
                     "semantic_operation": primitive,

@@ -68,25 +68,60 @@ nav:
       - Golden Derivation Walkthrough: design/walkthrough.md
       - Analysis Module Architecture: design/modules.md
       - Floating-Point Numerical Analysis: design/numerical-analysis.md
+      - IR Derivation Debugging: design/derivation-debugging.md
+      - Progressive Typed Python Contracts: design/typed-python-contracts.md
       - Formal Representations:
           - Representation Stack: design/ir/index.md
+          - Python Algebraic IR Authoring: design/ir/python-algebra.md
+          - Typed Transformer Parallel Strategies: design/ir/parallel-strategy.md
           - Workload and Distribution Models: design/ir/model-distributed.md
           - Planning and Realization Models: design/ir/planning-execution.md
       - Analysis and Transformation:
           - Transaction Infrastructure: design/passes/index.md
           - Transformer Workload Derivation: design/passes/transformer.md
           - Architecture Binding and Plan Construction: design/passes/target.md
+  - Code Reference:
+      - Code Documentation: reference/index.md
+      - Canonical IR API:
+          - ModelIR API: reference/model-ir.md
+          - DistributedTaskIR API: reference/distributed-task-ir.md
+          - PortablePlanIR API: reference/portable-plan-ir.md
+          - ConcretePlanIR API: reference/concrete-plan-ir.md
+          - MachineIR API: reference/machine-ir.md
+      - Pass Formulae and API: reference/passes.md
+      - Derivation Infrastructure API: reference/derivation-infrastructure.md
   - Project:
       - Implementation Status: project/status.md
       - Roadmap: project/roadmap.md
       - Decisions and Terminology: project/decisions.md
       - ADR-0001 — Synthesizer Package: project/adr/0001-synthesizer-package.md
       - ADR-0002 — Workload and System Domains: project/adr/0002-workload-system-domains.md
+      - ADR-0003 — Derivation Debug Trace: project/adr/0003-derivation-debug-trace.md
+      - ADR-0004 — Semantic Wire Identities: project/adr/0004-semantic-wire-identities.md
+      - ADR-0005 — Algebraic Expression and Command Schemas: project/adr/0005-algebraic-expression-command-schemas.md
+      - ADR-0006 — Progressive Typed Python Contracts: project/adr/0006-progressive-typed-python-contracts.md
       - Architecture Risk Register: project/risks.md
       - Documentation Guide: contributing/documentation.md
 
 plugins:
   - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_section_style: list
+            heading_level: 2
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            skip_local_inventory: true
+            show_root_full_path: true
+            show_root_heading: true
+            show_signature_annotations: true
+            show_source: true
   - i18n:
       docs_structure: suffix
       # Shared, language-neutral assets are inherited from the default locale.
@@ -130,20 +165,37 @@ plugins:
             Golden Derivation Walkthrough: 完整推导示例
             Analysis Module Architecture: 分析模块架构
             Floating-Point Numerical Analysis: 浮点数数值分析
+            IR Derivation Debugging: IR 推导调试
+            Progressive Typed Python Contracts: 渐进式 Typed Python Contract
             Formal Representations: 形式化表示
             Representation Stack: 表示体系
+            Typed Transformer Parallel Strategies: Transformer 并行策略的类型化表示
             Workload and Distribution Models: 工作负载与分布模型
             Planning and Realization Models: 规划与实现模型
             Analysis and Transformation: 分析与变换
             Transaction Infrastructure: 事务基础设施
             Transformer Workload Derivation: Transformer 工作负载推导
             Architecture Binding and Plan Construction: 架构绑定与计划构造
+            Code Reference: 代码参考
+            Code Documentation: 代码文档
+            Canonical IR API: Canonical IR API
+            ModelIR API: ModelIR API
+            DistributedTaskIR API: DistributedTaskIR API
+            PortablePlanIR API: PortablePlanIR API
+            ConcretePlanIR API: ConcretePlanIR API
+            MachineIR API: MachineIR API
+            Pass Formulae and API: Pass 公式与 API
+            Derivation Infrastructure API: 推导基础设施 API
             Project: 项目
             Implementation Status: 实现状态
             Roadmap: 路线图
             Decisions and Terminology: 设计决策与术语
             ADR-0001 — Synthesizer Package: ADR-0001 — Synthesizer 包命名
             ADR-0002 — Workload and System Domains: ADR-0002 — Workload 与 System 领域
+            ADR-0003 — Derivation Debug Trace: ADR-0003 — 推导调试 Trace
+            ADR-0004 — Semantic Wire Identities: ADR-0004 — 语义化 Wire Identity
+            ADR-0005 — Algebraic Expression and Command Schemas: ADR-0005 — 代数化表达式与 Command Schema
+            ADR-0006 — Progressive Typed Python Contracts: ADR-0006 — 渐进式 Typed Python Contract
             Architecture Risk Register: 架构风险登记表
             Documentation Guide: 文档维护指南
 
@@ -156,6 +208,10 @@ extra:
 extra_css:
   - assets/stylesheets/site.css
 
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -164,6 +220,8 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite

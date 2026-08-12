@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import inf, isnan
+from math import inf, isfinite, isnan
 from typing import Any
 
 import numpy as np
 from nicegui import ui
-
-from blueprinting.fp import float_point_values_table
 
 DEFAULT_FLOAT_FORMATS = {
     "fp32": (1, 8, 23),
@@ -42,7 +40,7 @@ class FloatFormatSpec:
 
     @property
     def bias(self) -> int:
-        return 2 ** (self.exponent_bits - 1) - 1
+        return (1 << (self.exponent_bits - 1)) - 1
 
     @property
     def min_normal(self) -> float:
@@ -129,11 +127,22 @@ def representable_values(spec: FloatFormatSpec) -> list[float]:
 
     if spec.exponent_bits + spec.mantissa_bits > 12:
         raise ValueError("interactive value enumeration is limited to exponent_bits + mantissa_bits <= 12")
-    return float_point_values_table(
-        sign_bit=spec.sign_bit,
-        exponent_bits=spec.exponent_bits,
-        mantissa_bits=spec.mantissa_bits,
-    )
+    values = []
+    signs = (False, True) if spec.sign_bit else (False,)
+    for negative in signs:
+        for raw_exponent in range(2**spec.exponent_bits):
+            exponent = _int_to_bits(raw_exponent, spec.exponent_bits)
+            for raw_mantissa in range(2**spec.mantissa_bits):
+                decoded = decode_float_bits(
+                    spec,
+                    negative=negative,
+                    exponent=exponent,
+                    mantissa=_int_to_bits(raw_mantissa, spec.mantissa_bits),
+                )
+                if isfinite(decoded.value):
+                    values.append(decoded.value)
+    values.sort()
+    return values
 
 
 def distribution_chart_options(values: list[float], spec: FloatFormatSpec, limit: float) -> dict[str, Any]:
@@ -272,9 +281,11 @@ class FloatAnalysisPanel:
                         )
                     with ui.column().classes("bp-numeric-control bp-numeric-control--sign gap-1"):
                         ui.label("符号位 S").classes("bp-summary-label")
-                        self.sign_control = ui.switch(
-                            "启用", value=self.spec.sign_bit, on_change=self._format_changed
-                        ).props("dense").mark("float-sign-bit")
+                        self.sign_control = (
+                            ui.switch("启用", value=self.spec.sign_bit, on_change=self._format_changed)
+                            .props("dense")
+                            .mark("float-sign-bit")
+                        )
                     with ui.column().classes("bp-numeric-control bp-numeric-control--range gap-1"):
                         ui.label("观察范围").classes("bp-summary-label")
                         self.range_control = (
@@ -336,9 +347,7 @@ class FloatAnalysisPanel:
             with ui.element("section").classes("bp-evidence-surface bp-numeric-overview"):
                 with ui.element("div").classes("bp-evidence-section bp-numeric-chart-panel"):
                     ui.label("格式位宽对比").classes("bp-card-title")
-                    ui.echart(format_layout_chart_options(self.spec), renderer="svg").classes(
-                        "w-full bp-format-chart"
-                    )
+                    ui.echart(format_layout_chart_options(self.spec), renderer="svg").classes("w-full bp-format-chart")
                 with ui.element("aside").classes("bp-numeric-spec-panel"):
                     ui.label(self.spec.name).classes("bp-card-title")
                     ui.label("当前格式摘要").classes("bp-card-copy")
@@ -476,6 +485,10 @@ def _format_series(name: str, color: str, data: list[int]) -> dict[str, Any]:
 
 def _bits_to_int(bits: tuple[bool, ...]) -> int:
     return sum(int(bit) << (len(bits) - index - 1) for index, bit in enumerate(bits))
+
+
+def _int_to_bits(value: int, width: int) -> tuple[bool, ...]:
+    return tuple(bool(value & (1 << shift)) for shift in range(width - 1, -1, -1))
 
 
 def _downsample(values: list[float], maximum: int) -> list[float]:

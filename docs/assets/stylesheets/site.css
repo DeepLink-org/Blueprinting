@@ -1090,3 +1090,14 @@ body:has(.bp-home) .md-content {
     transition: none !important;
   }
 }
+
+/* Code-reference equations must stay readable on narrow review surfaces. */
+.md-typeset div.arithmatex {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4rem 0.1rem;
+}
+
+.md-typeset .doc-object {
+  scroll-margin-top: 4rem;
+}

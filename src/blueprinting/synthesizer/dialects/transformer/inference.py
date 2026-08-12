@@ -8,43 +8,30 @@ baselines without allowing those baselines to change workload semantics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from blueprinting.mapping import TransformerInferenceMappingSpec
-from blueprinting.schema.codec import record_type
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.schema.authoring import NonEmptyText, NonNegativeInt, record
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, transformer_element_bytes
 
 from ...bindings import InferencePhase
-from ...ir import CollectiveKind
+from ...stages.distributed.ir import CollectiveKind
 from .common import EngineKind, PhaseWork
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@record_type("blueprinting.transformer.inference-invocation.v2")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.inference-invocation")
 class InferenceInvocation:
     """One target-neutral component invocation for a single decoder block."""
 
-    name: str
-    source_layer: str
-    primitive: str
+    name: NonEmptyText
+    source_layer: NonEmptyText
+    primitive: NonEmptyText
     phase: InferencePhase
     engine: EngineKind
     work: PhaseWork
     collective: CollectiveKind | None = None
 
     def __post_init__(self) -> None:
-        for field_name in ("name", "source_layer", "primitive"):
-            value = getattr(self, field_name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{field_name} must not be empty")
-        if not isinstance(self.phase, InferencePhase):
-            raise TypeError("phase must be InferencePhase")
-        if not isinstance(self.engine, EngineKind):
-            raise TypeError("engine must be EngineKind")
-        if not isinstance(self.work, PhaseWork):
-            raise TypeError("work must be PhaseWork")
         if self.engine is EngineKind.COLLECTIVE:
             if self.collective is None:
                 raise ValueError("collective invocations require a collective kind")
@@ -52,21 +39,14 @@ class InferenceInvocation:
             raise ValueError("local invocations cannot carry collective metadata")
 
 
-@record_type("compiler.analysis.inference_block_memory_facts.v1")
-@dataclass(frozen=True)
+@record("blueprinting.ir.semantic.transformer.inference-block-memory")
 class InferenceBlockMemoryFacts:
     """Per-rank storage for one tensor-parallel block shard and phase."""
 
-    weights: int
-    kv_cache: int
-    working_upper_bound: int
-    boundary: int
-
-    def __post_init__(self) -> None:
-        for field_name in self.__dataclass_fields__:
-            value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{field_name} must be a non-negative integer")
+    weights: NonNegativeInt
+    kv_cache: NonNegativeInt
+    working_upper_bound: NonNegativeInt
+    boundary: NonNegativeInt
 
 
 def _work(*, operations: int = 0, read: int = 0, write: int = 0, message: int = 0) -> PhaseWork:
@@ -80,7 +60,7 @@ def derive_transformer_inference_block(
     phase: InferencePhase,
     batch_size: int,
     context_tokens: int,
-    datatype: str,
+    datatype: TransformerDataType,
 ) -> tuple[tuple[InferenceInvocation, ...], InferenceBlockMemoryFacts]:
     """Derive exact work for one local block at one inference phase point.
 
@@ -95,10 +75,7 @@ def derive_transformer_inference_block(
     for name, value in (("batch_size", batch_size), ("context_tokens", context_tokens)):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
-    try:
-        element_bytes = {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}[datatype]
-    except KeyError as error:
-        raise ValueError(f"unsupported datatype: {datatype!r}") from error
+    element_bytes = transformer_element_bytes(datatype)
 
     b = batch_size
     q = context_tokens if phase is InferencePhase.PREFILL else 1

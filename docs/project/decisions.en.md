@@ -19,8 +19,12 @@ This page is the compact index of architecture commitments, rejected alternative
 | Runtime | Honor a verified plan while retaining bounded mechanism decisions allowed by the contract | Runtime does not repeat unbounded global search or pretend backpressure and failure do not exist |
 | Schema maturity | Internal schema versions are not automatically public compatibility promises | A contract graduates only after producer, independent consumer, migration, and conformance gates pass |
 | Documentation | Colocated suffix-based bilingual sources | Navigation and language switching remain page-aligned |
-| Formal derivation package | Hard-cut Python rename to `blueprinting.synthesizer`; preserve historical codec tags | Source ownership matches formal plan synthesis without invalidating unchanged canonical snapshots; see [ADR-0001](adr/0001-synthesizer-package.md) |
+| Formal derivation package | Hard-cut Python rename to `blueprinting.synthesizer` | Source ownership matches formal plan synthesis; see [ADR-0001](adr/0001-synthesizer-package.md) |
 | Domain packages | `blueprinting.workload` owns target-neutral workload contracts; `blueprinting.system` owns chip/interconnect/system profiles | Synthesis and analysis consume explicit domain inputs without owning them; see [ADR-0002](adr/0002-workload-system-domains.md) |
+| Derivation debugging | Five-stage graphs, adjacent mappings, and debug bundles are derived traces rebuilt from checkpoints and lineage | UI and overlays never enter canonical IR; see [ADR-0003](adr/0003-derivation-debug-trace.md) |
+| Canonical wire identity | Domain-owned `blueprinting.*` namespaces with no obsolete aliases | Serialized identities describe current semantics and old artifacts are regenerated at the hard boundary; see [ADR-0004](adr/0004-semantic-wire-identities.md) |
+| Algebraic canonical constructors | Scalar operations and concrete command semantics use constructor-specific ADTs; preservation claims are executable evidence | Invalid arity/payload combinations are removed and schema changes use explicit migrations; see [ADR-0005](adr/0005-algebraic-expression-command-schemas.md) |
+| Progressive typed Python | Runtime `Checked` contracts and sealed core ADTs share declarations with optional standard mypy analysis; no custom plugin | Base installs retain contract checking, expected failure is explicit, and static analysis adds coverage without becoming runtime truth; see [ADR-0006](adr/0006-progressive-typed-python-contracts.md) |
 
 ## Rejected alternatives
 

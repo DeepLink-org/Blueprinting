@@ -17,28 +17,40 @@ from nicegui import run, ui
 
 from blueprinting.analysis import CalibrationMode
 from blueprinting.application import (
+    CANONICAL_STAGE_ORDER,
     AnalysisDiagnostic,
     AnalysisDraft,
     AnalysisOutcome,
     BlueprintingService,
+    CanonicalIRStage,
+    DerivationDebugBundleCodec,
+    DerivationTrace,
     DiagnosticLevel,
+    IRGraphView,
     SweepReport,
     SweepRequest,
 )
+from blueprinting.workload import TRANSFORMER_DATA_TYPES
 
 from .catalog import ConfigCatalog, default_catalog
 from .chrome_trace import perfetto_open_javascript, portable_projection_trace_json
 from .evidence_lab import EvidenceLabPanel
 from .float_analysis import FloatAnalysisPanel
+from .ir_expressions import canonical_ir_expression, lowering_correspondence_rows, lowering_expression
 from .nicegui_theme import METRIC_COLORS, WORKBENCH_CSS
 from .presentation import (
     analysis_metrics,
+    boundary_rows,
     dependency_timeline_chart_options,
     format_bytes,
     format_count,
     format_seconds,
+    ir_graph_chart_options,
+    ir_stage_narrative,
     latency_chart_options,
+    lowering_narrative,
     memory_chart_options,
+    semantic_boundary_rows,
     sweep_chart_options,
     sweep_distribution_chart_options,
     sweep_rows,
@@ -48,7 +60,6 @@ from .presentation import (
     timeline_summary,
 )
 
-_COMPILER_DTYPES = ("float16", "bfloat16", "float32", "float8")
 _PARALLEL_OPTIONS = (1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128)
 _CALIBRATION_LABELS = {
     "系统证据曲线": CalibrationMode.SYSTEM_EVIDENCE,
@@ -89,6 +100,42 @@ def _positive_int(value: Any, label: str) -> int:
 
 def _strip_json_suffix(name: str) -> str:
     return name.removesuffix(".json")
+
+
+def _segmented_expression_renderer(
+    name_field: str,
+    parameters_field: str,
+    *detail_fields: str,
+) -> str:
+    detail_values = ", ".join(f"params.data.{field}" for field in detail_fields)
+    detail_script = (
+        f"const details = [{detail_values}].filter(Boolean);"
+        "if (details.length) { const detail = document.createElement('div');"
+        "detail.className = 'bp-expression-detail'; detail.textContent = details.join(' · ');"
+        "stack.appendChild(detail); }"
+        if detail_fields
+        else ""
+    )
+    return (
+        "(params) => {"
+        "const root = document.createElement('div'); root.className = 'bp-semantic-expression';"
+        "const stack = document.createElement('div'); stack.className = 'bp-expression-stack';"
+        "const expression = document.createElement('span'); expression.className = 'bp-expression';"
+        f"const tokens = params.data.{parameters_field} || [];"
+        "const appendComponent = (text, category) => {"
+        "const component = document.createElement('span');"
+        "component.className = 'bp-expression-component bp-expression-component--' + category;"
+        "component.textContent = text; expression.appendChild(component); };"
+        f"appendComponent(params.data.{name_field} + (tokens.length ? '(' : ''), 'name');"
+        "tokens.forEach((token, index) => appendComponent("
+        "token.name + '=' + token.value + (index + 1 < tokens.length ? ',' : ''),"
+        "token.category || 'property'));"
+        "if (tokens.length) appendComponent(')', 'punctuation');"
+        "stack.appendChild(expression);"
+        f"{detail_script}"
+        "root.appendChild(stack); return root;"
+        "}"
+    )
 
 
 class ConfigurationPanel:
@@ -308,7 +355,7 @@ class ConfigurationPanel:
         hardware = self.catalog.load("systems", hardware_name)
         matrix = set(hardware.get("matrix", {}))
         vector = set(hardware.get("vector", {}))
-        supported = tuple(item for item in _COMPILER_DTYPES if item in matrix and item in vector)
+        supported = tuple(item for item in TRANSFORMER_DATA_TYPES if item in matrix and item in vector)
         if not supported:
             raise ValueError(f"硬件预设 {hardware_name} 没有同时定义 matrix/vector datatype")
         return supported
@@ -551,14 +598,17 @@ class ConfigurationPanel:
         )
 
     def sweep_request(self) -> SweepRequest:
-        candidates = {
-            "tensor_parallel": tuple(int(value) for value in (self.tp_candidates.value or ())),
-            "pipeline_parallel": tuple(int(value) for value in (self.pp_candidates.value or ())),
-            "data_parallel": tuple(int(value) for value in (self.dp_candidates.value or ())),
-        }
-        if any(not values for values in candidates.values()):
+        tensor_parallel = tuple(int(value) for value in (self.tp_candidates.value or ()))
+        pipeline_parallel = tuple(int(value) for value in (self.pp_candidates.value or ()))
+        data_parallel = tuple(int(value) for value in (self.dp_candidates.value or ()))
+        if not tensor_parallel or not pipeline_parallel or not data_parallel:
             raise ValueError("TP、PP、DP 候选集合不能为空")
-        return SweepRequest(base=self.draft(), **candidates)
+        return SweepRequest(
+            base=self.draft(),
+            tensor_parallel=tensor_parallel,
+            pipeline_parallel=pipeline_parallel,
+            data_parallel=data_parallel,
+        )
 
     def set_busy(self, busy: bool) -> None:
         for control in self._controls:
@@ -612,6 +662,15 @@ class BlueprintingWorkbench:
         self.batch_grid: Any | None = None
         self.evidence_panel: EvidenceLabPanel | None = None
         self.float_panel: FloatAnalysisPanel | None = None
+        self.imported_derivation_trace: DerivationTrace | None = None
+        self.ir_selected_stage = CanonicalIRStage.MODEL
+        self.ir_selected_branch = "training"
+        self.ir_selected_entity = ""
+        self.ir_group_filter = "all"
+        self.ir_search = ""
+        self.ir_overlay_enabled = False
+        self.ir_explorer_host: Any | None = None
+        self.ir_entity_host: Any | None = None
 
     def build(self) -> None:
         ui.add_css(WORKBENCH_CSS)
@@ -749,6 +808,8 @@ class BlueprintingWorkbench:
                 self.form = ConfigurationPanel(self.catalog, on_change=self._configuration_changed)
                 self.form.build()
         else:
+            if self.form.root is None:
+                raise RuntimeError("configuration form was not built")
             self.form.root.move(host)
         self.form.set_mode(self.mode)
         self._render_sidebar_controls()
@@ -917,6 +978,14 @@ class BlueprintingWorkbench:
     def _sync_sidebar_controls(self) -> None:
         if self.form is None or self.quick_model is None:
             return
+        if (
+            self.quick_hardware is None
+            or self.quick_tp is None
+            or self.quick_pp is None
+            or self.quick_dp is None
+            or self.quick_calibration is None
+        ):
+            raise RuntimeError("sidebar controls are incomplete")
         self._syncing_quick_controls = True
         try:
             self.quick_model.set_value(str(self.form.model_preset.value))
@@ -1202,6 +1271,8 @@ class BlueprintingWorkbench:
         else:
             self.dialog_title.set_text("CaseSet 定义")
             self.dialog_copy.set_text("编辑共享基线、候选范围与批量评估证据。")
+        if self.form.root is None:
+            raise RuntimeError("configuration form was not built")
         self.form.root.move(self.drawer_form_host)
         self.form.set_mode(self.mode)
         self._render_drawer_footer()
@@ -1267,6 +1338,12 @@ class BlueprintingWorkbench:
             if outcome is None:
                 raise RuntimeError("分析服务没有返回结果")
             self.analysis_outcome = outcome
+            self.imported_derivation_trace = None
+            self.ir_selected_stage = CanonicalIRStage.MODEL
+            self.ir_selected_branch = "training"
+            self.ir_selected_entity = ""
+            self.ir_group_filter = "all"
+            self.ir_search = ""
             self.analysis_stale = False
         except Exception as error:  # pragma: no cover - NiceGUI safety boundary
             self.local_error = f"未预期的界面错误：{error}"
@@ -1424,7 +1501,7 @@ class BlueprintingWorkbench:
             ):
                 conclusion_tab = ui.tab("conclusion", "时间剖析").mark("tab-conclusion")
                 workload_tab = ui.tab("workload", "任务与工作量").mark("tab-workload")
-                derivation_tab = ui.tab("derivation", "技术审计").mark("tab-derivation")
+                derivation_tab = ui.tab("derivation", "IR Explorer").mark("tab-derivation")
         with ui.tab_panels(tabs, value=conclusion_tab, animated=False, keep_alive=True).classes(
             "bp-result-panels w-full"
         ):
@@ -1681,58 +1758,520 @@ class BlueprintingWorkbench:
     def _render_derivation(self, outcome: AnalysisOutcome) -> None:
         report = outcome.report
         assert report is not None
-        evidence_surface = ui.element("section").classes("bp-evidence-surface")
-        with evidence_surface, ui.element("div").classes("bp-evidence-section"):
-            ui.label("Canonical derivation checkpoints").classes("bp-kicker")
-            ui.label("每一层结果在提交前经过 verifier，并保留父 digest 与不可变快照。 ").classes("bp-card-copy")
-            with ui.element("div").classes("bp-stage-flow mt-3"):
-                for index, stage in enumerate(report.stages):
-                    with ui.element("div").classes("bp-stage"):
-                        with ui.row().classes("w-full items-center justify-between"):
-                            ui.label(f"0{index + 1}").classes("bp-kicker bp-mono")
-                            ui.icon(
-                                "verified" if stage.valid else "error",
-                                color="positive" if stage.valid else "negative",
-                                size="18px",
-                            )
-                        ui.label(stage.label).classes("bp-card-title mt-2")
-                        ui.label(stage.schema).classes("bp-card-copy bp-mono")
-                        ui.label(f"{stage.node_count:,} nodes · {stage.value_count:,} values/buffers").classes(
-                            "bp-card-copy mt-2"
-                        )
-                        ui.label(format_seconds(stage.duration_ns / 1e9)).classes("bp-card-copy bp-mono text-secondary")
+        self.ir_explorer_host = ui.column().classes("w-full")
+        self._render_ir_explorer()
 
-        with evidence_surface, ui.element("div").classes("bp-evidence-section bp-derivation-details"):
-            for stage in report.stages:
-                with (
-                    ui.expansion(
-                        stage.label,
-                        caption=f"{stage.pass_name} · {stage.digest[:16]}",
-                        icon="verified" if stage.valid else "error",
-                        value=False,
-                    ).classes("bp-card w-full"),
-                    ui.column().classes("w-full gap-3 pt-2"),
-                ):
-                    with ui.row().classes("gap-2"):
-                        for value in (
-                            stage.schema,
-                            f"{stage.node_count} nodes",
-                            f"{stage.value_count} values",
-                            format_seconds(stage.duration_ns / 1e9),
-                        ):
-                            ui.label(value).classes("bp-data-chip bp-mono")
-                    if stage.parent_digests:
-                        ui.label(f"Parents · {' · '.join(stage.parent_digests)}").classes(
-                            "bp-card-copy bp-mono break-all"
-                        )
-                    self._render_diagnostics(stage.diagnostics)
-                    pretty_snapshot = json.dumps(json.loads(stage.snapshot_json), ensure_ascii=False, indent=2)
-                    ui.code(pretty_snapshot, language="json").classes("bp-code")
+    def _active_derivation_trace(self) -> DerivationTrace | None:
+        if self.imported_derivation_trace is not None:
+            return self.imported_derivation_trace
+        outcome = self.analysis_outcome
+        return outcome.report.derivation_trace if outcome is not None and outcome.report is not None else None
+
+    def _render_ir_explorer(self) -> None:
+        if self.ir_explorer_host is None:
+            return
+        self.ir_explorer_host.clear()
+        trace = self._active_derivation_trace()
+        if trace is None:
+            return
+        if self.ir_selected_branch not in trace.branches:
+            self.ir_selected_branch = trace.branches[0]
+        if trace.stage_for(self.ir_selected_stage, self.ir_selected_branch) is None:
+            available = next(
+                (item.stage for item in trace.stages if item.branch == self.ir_selected_branch),
+                CanonicalIRStage.MODEL,
+            )
+            self.ir_selected_stage = available
+        with self.ir_explorer_host, ui.element("section").classes("bp-evidence-surface"):
+            with ui.element("div").classes("bp-evidence-section"):
+                with ui.row().classes("w-full items-start gap-3"):
+                    with ui.column().classes("gap-0"):
+                        ui.label("Canonical derivation checkpoints").classes("bp-kicker")
+                        ui.label("IR Explorer").classes("bp-result-title")
+                        ui.label(
+                            "逐层检查 canonical 结构，并沿 typed lineage 回放相邻 lowering；审计诊断不会改变 pass 成败。"
+                        ).classes("bp-card-copy")
+                    ui.space()
+                    if self.imported_derivation_trace is not None:
+                        ui.label("IMPORTED TRACE").classes("bp-fidelity-tag bp-mono")
+                    if len(trace.branches) > 1:
+                        ui.select(
+                            list(trace.branches),
+                            label="Derivation branch",
+                            value=self.ir_selected_branch,
+                            on_change=self._set_ir_branch,
+                        ).props("outlined dense options-dense").classes("min-w-52").mark("ir-branch-select")
                     ui.button(
-                        "下载 canonical snapshot",
+                        "导出调试包",
                         icon="download",
-                        on_click=partial(self._download_snapshot, stage.stage, stage.digest, pretty_snapshot),
-                    ).props("outline dense no-caps").classes("bp-secondary-action")
+                        on_click=partial(self._download_derivation_bundle, trace),
+                    ).props("outline dense no-caps").classes("bp-secondary-action").mark("download-derivation-bundle")
+                    ui.upload(
+                        label="导入调试包",
+                        on_upload=self._import_derivation_bundle,
+                        auto_upload=True,
+                        max_file_size=DerivationDebugBundleCodec.MAX_BYTES,
+                    ).props("accept=.json flat dense").classes("bp-secondary-action").mark("upload-derivation-bundle")
+
+                with ui.row().classes("w-full gap-2 mt-3"):
+                    for index, stage_kind in enumerate(CANONICAL_STAGE_ORDER, start=1):
+                        stage = trace.stage_for(stage_kind, self.ir_selected_branch)
+                        active = stage_kind is self.ir_selected_stage
+                        stage_copy = {
+                            CanonicalIRStage.MODEL: "模型语义",
+                            CanonicalIRStage.DISTRIBUTED: "分布式任务",
+                            CanonicalIRStage.PORTABLE: "可移植计划",
+                            CanonicalIRStage.CONCRETE: "具体执行计划",
+                            CanonicalIRStage.MACHINE: "目标机器程序",
+                        }[stage_kind]
+                        button = ui.button(
+                            f"0{index} · {self._ir_stage_label(stage_kind)} · {stage_copy}",
+                            icon="verified" if stage is not None else "hourglass_empty",
+                            on_click=partial(self._select_ir_stage, stage_kind),
+                        ).props("dense no-caps" if active else "outline dense no-caps")
+                        button.mark(f"ir-stage-{stage_kind.value}")
+                        button.classes("bp-primary-action" if active else "bp-secondary-action")
+                        if stage is None:
+                            button.disable()
+
+            stage = trace.stage_for(self.ir_selected_stage, self.ir_selected_branch)
+            if stage is None:
+                return
+            graph = trace.graph(self.ir_selected_stage, self.ir_selected_branch)
+            assert graph is not None
+            overlays = tuple(item for item in trace.overlays if item.stage_digest == stage.digest)
+            overlay = overlays[0] if self.ir_overlay_enabled and overlays else None
+            filtered_graph = self._filtered_ir_graph(graph)
+            narrative = ir_stage_narrative(stage.ir)
+            expression = canonical_ir_expression(stage.ir)
+
+            with ui.element("div").classes("bp-evidence-section"):
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.label(stage.label).classes("bp-card-title")
+                    ui.label(stage.schema).classes("bp-data-chip bp-mono")
+                    ui.label(f"{len(graph.nodes):,} entities · {len(graph.edges):,} edges").classes(
+                        "bp-data-chip bp-mono"
+                    )
+                    ui.label(format_seconds(stage.duration_ns / 1e9)).classes("bp-data-chip bp-mono")
+                    ui.space()
+                    if overlays:
+                        ui.switch(
+                            "Derived cost overlay",
+                            value=self.ir_overlay_enabled,
+                            on_change=self._toggle_ir_overlay,
+                        ).mark("ir-overlay-toggle")
+                if overlay is not None:
+                    ui.label(f"DERIVED · {overlay.provider} · {overlay.revision}").classes("bp-fidelity-tag bp-mono")
+                with ui.row().classes("w-full items-stretch gap-0 mt-3"):
+                    with ui.element("section").classes("bp-evidence-block grow basis-0"):
+                        ui.label("本层回答").classes("bp-kicker")
+                        ui.label(narrative.question).classes("bp-card-title mt-1")
+                        ui.label(narrative.answer).classes("bp-card-copy mt-1")
+                    with ui.element("section").classes("bp-evidence-block grow basis-0"):
+                        ui.label("本次结果").classes("bp-kicker")
+                        ui.label(narrative.result).classes("bp-card-title mt-1")
+                        ui.label("这是 verified canonical snapshot 的结构事实。 ").classes("bp-card-copy mt-1")
+                    with ui.element("section").classes("bp-evidence-block grow basis-0"):
+                        ui.label("边界与下一步").classes("bp-kicker")
+                        ui.label(narrative.excludes).classes("bp-card-title mt-1")
+                        ui.label(narrative.next_step).classes("bp-card-copy mt-1")
+                ui.label("Canonical IR 表达").classes("bp-card-title mt-3")
+                with ui.tabs().props("dense no-caps align=left").classes("w-full") as expression_tabs:
+                    short_tab = ui.tab("Short · 语义骨架").mark("ir-expression-short-tab")
+                    detailed_tab = ui.tab("Detailed · typed entities").mark("ir-expression-detailed-tab")
+                with ui.tab_panels(expression_tabs, value=short_tab, animated=False).classes("w-full bg-transparent"):
+                    with ui.tab_panel(short_tab).classes("px-0 py-2"):
+                        ui.code(expression.short, language="text").classes("bp-code").style(
+                            "max-height: 340px; overflow: auto"
+                        ).mark("ir-short-expression")
+                    with ui.tab_panel(detailed_tab).classes("px-0 py-2"):
+                        ui.code(expression.detailed, language="text").classes("bp-code").style(
+                            "max-height: 520px; overflow: auto"
+                        ).mark("ir-detailed-expression")
+                structure_title = {
+                    CanonicalIRStage.MODEL: "模型数据流结构",
+                    CanonicalIRStage.DISTRIBUTED: "逻辑任务结构",
+                    CanonicalIRStage.PORTABLE: "目标无关计划结构",
+                    CanonicalIRStage.CONCRETE: "物理执行结构",
+                    CanonicalIRStage.MACHINE: "机器程序结构",
+                }[stage.stage]
+                ui.label(structure_title).classes("bp-card-title mt-3")
+                ui.label(
+                    "列表示 phase，行固定为 subsystem × entity kind；空白单元表示该阶段没有对应实体。"
+                    "依赖线默认淡化，悬停节点时只强调相关结构依赖。"
+                ).classes("bp-card-copy")
+                with ui.row().classes("w-full items-center gap-2"):
+                    groups = ("all",) + tuple(sorted({node.group for node in graph.nodes}))
+                    ui.select(
+                        list(groups),
+                        label="Semantic group",
+                        value=self.ir_group_filter if self.ir_group_filter in groups else "all",
+                        on_change=self._set_ir_group,
+                    ).props("outlined dense options-dense").classes("min-w-64").mark("ir-group-filter")
+                    ui.input(
+                        "搜索 ID / label / property",
+                        value=self.ir_search,
+                        on_change=self._set_ir_search,
+                    ).props("outlined dense clearable debounce=300").classes("grow").mark("ir-search")
+                chart = (
+                    ui.echart(
+                        ir_graph_chart_options(
+                            filtered_graph,
+                            overlay,
+                            max_nodes=80 if self.ir_group_filter != "all" or self.ir_search else 20,
+                        ),
+                        renderer="canvas",
+                    )
+                    .classes("w-full bp-ir-graph")
+                    .style("height: 300px" if len(filtered_graph.nodes) <= 10 else "height: 420px")
+                    .mark("ir-layer-graph")
+                )
+                chart.on(
+                    "click",
+                    self._select_ir_entity_event,
+                    js_handler="(params) => emit(params.data && params.data.entity_id ? params.data.entity_id : '')",
+                )
+                self.ir_entity_host = ui.column().classes("w-full")
+                self._render_ir_entity_inspector(graph, overlay)
+
+            with ui.element("div").classes("bp-evidence-section"):
+                ui.label("相邻 lowering 边界").classes("bp-card-title")
+                ui.label("Source 与 target 分栏显示；映射只来自目标实体的 typed Lineage.sources。 ").classes(
+                    "bp-card-copy"
+                )
+                related = [
+                    item
+                    for item in trace.transitions
+                    if item.source_digest == stage.digest or item.target_digest == stage.digest
+                ]
+                if not related:
+                    ui.label("当前层没有已捕获的相邻 lowering。 ").classes("bp-card-copy")
+                for transition in related:
+                    self._render_ir_boundary(transition, trace)
+
+            with (
+                ui.element("div").classes("bp-evidence-section"),
+                ui.expansion("Canonical JSON 与 stage diagnostics", icon="data_object", value=False).classes(
+                    "bp-card w-full"
+                ),
+                ui.column().classes("w-full gap-3 pt-2"),
+            ):
+                for diagnostic in stage.diagnostics:
+                    with ui.row().classes("items-start gap-2 no-wrap"):
+                        ui.icon("error" if diagnostic.level == "error" else "info", size="16px")
+                        ui.label(f"{diagnostic.code} · {diagnostic.message}").classes("bp-card-copy")
+                pretty_snapshot = json.dumps(json.loads(stage.snapshot_json), ensure_ascii=False, indent=2)
+                ui.code(pretty_snapshot, language="json").classes("bp-code")
+                ui.button(
+                    "下载 canonical snapshot",
+                    icon="download",
+                    on_click=partial(
+                        self._download_snapshot,
+                        stage.stage.value,
+                        stage.digest,
+                        pretty_snapshot,
+                    ),
+                ).props("outline dense no-caps").classes("bp-secondary-action")
+
+    @staticmethod
+    def _ir_stage_label(stage: CanonicalIRStage) -> str:
+        return {
+            CanonicalIRStage.MODEL: "ModelIR",
+            CanonicalIRStage.DISTRIBUTED: "DistributedTaskIR",
+            CanonicalIRStage.PORTABLE: "PortablePlanIR",
+            CanonicalIRStage.CONCRETE: "ConcretePlanIR",
+            CanonicalIRStage.MACHINE: "MachineIR",
+        }[stage]
+
+    def _select_ir_stage(self, stage: CanonicalIRStage) -> None:
+        self.ir_selected_stage = stage
+        self.ir_selected_entity = ""
+        self.ir_group_filter = "all"
+        self.ir_search = ""
+        self._render_ir_explorer()
+
+    def _set_ir_branch(self, event: Any) -> None:
+        self.ir_selected_branch = str(event.value)
+        self.ir_selected_stage = CanonicalIRStage.MODEL
+        self.ir_selected_entity = ""
+        self.ir_group_filter = "all"
+        self.ir_search = ""
+        self._render_ir_explorer()
+
+    def _set_ir_group(self, event: Any) -> None:
+        self.ir_group_filter = str(event.value or "all")
+        self.ir_selected_entity = ""
+        self._render_ir_explorer()
+
+    def _set_ir_search(self, event: Any) -> None:
+        self.ir_search = str(event.value or "")
+        self.ir_selected_entity = ""
+        self._render_ir_explorer()
+
+    def _toggle_ir_overlay(self, event: Any) -> None:
+        self.ir_overlay_enabled = bool(event.value)
+        self._render_ir_explorer()
+
+    def _filtered_ir_graph(self, graph: IRGraphView) -> IRGraphView:
+        nodes = list(graph.nodes)
+        if self.ir_group_filter != "all":
+            nodes = [item for item in nodes if item.group == self.ir_group_filter]
+        query = self.ir_search.strip().lower()
+        if query:
+            matched = {
+                item.ref.key
+                for item in nodes
+                if query in item.ref.entity_id.lower()
+                or query in item.label.lower()
+                or any(query in key.lower() or query in value.lower() for key, value in item.properties)
+            }
+            adjacent = set(matched)
+            for edge in graph.edges:
+                if edge.source.key in matched or edge.target.key in matched:
+                    adjacent.update((edge.source.key, edge.target.key))
+            nodes = [item for item in nodes if item.ref.key in adjacent]
+        nodes = nodes[:1000]
+        node_keys = {item.ref.key for item in nodes}
+        edges = tuple(item for item in graph.edges if item.source.key in node_keys and item.target.key in node_keys)
+        return IRGraphView(graph.stage, graph.snapshot_digest, tuple(nodes), edges)
+
+    def _select_ir_entity_event(self, event: Any) -> None:
+        self.ir_selected_entity = str(getattr(event, "args", "") or "")
+        trace = self._active_derivation_trace()
+        graph = trace.graph(self.ir_selected_stage, self.ir_selected_branch) if trace is not None else None
+        overlay = None
+        if trace is not None and self.ir_overlay_enabled and graph is not None:
+            overlay = next((item for item in trace.overlays if item.stage_digest == graph.snapshot_digest), None)
+        if graph is not None:
+            self._render_ir_entity_inspector(graph, overlay)
+
+    def _render_ir_entity_inspector(self, graph: IRGraphView, overlay: Any) -> None:
+        if self.ir_entity_host is None:
+            return
+        self.ir_entity_host.clear()
+        with self.ir_entity_host:
+            node = graph.node(self.ir_selected_entity)
+            if node is None:
+                ui.label("通过 Semantic group 或搜索定位局部结构；单实体节点可点击查看完整属性。 ").classes(
+                    "bp-card-copy"
+                )
+                return
+            with ui.element("section").classes("bp-evidence-block"):
+                ui.label(node.label).classes("bp-card-title")
+                ui.label(node.ref.entity_id).classes("bp-card-copy bp-mono break-all")
+                self._fact_row("Kind", node.ref.kind)
+                self._fact_row("Group", node.group)
+                for key, value in node.properties:
+                    self._fact_row(key, value)
+                if overlay is not None:
+                    entity = next((item for item in overlay.entities if item.entity_id == node.ref.entity_id), None)
+                    if entity is not None:
+                        ui.label(f"DERIVED · {overlay.provider} · {overlay.revision}").classes(
+                            "bp-fidelity-tag bp-mono mt-2"
+                        )
+                        for key, value in entity.metrics:
+                            self._fact_row(key, format_seconds(value) if key.endswith("seconds") else str(value))
+
+    def _render_ir_boundary(self, transition: Any, trace: DerivationTrace) -> None:
+        boundary = transition.boundary
+        summary = boundary.summary
+        source_graph = trace.graph(boundary.source_stage, self.ir_selected_branch)
+        target_graph = trace.graph(boundary.target_stage, self.ir_selected_branch)
+        narrative = lowering_narrative(boundary, source_graph, target_graph)
+        mapping_rows = semantic_boundary_rows(boundary, source_graph, target_graph)
+        correspondence_rows = lowering_correspondence_rows(transition, mapping_rows)
+        expression = lowering_expression(transition, mapping_rows)
+        with (
+            ui.expansion(
+                f"{self._ir_stage_label(boundary.source_stage)} → {self._ir_stage_label(boundary.target_stage)}",
+                caption=f"{boundary.pass_name} · {len(boundary.relations):,} relations",
+                icon="account_tree",
+                value=boundary.source_stage is self.ir_selected_stage,
+            ).classes("bp-card w-full"),
+            ui.column().classes("w-full gap-3 pt-2"),
+        ):
+            ui.label("Verified lowering 表达").classes("bp-card-title")
+            with ui.tabs().props("dense no-caps align=left").classes("w-full") as lowering_tabs:
+                lowering_short_tab = ui.tab("Short · pass contract").mark("lowering-expression-short-tab")
+                lowering_detailed_tab = ui.tab("Detailed · rules & evidence").mark("lowering-expression-detailed-tab")
+            with ui.tab_panels(lowering_tabs, value=lowering_short_tab, animated=False).classes(
+                "w-full bg-transparent"
+            ):
+                with ui.tab_panel(lowering_short_tab).classes("px-0 py-2"):
+                    ui.code(expression.short, language="text").classes("bp-code").style(
+                        "max-height: 360px; overflow: auto"
+                    ).mark("lowering-short-expression")
+                with ui.tab_panel(lowering_detailed_tab).classes("px-0 py-2"):
+                    ui.code(expression.detailed, language="text").classes("bp-code").style(
+                        "max-height: 520px; overflow: auto"
+                    ).mark("lowering-detailed-expression")
+            with ui.element("div").classes("bp-insight"):
+                ui.label("这一步做了什么").classes("bp-kicker")
+                ui.label(narrative.headline).classes("bp-result-title mt-1")
+                ui.label(narrative.detail).classes("bp-card-copy mt-1")
+            with ui.element("div").classes("bp-metric-grid"):
+                for metric in narrative.metrics:
+                    with ui.element("div").classes("bp-metric").style(f"--metric-color: {METRIC_COLORS[metric.tone]}"):
+                        ui.label(metric.label).classes("bp-metric-label")
+                        ui.label(metric.value).classes("bp-metric-value bp-metric-value--range")
+                        ui.label(metric.detail).classes("bp-metric-detail")
+            ui.label("Lowering 对应关系").classes("bp-card-title")
+            ui.label(
+                "Source | Pass | Target 的完整表达式使用一个随文字换行的外层 span；"
+                "内部 name、参数和括号由连续的语义 span 分块，分别高亮结构、类型、拓扑、workload 与映射信息。"
+                "超长表达在单元格内换行，"
+                "box-decoration-break 使每个视觉行的高亮仅跟随文字，"
+                "并直接编码本层拥有的 shape、dtype、logical ranks、collective 或 exact workload facts。"
+            ).classes("bp-card-copy")
+            ui.aggrid(
+                {
+                    "columnDefs": [
+                        {
+                            "headerName": "Source",
+                            "field": "source_span_key",
+                            "pinned": "left",
+                            "minWidth": 390,
+                            "flex": 1,
+                            "spanRows": True,
+                            ":cellRenderer": _segmented_expression_renderer(
+                                "source_expression_name", "source_expression_parameters"
+                            ),
+                            ":filterValueGetter": "(params) => params.data.source_type + ' ' + "
+                            "params.data.source_expression + ' ' + (params.data.source_entity_ids || []).join(' ')",
+                            ":cellClass": "(params) => 'bp-entity-cell bp-entity-cell--' + params.data.source_tone",
+                            "wrapText": True,
+                            "autoHeight": True,
+                        },
+                        {
+                            "headerName": "Pass",
+                            "field": "transform_span_key",
+                            "minWidth": 460,
+                            "flex": 1,
+                            "spanRows": True,
+                            ":cellRenderer": _segmented_expression_renderer(
+                                "pass_expression_name",
+                                "pass_expression_parameters",
+                                "rule_signature",
+                                "rule_rewrite",
+                            ),
+                            ":filterValueGetter": "(params) => params.data.qualified_rule + ' ' + "
+                            "params.data.rule_signature + ' ' + params.data.rule_rewrite",
+                            ":cellClass": "(params) => 'bp-entity-cell bp-pass-cell bp-entity-cell--' + "
+                            "params.data.pass_tone",
+                            "wrapText": True,
+                            "autoHeight": True,
+                        },
+                        {
+                            "headerName": "Target",
+                            "field": "target_expression",
+                            "minWidth": 440,
+                            "flex": 1,
+                            ":cellRenderer": _segmented_expression_renderer(
+                                "target_expression_name", "target_expression_parameters"
+                            ),
+                            ":filterValueGetter": "(params) => params.data.target_type + ' ' + "
+                            "params.data.target_expression + ' ' + (params.data.target_entity_ids || []).join(' ')",
+                            ":cellClass": "(params) => 'bp-entity-cell bp-entity-cell--' + params.data.target_tone",
+                            "wrapText": True,
+                            "autoHeight": True,
+                        },
+                    ],
+                    "rowData": correspondence_rows,
+                    "enableCellSpan": True,
+                    "rowHeight": 52,
+                    "defaultColDef": {"sortable": True, "filter": True, "resizable": True},
+                    "pagination": True,
+                    "paginationPageSize": 20,
+                },
+                theme="quartz",
+                auto_size_columns=False,
+            ).classes("w-full bp-grid bp-lowering-table").style("height: 390px").mark("ir-boundary-table")
+            with (
+                ui.expansion(
+                    f"查看 canonical entity 映射与 pass contract ({len(boundary.relations):,})",
+                    icon="manage_search",
+                    value=False,
+                ).classes("w-full"),
+                ui.column().classes("w-full gap-3 pt-2"),
+            ):
+                with ui.row().classes("gap-2"):
+                    for label, value in (
+                        ("Mapped targets", f"{summary.mapped_target_entities}/{summary.target_entities}"),
+                        ("Mapped sources", f"{summary.mapped_source_entities}/{summary.source_entities}"),
+                        ("1:1", str(summary.one_to_one)),
+                        ("1:N", str(summary.one_to_many)),
+                        ("N:1", str(summary.many_to_one)),
+                        ("Dangling", str(summary.dangling_sources)),
+                    ):
+                        ui.label(f"{label} · {value}").classes("bp-data-chip bp-mono")
+                if boundary.diagnostics:
+                    with ui.expansion(f"审计诊断 ({len(boundary.diagnostics)})", icon="rule", value=True).classes(
+                        "w-full"
+                    ):
+                        for diagnostic in boundary.diagnostics:
+                            with ui.row().classes("items-start gap-2 no-wrap"):
+                                ui.icon("warning" if diagnostic.level == "warning" else "info", size="16px")
+                                ui.label(f"{diagnostic.code} · {diagnostic.message}").classes("bp-card-copy")
+                ui.aggrid(
+                    {
+                        "columnDefs": [
+                            {"headerName": "Target", "field": "target", "pinned": "left", "minWidth": 280},
+                            {"headerName": "Kind", "field": "target_kind"},
+                            {"headerName": "Sources", "field": "sources", "minWidth": 320},
+                            {"headerName": "Count", "field": "source_count", "type": "numericColumn"},
+                            {"headerName": "Lineage", "field": "lineage_kind"},
+                            {"headerName": "Transform", "field": "transform", "minWidth": 220},
+                            {"headerName": "Unresolved", "field": "unresolved", "minWidth": 240},
+                        ],
+                        "rowData": boundary_rows(boundary),
+                        "defaultColDef": {"sortable": True, "filter": True, "resizable": True},
+                        "pagination": True,
+                        "paginationPageSize": 25,
+                    },
+                    theme="quartz",
+                    auto_size_columns=False,
+                ).classes("w-full bp-grid").style("height: 420px")
+                contract = transition.contract
+                ui.label("Lowering contract").classes("bp-card-title")
+                for label, value in (
+                    ("Pass", contract.name),
+                    ("Schemas", f"{contract.input_schema} → {contract.output_schema}"),
+                    ("Bindings", ", ".join(contract.required_bindings) or "none"),
+                    ("Required analyses", ", ".join(contract.required_analyses) or "none"),
+                    ("Produced analyses", ", ".join(contract.produced_analyses) or "none"),
+                    ("Preserved analyses", ", ".join(contract.preserved_analyses) or "none"),
+                    (
+                        "Policy",
+                        f"{contract.mutation_model} · verify={contract.verification} · "
+                        f"deterministic={contract.deterministic} · seed={contract.uses_session_seed}",
+                    ),
+                ):
+                    self._fact_row(label, value)
+
+    @staticmethod
+    def _download_derivation_bundle(trace: DerivationTrace) -> None:
+        content = DerivationDebugBundleCodec.dumps(trace)
+        ui.download(
+            content.encode("utf-8"),
+            filename=f"derivation-{trace.request_digest[:12]}.json",
+            media_type="application/json",
+        )
+
+    async def _import_derivation_bundle(self, event: Any) -> None:
+        try:
+            payload = await event.file.text()
+            trace = DerivationDebugBundleCodec.loads(payload)
+        except (UnicodeDecodeError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+            ui.notify(f"调试包导入失败：{error}", type="negative", position="bottom-right")
+            return
+        self.imported_derivation_trace = trace
+        self.ir_selected_branch = trace.branches[0]
+        self.ir_selected_stage = trace.stages[0].stage
+        self.ir_selected_entity = ""
+        self.ir_group_filter = "all"
+        self.ir_search = ""
+        self._render_ir_explorer()
+        ui.notify("调试包已验证并载入", type="positive", position="bottom-right")
 
     @staticmethod
     def _download_snapshot(stage: str, digest: str, content: str) -> None:

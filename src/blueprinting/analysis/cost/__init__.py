@@ -18,6 +18,7 @@ from .importers import (
     TabularPerformanceImporter,
 )
 from .protocol import (
+    CostAvailable,
     CostEstimate,
     CostModelError,
     CostNotAvailableError,
@@ -28,12 +29,14 @@ from .protocol import (
     CostResolver,
     CostSubject,
     CostSupport,
+    CostSupportVariant,
+    CostUnavailable,
     EstimateMatch,
     EstimateMethod,
     EstimateUncertainty,
     InvalidCostEvidenceError,
+    InvalidCostSupport,
     ProviderAttempt,
-    SupportStatus,
 )
 from .roofline import RooflineCostProvider
 
@@ -41,6 +44,7 @@ __all__ = [
     "AIConfiguratorPerformanceImporter",
     "AIConfiguratorTable",
     "CostEstimate",
+    "CostAvailable",
     "CostModelError",
     "CostNotAvailableError",
     "CostProvider",
@@ -52,6 +56,8 @@ __all__ = [
     "CostResolver",
     "CostSubject",
     "CostSupport",
+    "CostSupportVariant",
+    "CostUnavailable",
     "EstimateMatch",
     "EstimateMethod",
     "EstimateUncertainty",
@@ -59,6 +65,7 @@ __all__ = [
     "EvidenceCoverage",
     "EvidenceDatabaseSummary",
     "InvalidCostEvidenceError",
+    "InvalidCostSupport",
     "LatencyUnit",
     "PerformanceDatabase",
     "PerformanceDatabaseProvider",
@@ -66,7 +73,6 @@ __all__ = [
     "ProviderAttempt",
     "RooflineCostProvider",
     "SimulatorPerformanceImporter",
-    "SupportStatus",
     "TabularImportSpec",
     "TabularPerformanceImporter",
     "build_gemm_comparison_curve",

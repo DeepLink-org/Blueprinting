@@ -12,23 +12,31 @@ system evidence curves for every case.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import calculon
 from blueprinting.analysis.cost_model import (
     CalibrationMode,
     IterationEstimate,
     estimate_iteration,
 )
 from blueprinting.mapping import NetworkTierBinding, TransformerTrainingMappingSpec
-from blueprinting.synthesizer.dialects.transformer import EngineKind, TrainingPhase
+from blueprinting.synthesizer.dialects.transformer import (
+    EngineKind,
+    TrainingPhase,
+    TransformerTrainingPlanSemantic,
+    TransformerTrainingPlanTaskSemantic,
+)
 from blueprinting.synthesizer.frontend import build_transformer_model_ir, synthesis_session_for
-from blueprinting.synthesizer.ir import PortablePlanIR
-from blueprinting.synthesizer.lowering import DistributeTransformerTrainingPass, PlanTransformerTrainingPass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerTrainingPass
+from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR, require_concrete_quantity
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerTrainingPass
 from blueprinting.system import SystemProfile
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 from calculon.llm import Llm
@@ -73,6 +81,7 @@ class MetricComparison:
 @dataclass(frozen=True)
 class CalculonCaseReport:
     case: str
+    input_manifest: dict[str, dict[str, str]]
     model_digest: str
     distributed_digest: str
     portable_digest: str
@@ -85,7 +94,7 @@ class CalculonCaseReport:
 
     @property
     def calculon_total_seconds(self) -> float:
-        return self.calculon_stats["total_time"]
+        return float(self.calculon_stats["total_time"])
 
     @property
     def peak_error_percent(self) -> float:
@@ -101,9 +110,38 @@ class CalculonCaseReport:
             return None
         return (self.calibrated.total - self.paper_seconds) / self.paper_seconds * 100
 
+    @property
+    def estimated_breakdown_seconds(self) -> dict[str, float]:
+        return {
+            "forward": self.calibrated.forward,
+            "backward": self.calibrated.backward,
+            "optimizer": self.calibrated.optimizer,
+            "recompute": self.calibrated.recompute,
+            "tensor_parallel": self.calibrated.tensor_parallel,
+            "pipeline_parallel": self.calibrated.pipeline_parallel,
+            "data_parallel": self.calibrated.data_parallel,
+            "recommunication": self.calibrated.recommunication,
+            "pipeline_bubble": self.calibrated.pipeline_bubble,
+        }
+
+    @property
+    def calculon_breakdown_seconds(self) -> dict[str, float]:
+        return {
+            "forward": self.calculon_stats["fw_time"],
+            "backward": self.calculon_stats["bw_time"],
+            "optimizer": self.calculon_stats["optim_step_time"],
+            "recompute": self.calculon_stats["recompute_time"],
+            "tensor_parallel": self.calculon_stats["tp_comm_exposed_time"],
+            "pipeline_parallel": self.calculon_stats["pp_comm_exposed_time"],
+            "data_parallel": self.calculon_stats["dp_comm_exposed_time"],
+            "recommunication": self.calculon_stats["recomm_exposed_time"],
+            "pipeline_bubble": self.calculon_stats["bubble_time"],
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "case": self.case,
+            "inputs": self.input_manifest,
             "ir": {
                 "model_digest": self.model_digest,
                 "distributed_digest": self.distributed_digest,
@@ -122,28 +160,8 @@ class CalculonCaseReport:
                 "system_evidence_vs_calculon": self.calibrated_error_percent,
                 "system_evidence_vs_paper": self.paper_error_percent,
             },
-            "estimated_breakdown_seconds": {
-                "forward": self.calibrated.forward,
-                "backward": self.calibrated.backward,
-                "optimizer": self.calibrated.optimizer,
-                "recompute": self.calibrated.recompute,
-                "tensor_parallel": self.calibrated.tensor_parallel,
-                "pipeline_parallel": self.calibrated.pipeline_parallel,
-                "data_parallel": self.calibrated.data_parallel,
-                "recommunication": self.calibrated.recommunication,
-                "pipeline_bubble": self.calibrated.pipeline_bubble,
-            },
-            "calculon_breakdown_seconds": {
-                "forward": self.calculon_stats["fw_time"],
-                "backward": self.calculon_stats["bw_time"],
-                "optimizer": self.calculon_stats["optim_step_time"],
-                "recompute": self.calculon_stats["recompute_time"],
-                "tensor_parallel": self.calculon_stats["tp_comm_exposed_time"],
-                "pipeline_parallel": self.calculon_stats["pp_comm_exposed_time"],
-                "data_parallel": self.calculon_stats["dp_comm_exposed_time"],
-                "recommunication": self.calculon_stats["recomm_exposed_time"],
-                "pipeline_bubble": self.calculon_stats["bubble_time"],
-            },
+            "estimated_breakdown_seconds": self.estimated_breakdown_seconds,
+            "calculon_breakdown_seconds": self.calculon_breakdown_seconds,
             "memory_bytes": {
                 "estimated": self.calibrated.memory.total,
                 "calculon": self.calculon_stats["proc_mem_tier1_cap_req"],
@@ -169,6 +187,8 @@ class CalculonCaseReport:
 @dataclass(frozen=True)
 class CalculonExperimentReport:
     schema: str
+    oracle: dict[str, str]
+    paper_baseline: dict[str, str]
     hardware_name: str
     evidence_revision: str
     calibration_policy: dict[str, Any]
@@ -191,6 +211,35 @@ class CalculonExperimentReport:
         return max(abs(metric.relative_error_percent) for case in self.cases for metric in case.workload.values())
 
     @property
+    def memory_max_absolute_error_bytes(self) -> float:
+        return max(
+            abs(case.calibrated.memory.total - float(case.calculon_stats["proc_mem_tier1_cap_req"]))
+            for case in self.cases
+        )
+
+    @property
+    def breakdown_error(self) -> dict[str, dict[str, float]]:
+        components = self.cases[0].estimated_breakdown_seconds
+        result = {}
+        for component in components:
+            absolute_seconds = []
+            absolute_percent = []
+            for case in self.cases:
+                estimated = case.estimated_breakdown_seconds[component]
+                reference = case.calculon_breakdown_seconds[component]
+                absolute_seconds.append(abs(estimated - reference))
+                if reference == 0:
+                    absolute_percent.append(0.0 if estimated == 0 else float("inf"))
+                else:
+                    absolute_percent.append(abs((estimated - reference) / reference * 100))
+            result[component] = {
+                "mean_absolute_error_percent": sum(absolute_percent) / len(absolute_percent),
+                "max_absolute_error_percent": max(absolute_percent),
+                "max_absolute_error_seconds": max(absolute_seconds),
+            }
+        return result
+
+    @property
     def paper_mean_absolute_error_percent(self) -> float | None:
         errors = tuple(abs(case.paper_error_percent) for case in self.cases if case.paper_error_percent is not None)
         return sum(errors) / len(errors) if errors else None
@@ -203,6 +252,8 @@ class CalculonExperimentReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": self.schema,
+            "oracle": self.oracle,
+            "paper_baseline": self.paper_baseline,
             "hardware": {
                 "name": self.hardware_name,
                 "evidence_revision": self.evidence_revision,
@@ -214,6 +265,8 @@ class CalculonExperimentReport:
                 "system_evidence_mean_absolute_error_percent": self.calibrated_mean_absolute_error_percent,
                 "system_evidence_max_absolute_error_percent": self.calibrated_max_absolute_error_percent,
                 "workload_max_absolute_error_percent": self.workload_max_absolute_error_percent,
+                "memory_max_absolute_error_bytes": self.memory_max_absolute_error_bytes,
+                "breakdown_error": self.breakdown_error,
                 "system_evidence_vs_paper_mean_absolute_error_percent": self.paper_mean_absolute_error_percent,
                 "system_evidence_vs_paper_max_absolute_error_percent": self.paper_max_absolute_error_percent,
             },
@@ -226,7 +279,38 @@ class CalculonExperimentReport:
 
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as stream:
-        return json.load(stream)
+        value = json.load(stream)
+    if not isinstance(value, dict):
+        raise TypeError(f"Calculon fixture {path} must contain a JSON object")
+    return value
+
+
+def _sha256(path: Path) -> str:
+    digester = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digester.update(chunk)
+    return digester.hexdigest()
+
+
+def _source_tree_digest(root: Path) -> str:
+    digester = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix().encode()
+        payload = path.read_bytes()
+        digester.update(len(relative).to_bytes(8, "big"))
+        digester.update(relative)
+        digester.update(len(payload).to_bytes(8, "big"))
+        digester.update(payload)
+    return digester.hexdigest()
+
+
+def _input_manifest(case: CalculonCase) -> dict[str, dict[str, str]]:
+    return {
+        "model": {"file": case.model_path.name, "sha256": _sha256(case.model_path)},
+        "execution": {"file": case.execution_path.name, "sha256": _sha256(case.execution_path)},
+        "system": {"file": case.system_path.name, "sha256": _sha256(case.system_path)},
+    }
 
 
 def discover_seqsel_tab5_cases(data_root: Path) -> tuple[CalculonCase, ...]:
@@ -251,14 +335,17 @@ def _run_calculon(
     system_data: dict[str, Any],
 ) -> dict[str, Any]:
     logger = logging.getLogger("blueprinting.validation.calculon")
-    application = Llm.Application(model_data)
-    execution_fields = {field: execution_data[field] for field in Llm.Execution.fields()}
-    execution = Llm.Execution.from_json(execution_fields)
-    system = System(system_data)
-    model = Llm(application, logger)
-    model.compile(system, execution)
-    model.run(system)
-    return model.get_stats_json(False)
+    application = Llm.Application(model_data)  # type: ignore[no-untyped-call]
+    execution_fields = {field: execution_data[field] for field in Llm.Execution.fields()}  # type: ignore[no-untyped-call]
+    execution = Llm.Execution.from_json(execution_fields)  # type: ignore[no-untyped-call]
+    system = System(system_data)  # type: ignore[no-untyped-call]
+    model = Llm(application, logger)  # type: ignore[no-untyped-call]
+    model.compile(system, execution)  # type: ignore[no-untyped-call]
+    model.run(system)  # type: ignore[no-untyped-call]
+    stats = model.get_stats_json(False)  # type: ignore[no-untyped-call]
+    if not isinstance(stats, dict):
+        raise TypeError("Calculon oracle returned a non-object statistics payload")
+    return stats
 
 
 def _derive_plan(
@@ -268,7 +355,7 @@ def _derive_plan(
 ) -> tuple[PortablePlanIR, tuple[dict[str, Any], ...], str, str]:
     source = build_transformer_model_ir(model, datatype=workload.datatype)
     session = synthesis_session_for(model, workload, mapping)
-    result = PassManager().run(
+    result = PassManager().require_run(
         PassPipeline.of(DistributeTransformerTrainingPass(), PlanTransformerTrainingPass()),
         source,
         session=session,
@@ -303,11 +390,13 @@ def _phase_work(plan: PortablePlanIR, phase: TrainingPhase) -> tuple[int, int, i
     memory_bytes = 0
     message_bytes = 0
     for task in plan.tasks:
-        if task.workload.attributes.get("phase") != phase.value:
+        semantic = task.semantic
+        if not isinstance(semantic, TransformerTrainingPlanTaskSemantic) or semantic.phase is not phase:
             continue
-        operations += task.workload.operations
-        memory_bytes += task.workload.read_bytes + task.workload.write_bytes
-        message_bytes += task.workload.message_bytes
+        operations += require_concrete_quantity(task.workload.operations, f"task {task.id} operations")
+        memory_bytes += require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes")
+        memory_bytes += require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes")
+        message_bytes += require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes")
     return operations, memory_bytes, message_bytes
 
 
@@ -317,7 +406,10 @@ def _workload_audit(plan: PortablePlanIR, calculon: dict[str, Any]) -> dict[str,
     wgrad_ops, wgrad_memory, _ = _phase_work(plan, TrainingPhase.WEIGHT_GRADIENT)
     optimizer_ops, optimizer_memory, _ = _phase_work(plan, TrainingPhase.OPTIMIZER)
     _, _, recomm_messages = _phase_work(plan, TrainingPhase.RECOMMUNICATION)
-    memory = plan.attributes["block_memory"]
+    semantic = plan.semantic
+    if not isinstance(semantic, TransformerTrainingPlanSemantic):
+        raise TypeError("portable training plan is missing typed Transformer semantics")
+    memory = semantic.block_memory
     return {
         "block_forward_operations": MetricComparison(forward_ops, calculon["block_fw_flops"]),
         "block_forward_memory_bytes": MetricComparison(forward_memory, calculon["block_fw_mem_accessed"]),
@@ -371,33 +463,49 @@ def run_calculon_experiment(cases: tuple[CalculonCase, ...]) -> CalculonExperime
             evidence_revision = hardware.evidence_revision
         elif evidence_revision != hardware.evidence_revision:
             raise ValueError("one experiment report must use one hardware evidence revision")
+        peak_only = estimate_iteration(
+            plan,
+            hardware,
+            CalibrationMode.PEAK_ONLY,
+            network_binding=network_binding,
+        )
+        calibrated = estimate_iteration(
+            plan,
+            hardware,
+            CalibrationMode.SYSTEM_EVIDENCE,
+            network_binding=network_binding,
+        )
+        # Oracle execution is deliberately last: neither lowering nor either
+        # estimate can observe Calculon outputs or the paper measurement.
         calculon_stats = _run_calculon(model_data, execution_data, system_data)
         reports.append(
             CalculonCaseReport(
                 case=case.name,
+                input_manifest=_input_manifest(case),
                 model_digest=model_digest,
                 distributed_digest=distributed_digest,
                 portable_digest=plan.digest,
                 pass_checkpoints=checkpoints,
                 workload=_workload_audit(plan, calculon_stats),
-                peak_only=estimate_iteration(
-                    plan,
-                    hardware,
-                    CalibrationMode.PEAK_ONLY,
-                    network_binding=network_binding,
-                ),
-                calibrated=estimate_iteration(
-                    plan,
-                    hardware,
-                    CalibrationMode.SYSTEM_EVIDENCE,
-                    network_binding=network_binding,
-                ),
+                peak_only=peak_only,
+                calibrated=calibrated,
                 calculon_stats=calculon_stats,
                 paper_seconds=case.paper_seconds,
             )
         )
     return CalculonExperimentReport(
-        schema="blueprinting.calculon-calibration-experiment.v2",
+        schema="blueprinting.calculon-calibration-experiment.v0",
+        oracle={
+            "name": "Calculon",
+            "package_version": calculon.__version__,
+            "source_digest": _source_tree_digest(Path(calculon.__file__).resolve().parent),
+            "source_repository": "https://github.com/calculon-ai/calculon",
+        },
+        paper_baseline={
+            "name": "SeqSel Table 5",
+            "paper": "Reducing Activation Recomputation in Large Transformer Models",
+            "source": "https://arxiv.org/abs/2205.05198",
+        },
         hardware_name=hardware_name,
         evidence_revision=evidence_revision,
         calibration_policy={
@@ -410,6 +518,8 @@ def run_calculon_experiment(cases: tuple[CalculonCase, ...]) -> CalculonExperime
             ],
             "shared_across_cases": True,
             "fit_against_case_outputs": False,
+            "oracle_read_during_lowering": False,
+            "oracle_read_during_costing": False,
             "forbidden_inputs": [
                 "model name",
                 "Calculon duration",

@@ -8,16 +8,19 @@ from blueprinting.schema.frozen import FrozenDict
 from ...system import SystemProfile
 from ..cost_model import CalibrationMode
 from .protocol import (
+    CostAvailable,
     CostEstimate,
     CostProvider,
     CostQuery,
     CostSubject,
     CostSupport,
+    CostSupportVariant,
+    CostUnavailable,
     EstimateMatch,
     EstimateMethod,
     EstimateUncertainty,
     InvalidCostEvidenceError,
-    SupportStatus,
+    InvalidCostSupport,
 )
 
 
@@ -51,7 +54,7 @@ class RooflineCostProvider(CostProvider):
         self._revision = content_digest(
             FrozenDict(
                 {
-                    "provider": "blueprinting-roofline-v1",
+                    "provider": "blueprinting-roofline-v0",
                     "hardware_revision": hardware.evidence_revision,
                     "calibration_mode": mode.value,
                     "processing_mode": processing_mode,
@@ -72,7 +75,7 @@ class RooflineCostProvider(CostProvider):
     def hardware(self) -> SystemProfile:
         return self._hardware
 
-    def supports(self, query: CostQuery) -> CostSupport:
+    def supports(self, query: CostQuery) -> CostSupportVariant:
         if query.hardware != self._hardware.name:
             return CostSupport.unavailable("query targets a different system profile")
         if query.datatype != self._hardware.datatype:
@@ -94,8 +97,11 @@ class RooflineCostProvider(CostProvider):
 
     def estimate(self, query: CostQuery) -> CostEstimate:
         support = self.supports(query)
-        if support.status is not SupportStatus.AVAILABLE:
-            raise InvalidCostEvidenceError(f"roofline provider cannot estimate query: {support.reason}")
+        match support:
+            case CostAvailable():
+                pass
+            case CostUnavailable(reason) | InvalidCostSupport(reason):
+                raise InvalidCostEvidenceError(f"roofline provider cannot estimate query: {reason}")
 
         compute_seconds = 0.0
         memory_seconds = 0.0

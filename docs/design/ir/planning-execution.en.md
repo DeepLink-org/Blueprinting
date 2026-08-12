@@ -76,7 +76,7 @@ ConcretePlanIR
 └── lineage to portable tasks
 ```
 
-Initial commands are `Launch`, `Collective`, `Transfer`, `Barrier`, `Signal`, `Wait`, and `HostCall`. Planned allocations may be static buffer bindings and do not require runtime allocation commands.
+Initial command-body constructors are `Launch`, `CollectiveCommand`, `Transfer`, `Barrier`, `Signal`, `Wait`, and `HostCall`. The graph envelope contains one body rather than a `CommandKind` plus optional payloads. Executable bodies require an `ImplementationRef`; queue ownership is present only on queue-capable bodies. An orthogonal synchronization ADT represents no synchronization, wait, signal, or wait-and-signal clauses without two unrelated optional token tuples. Planned allocations may be static buffer bindings and do not require runtime allocation commands.
 
 ### Operational meaning
 
@@ -86,7 +86,7 @@ Commands execute when dependency, ordering, synchronization, resource, and buffe
 
 The verifier for a complete producer must check DAG acyclicity, dependency-token production and consumption, ordering legality, cross-resource synchronization, implementation coverage, placement, buffer lifetime and overlap, address bounds, resource capacity, target fingerprints, typed extensions, and lineage.
 
-The current repository implements only a generic device/queue/buffer/command schema and a set of structural verifiers. It has no production portable-to-concrete construction pass, route or resource-occupancy semantics, typed target extension, or end-to-end target conformance. This v1 is an experimental serialization contract, not a frozen public ABI.
+The current repository implements the common device/queue/buffer/command schema, typed queue-order and slot/dataflow extensions, extension verifiers, and deterministic virtual portable-to-concrete reference binders. `ConcretePlanIR` remains in the initial `0.0.0` epoch with no production migration history. It has no production target plugin, general route/resource-occupancy model, scheduler, or end-to-end hardware conformance. This remains an experimental serialization contract, not a frozen public ABI.
 
 ## MachineIR
 

@@ -12,27 +12,94 @@ from __future__ import annotations
 import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from blueprinting.schema.codec import content_digest
+from blueprinting.schema.diagnostics import Diagnostic, DiagnosticSet
 from blueprinting.schema.errors import SerializationError
 from blueprinting.schema.frozen import freeze
+from blueprinting.schema.result import Checked, Err, Ok
 
 from ..axes import BindingAxis
 from ..errors import (
+    BindingError,
+    IRVerificationError,
     MissingAnalysisError,
+    MissingBindingError,
     PassContractError,
     PassExecutionError,
     SynthesisError,
 )
-from ..ir.common import CanonicalIRMixin, SchemaVersion
+from ..ids import Lineage, LineageKind, StableId
 from ..session import SynthesisSession
+from ..stages.common import CanonicalIRMixin, SchemaVersion
 
 InputIR = TypeVar("InputIR", bound=CanonicalIRMixin)
 OutputIR = TypeVar("OutputIR", bound=CanonicalIRMixin)
+
+
+def _diagnostic_code(error: SynthesisError) -> str:
+    if isinstance(error, MissingBindingError):
+        return "pass.missing_binding"
+    if isinstance(error, BindingError):
+        return "binding.invalid"
+    if isinstance(error, MissingAnalysisError):
+        return "pass.missing_analysis"
+    if isinstance(error, PassContractError):
+        return "pass.contract"
+    if isinstance(error, IRVerificationError):
+        return "ir.verification"
+    return "synthesis.failure"
+
+
+class RuleVerifier(Protocol):
+    """Executable semantic predicate for one declared lineage rule."""
+
+    def __call__(self, source: Any, target: Any, context: RelationCheckContext) -> None: ...
+
+
+PassNormalizer = Callable[[Any, SynthesisSession], CanonicalIRMixin]
+
+
+@dataclass(frozen=True)
+class RelationCheckContext:
+    """Read-only whole-boundary context available to executable rule claims."""
+
+    source_ir: CanonicalIRMixin
+    target_ir: CanonicalIRMixin
+    source_to_targets: Mapping[StableId, tuple[StableId, ...]]
+    target_to_sources: Mapping[StableId, tuple[StableId, ...]]
+    target_entity_kinds: Mapping[StableId, str]
+    session: SynthesisSession
+
+    def targets_for(self, source_id: StableId) -> tuple[StableId, ...]:
+        return self.source_to_targets.get(source_id, ())
+
+    def only_target_for(self, source_id: StableId, target_entity: str | None = None) -> StableId:
+        targets = self.targets_for(source_id)
+        if target_entity is not None:
+            targets = tuple(item for item in targets if self.target_entity_kinds.get(item) == target_entity)
+        if len(targets) != 1:
+            suffix = f" of kind {target_entity}" if target_entity is not None else ""
+            raise ValueError(f"source {source_id} maps to {len(targets)} targets{suffix}, expected exactly one")
+        return targets[0]
+
+
+@dataclass(frozen=True)
+class RuleClaim:
+    """One named preservation property backed by an executable predicate."""
+
+    name: str
+    verifier: RuleVerifier = field(compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise ValueError("rule claim name must be a non-empty string")
+        if not callable(self.verifier):
+            raise TypeError("rule claim verifier must be callable")
 
 
 @dataclass(frozen=True, order=True)
@@ -56,20 +123,17 @@ class SchemaRange:
 
 @dataclass(frozen=True, order=True)
 class AnalysisKey:
-    """Versioned identity of one derived analysis kind."""
+    """Identity of one derived analysis kind in the current schema epoch."""
 
     namespace: str
     name: str
-    version: int = 1
 
     def __post_init__(self) -> None:
         if not self.namespace or not self.name:
             raise ValueError("analysis namespace and name must not be empty")
-        if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version <= 0:
-            raise ValueError("analysis version must be a positive integer")
 
     def __str__(self) -> str:
-        return f"{self.namespace}.{self.name}@{self.version}"
+        return f"{self.namespace}.{self.name}"
 
 
 @dataclass(frozen=True, order=True)
@@ -195,6 +259,14 @@ class AnalysisStore:
             )
         return tuple(sorted(entries, key=lambda item: item.address.key))
 
+    def clone(self) -> AnalysisStore:
+        """Return an isolated snapshot for deterministic replay."""
+
+        clone = AnalysisStore()
+        with self._lock:
+            clone._entries = dict(self._entries)
+        return clone
+
 
 class MutationModel(Enum):
     IMMUTABLE = "immutable"
@@ -216,11 +288,304 @@ class VerificationPolicy(Enum):
         return self in {VerificationPolicy.BOTH, VerificationPolicy.OUTPUT_ONLY}
 
 
+class DeterminismPolicy(Enum):
+    OFF = "off"
+    VERIFY = "verify"
+
+
+@dataclass(frozen=True, order=True)
+class PassRule:
+    """Declarative semantic contract for one named lineage transform."""
+
+    transform: str
+    source_entity: str
+    target_entity: str
+    rewrite: str
+    preserves: tuple[RuleClaim, ...] = ()
+    introduces: tuple[str, ...] = ()
+    forbids: tuple[str, ...] = ()
+    verifier: RuleVerifier | None = field(default=None, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        identity = (self.transform, self.source_entity, self.target_entity, self.rewrite)
+        if any(not isinstance(item, str) or not item for item in identity):
+            raise ValueError("pass rule identity and rewrite fields must be non-empty strings")
+        claims = tuple(self.preserves)
+        if any(not isinstance(item, RuleClaim) for item in claims):
+            raise TypeError("pass rule preserves must contain executable RuleClaim values")
+        if len({item.name for item in claims}) != len(claims):
+            raise ValueError("pass rule preservation claim names must be unique")
+        object.__setattr__(self, "preserves", claims)
+        for field_name in ("introduces", "forbids"):
+            values = tuple(getattr(self, field_name))
+            if any(not isinstance(item, str) or not item for item in values):
+                raise ValueError(f"pass rule {field_name} must contain non-empty strings")
+            object.__setattr__(self, field_name, values)
+        if self.verifier is not None and not callable(self.verifier):
+            raise TypeError("pass rule verifier must be callable")
+
+    @property
+    def preservation_names(self) -> tuple[str, ...]:
+        return tuple(item.name for item in self.preserves)
+
+
+@dataclass(frozen=True, order=True)
+class ClaimEvidence:
+    name: str
+    verifier: str
+
+
+@dataclass(frozen=True, order=True)
+class TransitionRelation:
+    rule_id: str
+    transform: str
+    source_entity: str
+    target_entity: str
+    source_ids: tuple[str, ...]
+    target_id: str
+    lineage_kind: LineageKind
+    evidence: tuple[ClaimEvidence, ...] = ()
+
+
+class TransitionVerificationStatus(Enum):
+    STRUCTURAL_ONLY = "structural_only"
+    CANONICAL_CONFORMANT = "canonical_conformant"
+    RELATION_VERIFIED = "relation_verified"
+
+
+@dataclass(frozen=True)
+class TransitionReport:
+    source_digest: str
+    target_digest: str
+    relations: tuple[TransitionRelation, ...] = ()
+    status: TransitionVerificationStatus = TransitionVerificationStatus.STRUCTURAL_ONLY
+    canonical_conformance: ClaimEvidence | None = None
+
+    @property
+    def verified_relations(self) -> int:
+        return sum(bool(item.evidence) for item in self.relations)
+
+    @property
+    def verified_claims(self) -> int:
+        return sum(len(item.evidence) for item in self.relations)
+
+    @property
+    def canonical_conformant(self) -> bool:
+        return self.canonical_conformance is not None
+
+
+@dataclass(frozen=True)
+class _EntityDescriptor:
+    kind: str
+    identifier: StableId
+    lineage: Lineage
+    value: Any
+
+
+def _lineage_entities(ir: CanonicalIRMixin) -> tuple[_EntityDescriptor, ...]:
+    """Expose canonical entity identity without importing application views."""
+
+    from ..stages.concrete_plan.ir import ConcretePlanIR
+    from ..stages.distributed.ir import DistributedTaskIR
+    from ..stages.machine.ir import MachineIR
+    from ..stages.model.ir import ModelIR
+    from ..stages.portable_plan.ir import PortablePlanIR
+
+    entities: tuple[Any, ...]
+    if isinstance(ir, ModelIR):
+        entities = tuple(ir.values) + tuple(ir.operations)
+    elif isinstance(ir, DistributedTaskIR):
+        entities = tuple(ir.values) + tuple(ir.tasks)
+    elif isinstance(ir, PortablePlanIR):
+        entities = tuple(ir.buffers) + tuple(ir.tasks)
+    elif isinstance(ir, ConcretePlanIR):
+        entities = tuple(ir.buffers) + tuple(ir.commands)
+    elif isinstance(ir, MachineIR):
+        entities = ir.instructions
+    else:
+        return ()
+    return tuple(_EntityDescriptor(type(item).__name__, item.id, item.lineage, item) for item in entities)
+
+
+class TransitionVerifier:
+    """Verify typed entity lineage and executable derivation laws."""
+
+    @staticmethod
+    def verify(
+        source: CanonicalIRMixin,
+        target: CanonicalIRMixin,
+        contract: PassContract,
+        session: SynthesisSession | None = None,
+    ) -> TransitionReport:
+        if contract.normalizer is not None and session is None:
+            raise PassContractError(
+                f"pass {contract.name!r} requires its synthesis session to evaluate the declared normal form"
+            )
+        relation_session = session if session is not None else SynthesisSession()
+
+        def verify_normal_form() -> ClaimEvidence | None:
+            if contract.normalizer is None:
+                return None
+            try:
+                expected = contract.normalizer(source, relation_session)
+            except Exception as error:
+                raise PassContractError(
+                    f"pass {contract.name!r} could not evaluate its declared normal form: {error}"
+                ) from error
+            if expected != target:
+                raise PassContractError(
+                    f"pass {contract.name!r} output differs from its declared canonical normal form"
+                )
+            return ClaimEvidence(
+                "canonical normal form",
+                contract._callable_identity(contract.normalizer),
+            )
+
+        source_entities = {item.identifier: item for item in _lineage_entities(source)}
+        target_entities = _lineage_entities(target)
+        if not contract.rules:
+            if type(source) is not type(target):
+                raise PassContractError(f"cross-stage pass {contract.name!r} must declare executable lineage rules")
+            normal_form_evidence = verify_normal_form()
+            if source.digest == target.digest:
+                status = (
+                    TransitionVerificationStatus.CANONICAL_CONFORMANT
+                    if normal_form_evidence is not None
+                    else TransitionVerificationStatus.STRUCTURAL_ONLY
+                )
+            elif normal_form_evidence is not None:
+                status = TransitionVerificationStatus.CANONICAL_CONFORMANT
+            else:
+                raise PassContractError(
+                    f"same-stage pass {contract.name!r} changed canonical IR without a declared normal form or rules"
+                )
+            return TransitionReport(
+                source.digest,
+                target.digest,
+                status=status,
+                canonical_conformance=normal_form_evidence,
+            )
+        rules = {item.transform: item for item in contract.rules}
+        pending: list[tuple[_EntityDescriptor, tuple[_EntityDescriptor, ...], PassRule, str]] = []
+        for target_entity in target_entities:
+            lineage = target_entity.lineage
+            if lineage.kind is LineageKind.ROOT:
+                raise PassContractError(
+                    f"pass {contract.name!r} produced root lineage for {target_entity.kind} {target_entity.identifier}"
+                )
+            rule = rules.get(lineage.transform)
+            if rule is None:
+                raise PassContractError(
+                    f"pass {contract.name!r} produced undeclared lineage transform {lineage.transform!r}"
+                )
+            resolved = []
+            for source_id in lineage.sources:
+                entity = source_entities.get(source_id)
+                if entity is None:
+                    raise PassContractError(
+                        f"pass {contract.name!r} lineage source {source_id} does not exist in its input snapshot"
+                    )
+                resolved.append(entity)
+            if lineage.kind is LineageKind.GENERATED:
+                if resolved or rule.source_entity not in {"none", "generated"}:
+                    raise PassContractError("generated lineage requires zero sources and an explicit generated rule")
+                actual_source_kind = "none"
+            else:
+                if not resolved:
+                    raise PassContractError(f"{lineage.kind.value} lineage requires at least one source")
+                if lineage.kind in {LineageKind.PRESERVED, LineageKind.CLONED} and len(resolved) != 1:
+                    raise PassContractError(f"{lineage.kind.value} lineage requires exactly one source")
+                if lineage.kind is LineageKind.FUSED and len(resolved) < 2:
+                    raise PassContractError("fused lineage requires at least two sources")
+                source_kinds = {item.kind for item in resolved}
+                if len(source_kinds) != 1:
+                    raise PassContractError("one lineage relation cannot mix source entity kinds")
+                actual_source_kind = next(iter(source_kinds))
+                if len(resolved) > 1:
+                    actual_source_kind += " set"
+            if actual_source_kind != rule.source_entity or target_entity.kind != rule.target_entity:
+                raise PassContractError(
+                    f"pass {contract.name!r} transform {rule.transform!r} expected "
+                    f"{rule.source_entity} -> {rule.target_entity}, got "
+                    f"{actual_source_kind} -> {target_entity.kind}"
+                )
+            pending.append((target_entity, tuple(resolved), rule, actual_source_kind))
+
+        source_to_targets: dict[StableId, list[StableId]] = {}
+        target_to_sources: dict[StableId, tuple[StableId, ...]] = {}
+        for target_entity, resolved_entities, _rule, _kind in pending:
+            target_to_sources[target_entity.identifier] = tuple(item.identifier for item in resolved_entities)
+            for item in resolved_entities:
+                source_to_targets.setdefault(item.identifier, []).append(target_entity.identifier)
+        context = RelationCheckContext(
+            source,
+            target,
+            {key: tuple(value) for key, value in source_to_targets.items()},
+            target_to_sources,
+            {item.identifier: item.kind for item in target_entities},
+            relation_session,
+        )
+        normal_form_evidence = verify_normal_form()
+        relations = []
+        for target_entity, resolved_entities, rule, actual_source_kind in pending:
+            source_value: Any = tuple(item.value for item in resolved_entities)
+            if len(source_value) == 1:
+                source_value = source_value[0]
+            try:
+                evidence = []
+                if rule.verifier is not None:
+                    rule.verifier(source_value, target_entity.value, context)
+                    evidence.append(ClaimEvidence("relation invariant", contract._callable_identity(rule.verifier)))
+                for claim in rule.preserves:
+                    claim.verifier(source_value, target_entity.value, context)
+                    evidence.append(ClaimEvidence(claim.name, contract._callable_identity(claim.verifier)))
+            except PassContractError:
+                raise
+            except Exception as error:
+                raise PassContractError(
+                    f"pass {contract.name!r} rule {rule.transform!r} rejected its relation: {error}"
+                ) from error
+            relations.append(
+                TransitionRelation(
+                    rule_id=f"{contract.name}.{rule.transform}",
+                    transform=rule.transform,
+                    source_entity=actual_source_kind,
+                    target_entity=target_entity.kind,
+                    source_ids=tuple(str(item.identifier) for item in resolved_entities),
+                    target_id=str(target_entity.identifier),
+                    lineage_kind=target_entity.lineage.kind,
+                    evidence=tuple(evidence),
+                )
+            )
+        has_complete_evidence = bool(relations) and all(item.evidence for item in relations)
+        if not has_complete_evidence and source.digest != target.digest:
+            raise PassContractError(
+                f"pass {contract.name!r} changed canonical IR without complete executable relation evidence"
+            )
+        status = (
+            TransitionVerificationStatus.RELATION_VERIFIED
+            if has_complete_evidence
+            else TransitionVerificationStatus.STRUCTURAL_ONLY
+        )
+        if type(source) is not type(target) and status is not TransitionVerificationStatus.RELATION_VERIFIED:
+            raise PassContractError(
+                f"cross-stage pass {contract.name!r} did not produce executable claim evidence for every relation"
+            )
+        return TransitionReport(
+            source.digest,
+            target.digest,
+            tuple(relations),
+            status,
+            normal_form_evidence,
+        )
+
+
 @dataclass(frozen=True)
 class PassContract:
     """Complete static contract for one canonical IR transition."""
 
     name: str
+    revision: str
     input_type: type[CanonicalIRMixin]
     input_schema: SchemaRange
     output_type: type[CanonicalIRMixin]
@@ -233,10 +598,14 @@ class PassContract:
     verification: VerificationPolicy = VerificationPolicy.BOTH
     deterministic: bool = True
     uses_session_seed: bool = False
+    rules: tuple[PassRule, ...] = ()
+    normalizer: PassNormalizer | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("pass name must not be empty")
+        if not isinstance(self.revision, str) or not self.revision:
+            raise ValueError("pass revision must be a non-empty string")
         if not issubclass(self.input_type, CanonicalIRMixin) or not issubclass(self.output_type, CanonicalIRMixin):
             raise TypeError("pass input and output types must be canonical IR roots")
         if not self.input_schema.accepts(self.input_type.SCHEMA_VERSION):
@@ -247,10 +616,73 @@ class PassContract:
         object.__setattr__(self, "required_analyses", frozenset(self.required_analyses))
         object.__setattr__(self, "preserved_analyses", frozenset(self.preserved_analyses))
         object.__setattr__(self, "produced_analyses", frozenset(self.produced_analyses))
+        rules = tuple(self.rules)
+        if any(not isinstance(item, PassRule) for item in rules):
+            raise TypeError("pass rules must contain only PassRule values")
+        object.__setattr__(self, "rules", rules)
+        if len({item.transform for item in self.rules}) != len(self.rules):
+            raise ValueError("pass rule transforms must be unique")
+        if self.uses_session_seed and not self.deterministic:
+            raise ValueError("uses_session_seed requires a deterministic pass contract")
+        if self.normalizer is not None and not callable(self.normalizer):
+            raise TypeError("pass normalizer must be callable")
         overlap = self.preserved_analyses & self.produced_analyses
         if overlap:
             rendered = ", ".join(str(item) for item in sorted(overlap))
             raise ValueError(f"analyses cannot be both preserved and produced: {rendered}")
+
+    @staticmethod
+    def _callable_identity(value: Callable[..., Any] | None) -> str:
+        if value is None:
+            return ""
+        return f"{value.__module__}.{value.__qualname__}"
+
+    @property
+    def normalizer_identity(self) -> str | None:
+        """Stable diagnostic identity of the canonical derivation law."""
+
+        identity = self._callable_identity(self.normalizer)
+        return identity or None
+
+    @property
+    def digest(self) -> str:
+        """Content identity of the contract and its declared callable identities."""
+
+        rules = tuple(
+            (
+                rule.transform,
+                rule.source_entity,
+                rule.target_entity,
+                rule.rewrite,
+                tuple((claim.name, self._callable_identity(claim.verifier)) for claim in rule.preserves),
+                rule.introduces,
+                rule.forbids,
+                self._callable_identity(rule.verifier),
+            )
+            for rule in self.rules
+        )
+        return content_digest(
+            (
+                self.name,
+                self.revision,
+                self.input_type.SCHEMA_NAME,
+                str(self.input_schema.minimum),
+                str(self.input_schema.maximum),
+                self.output_type.SCHEMA_NAME,
+                str(self.output_schema),
+                tuple(sorted(axis.value for axis in self.required_bindings)),
+                tuple(sorted(str(key) for key in self.required_analyses)),
+                tuple(sorted(str(key) for key in self.preserved_analyses)),
+                tuple(sorted(str(key) for key in self.produced_analyses)),
+                self.mutation_model.value,
+                self.verification.value,
+                self.deterministic,
+                self.uses_session_seed,
+                rules,
+                self._callable_identity(self.normalizer),
+            ),
+            "pass-contract",
+        )
 
     @classmethod
     def create(
@@ -258,12 +690,15 @@ class PassContract:
         name: str,
         input_type: type[CanonicalIRMixin],
         output_type: type[CanonicalIRMixin],
+        *,
+        revision: str = "1",
         **options: Any,
     ) -> PassContract:
         """Build the common exact-schema contract without hiding its resolved values."""
 
         return cls(
             name=name,
+            revision=revision,
             input_type=input_type,
             input_schema=SchemaRange.exact(input_type.SCHEMA_VERSION),
             output_type=output_type,
@@ -354,12 +789,15 @@ class PassPipeline:
 @dataclass(frozen=True)
 class PassRecord:
     pass_name: str
+    contract_revision: str
+    contract_digest: str
     input_digest: str
     output_digest: str
     session_fingerprint: str
     duration_ns: int
     mutation_model: MutationModel
     produced_analyses: tuple[AnalysisKey, ...]
+    transition_report: TransitionReport
 
 
 @dataclass(frozen=True)
@@ -394,11 +832,61 @@ class PassManager:
         analyses: AnalysisStore | None = None,
         *,
         observers: Iterable[PassObserver] = (),
+        determinism: DeterminismPolicy = DeterminismPolicy.OFF,
     ) -> None:
         self.analyses = analyses if analyses is not None else AnalysisStore()
         self.observers = tuple(observers)
+        if not isinstance(determinism, DeterminismPolicy):
+            raise TypeError("determinism must be a DeterminismPolicy")
+        self.determinism = determinism
+
+    @staticmethod
+    def _result_signature(result: PassResult[Any]) -> tuple[str, tuple[tuple[str, str], ...]]:
+        products = tuple(
+            (
+                str(product.key),
+                content_digest(freeze(product.value), f"analysis:{product.key}"),
+            )
+            for product in result.analyses
+        )
+        return result.ir.digest, products
 
     def run(
+        self,
+        pipeline: PassPipeline,
+        ir: InputIR,
+        *,
+        session: SynthesisSession,
+    ) -> Checked[PipelineResult[Any]]:
+        """Execute a pipeline and return expected contract failures as diagnostics."""
+
+        try:
+            return Ok(self._run(pipeline, ir, session=session))
+        except PassExecutionError:
+            raise
+        except SynthesisError as error:
+            return Err(
+                DiagnosticSet.of(
+                    Diagnostic(
+                        _diagnostic_code(error),
+                        str(error),
+                        ("pipeline",),
+                    )
+                )
+            )
+
+    def require_run(
+        self,
+        pipeline: PassPipeline,
+        ir: InputIR,
+        *,
+        session: SynthesisSession,
+    ) -> PipelineResult[Any]:
+        """Explicit exception adapter for application and legacy boundaries."""
+
+        return self._run(pipeline, ir, session=session)
+
+    def _run(
         self,
         pipeline: PassPipeline,
         ir: InputIR,
@@ -408,7 +896,6 @@ class PassManager:
         current: CanonicalIRMixin = ir
         records = []
         checkpoints = []
-        context = PassContext(session=session, analyses=self.analyses)
 
         for derivation_pass in pipeline:
             contract = derivation_pass.contract
@@ -434,20 +921,38 @@ class PassManager:
                 rendered = ", ".join(str(item) for item in missing)
                 raise MissingAnalysisError(f"pass {contract.name!r} requires missing analyses: {rendered}")
 
-            if contract.mutation_model is MutationModel.TRANSACTIONAL:
-                working = type(current).from_json(current.to_json())
-            else:
-                working = current
+            def invoke(
+                store: AnalysisStore,
+                *,
+                isolate_input: bool,
+                snapshot: CanonicalIRMixin = current,
+                current_contract: PassContract = contract,
+                current_pass: DerivationPass[Any, Any] = derivation_pass,
+            ) -> PassResult[Any]:
+                working = (
+                    type(snapshot).require_from_json(snapshot.to_json())
+                    if isolate_input or current_contract.mutation_model is MutationModel.TRANSACTIONAL
+                    else snapshot
+                )
+                context = PassContext(session=session, analyses=store)
+                try:
+                    raw_result = current_pass.run(working, context)
+                except SynthesisError:
+                    raise
+                except Exception as error:
+                    raise PassExecutionError(current_contract.name, error) from error
+                return raw_result if isinstance(raw_result, PassResult) else PassResult(raw_result)
 
             started = time.perf_counter_ns()
-            try:
-                raw_result = derivation_pass.run(working, context)
-            except SynthesisError:
-                raise
-            except Exception as error:
-                raise PassExecutionError(contract.name, error) from error
+            if self.determinism is DeterminismPolicy.VERIFY and contract.deterministic:
+                result = invoke(self.analyses.clone(), isolate_input=True)
+            else:
+                result = invoke(self.analyses, isolate_input=False)
             duration_ns = time.perf_counter_ns() - started
-            result = raw_result if isinstance(raw_result, PassResult) else PassResult(raw_result)
+            if self.determinism is DeterminismPolicy.VERIFY and contract.deterministic:
+                replay = invoke(self.analyses.clone(), isolate_input=True)
+                if self._result_signature(result) != self._result_signature(replay):
+                    raise PassContractError(f"pass {contract.name!r} failed deterministic replay")
 
             if contract.mutation_model is MutationModel.IMMUTABLE:
                 try:
@@ -475,6 +980,7 @@ class PassManager:
                 raise PassContractError(
                     f"pass {contract.name!r} changed the IR without retaining its input digest in lineage"
                 )
+            transition_report = TransitionVerifier.verify(current, output, contract, session)
 
             product_keys = tuple(product.key for product in result.analyses)
             if len(set(product_keys)) != len(product_keys):
@@ -488,12 +994,15 @@ class PassManager:
                 )
             record = PassRecord(
                 pass_name=contract.name,
+                contract_revision=contract.revision,
+                contract_digest=contract.digest,
                 input_digest=input_digest,
                 output_digest=output_digest,
                 session_fingerprint=session.fingerprint,
                 duration_ns=duration_ns,
                 mutation_model=contract.mutation_model,
                 produced_analyses=tuple(sorted(product_keys)),
+                transition_report=transition_report,
             )
             checkpoint = PassCheckpoint(
                 record=record,

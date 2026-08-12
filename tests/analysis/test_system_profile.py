@@ -45,7 +45,7 @@ def test_system_profile_round_trip_preserves_legacy_wire_identity() -> None:
     restored = canonical_loads(payload)
 
     assert restored == profile
-    assert '"$type":"compiler.analysis.hardware_profile.v1"' in payload
+    assert '"$type":"blueprinting.system.profile"' in payload
 
 
 def test_interconnect_rejects_participant_counts_beyond_its_capacity() -> None:

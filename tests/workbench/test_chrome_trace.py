@@ -28,7 +28,7 @@ def test_portable_projection_exports_tasks_metadata_and_dependency_flows() -> No
     assert len(flow_starts) == sum(len(task.dependencies) for task in report.tasks)
     assert {event["id"] for event in flow_starts} == {event["id"] for event in flow_ends}
     assert document["metadata"] == {
-        "schema": "blueprinting.chrome-trace.portable-projection.v1",
+        "schema": "blueprinting.chrome-trace.portable-projection.v0",
         "timeline_kind": TRACE_KIND,
         "source_plan_digest": report.plan_digest,
         "request_digest": report.request_digest,

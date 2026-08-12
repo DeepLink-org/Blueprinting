@@ -1,6 +1,6 @@
 num_procs = 3072
 tensor_par = 4
-pipeline_par = 64
+pipeline_par = 48
 data_par = 12
 sequence_par = true
 tensor_par_net = 0

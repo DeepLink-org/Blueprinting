@@ -19,7 +19,6 @@ from blueprinting.analysis import (
     CostQueryContext,
     CostResolver,
     EstimateUncertainty,
-    InferenceCostProvider,
     InferencePhaseEstimate,
     estimate_inference_phase,
 )
@@ -27,20 +26,36 @@ from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMapping
 from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict, freeze, thaw
 from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.dialects.transformer import TransformerInferencePlanTaskSemantic
 from blueprinting.synthesizer.errors import IRVerificationError, PassExecutionError, SynthesisError
 from blueprinting.synthesizer.frontend import (
     build_transformer_inference_model_ir,
     inference_synthesis_session_for,
 )
-from blueprinting.synthesizer.ir import ModelIR, PortablePlanIR
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
-from blueprinting.synthesizer.passes import AnalysisStore, PassCheckpoint, PassManager, PassPipeline
+from blueprinting.synthesizer.passes import (
+    AnalysisStore,
+    PassCheckpoint,
+    PassManager,
+    PassPipeline,
+    PipelineResult,
+)
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerInferencePass
+from blueprinting.synthesizer.stages.model.ir import ModelIR
+from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR, require_concrete_quantity
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
 from blueprinting.workload import (
+    TransformerDataType,
     TransformerInferenceRequestSpec,
     TransformerModelSpec,
 )
 
+from .derivation import (
+    DerivationTrace,
+    build_derivation_trace,
+    portable_cost_overlay,
+    with_overlays,
+)
 from .reporting import AnalysisDiagnostic, DiagnosticLevel, IRStageReport, TaskReport, stage_report
 
 LOGGER = logging.getLogger(__name__)
@@ -116,11 +131,11 @@ class InferenceAnalysisDraft:
                     "seed": self.seed,
                 }
             ),
-            "blueprinting-inference-analysis-request-v1",
+            "blueprinting-inference-analysis-request-v0",
         )
 
     def normalized_execution(self) -> dict[str, Any]:
-        data = thaw(self.execution_data)
+        data = self.execution_data.to_dict()
         data.pop("num_procs", None)
         mapping = TransformerInferenceMappingSpec.from_mapping(data)
         data["replicas"] = mapping.replicas
@@ -161,6 +176,7 @@ class InferenceAnalysisReport:
     workload: FrozenDict
     evidence: FrozenDict
     configuration: FrozenDict
+    derivation_traces: tuple[DerivationTrace, ...]
     stages: tuple[IRStageReport, ...]
     tasks: tuple[TaskReport, ...]
     decode_steps: tuple[DecodeStepReport, ...]
@@ -203,15 +219,25 @@ def _task_reports(plan: PortablePlanIR, estimate: InferencePhaseEstimate) -> tup
             task_id=str(task.id),
             operation=str(task.operation),
             kind=task.kind.value,
-            phase=str(task.workload.attributes.get("phase", "unknown")),
-            engine=str(task.workload.attributes.get("engine", "unknown")),
-            source_layer=str(task.workload.attributes.get("source_layer", "")),
+            phase=(
+                task.semantic.phase.value
+                if isinstance(task.semantic, TransformerInferencePlanTaskSemantic)
+                else "unknown"
+            ),
+            engine=(
+                task.semantic.engine.value
+                if isinstance(task.semantic, TransformerInferencePlanTaskSemantic)
+                else "unknown"
+            ),
+            source_layer=(
+                task.semantic.source_layer if isinstance(task.semantic, TransformerInferencePlanTaskSemantic) else ""
+            ),
             dependencies=tuple(str(item) for item in task.dependencies),
             concurrency_group=task.concurrency_group or "",
-            operations=task.workload.operations,
-            read_bytes=task.workload.read_bytes,
-            write_bytes=task.workload.write_bytes,
-            message_bytes=task.workload.message_bytes,
+            operations=require_concrete_quantity(task.workload.operations, f"task {task.id} operations"),
+            read_bytes=require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes"),
+            write_bytes=require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes"),
+            message_bytes=require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes"),
             compute_seconds=task_estimate.compute_seconds,
             memory_seconds=task_estimate.memory_seconds,
             network_seconds=task_estimate.network_seconds,
@@ -237,12 +263,9 @@ class InferenceAnalysisService:
         self,
         analyses: AnalysisStore | None = None,
         *,
-        cost_provider: InferenceCostProvider | None = None,
         cost_resolver: CostResolver | None = None,
         cost_context: CostQueryContext = CostQueryContext(),
     ) -> None:
-        if cost_provider is not None and cost_resolver is not None:
-            raise ValueError("cost_provider and cost_resolver are mutually exclusive")
         if not isinstance(cost_context, CostQueryContext):
             raise TypeError("cost_context must be CostQueryContext")
         self._manager = PassManager(analyses=analyses)
@@ -250,7 +273,6 @@ class InferenceAnalysisService:
             DistributeTransformerInferencePass(),
             PlanTransformerInferencePass(),
         )
-        self._cost_provider = cost_provider
         self._cost_resolver = cost_resolver
         self._cost_context = cost_context
 
@@ -331,7 +353,7 @@ class InferenceAnalysisService:
         model: TransformerModelSpec,
         mapping: TransformerInferenceMappingSpec,
         network_binding: NetworkTierBinding,
-        datatype: str,
+        datatype: TransformerDataType,
         hardware: SystemProfile,
         draft: InferenceAnalysisDraft,
         *,
@@ -350,7 +372,7 @@ class InferenceAnalysisService:
             ),
             seed=draft.seed,
         )
-        pipeline = self._manager.run(self._pipeline, source, session=session)
+        pipeline = self._manager.require_run(self._pipeline, source, session=session)
         plan = pipeline.ir
         if not isinstance(plan, PortablePlanIR):
             raise TypeError(f"inference pipeline returned {type(plan).__name__}, expected PortablePlanIR")
@@ -359,7 +381,6 @@ class InferenceAnalysisService:
             hardware,
             draft.calibration_mode,
             network_binding=network_binding,
-            cost_provider=self._cost_provider,
             cost_resolver=self._cost_resolver,
             cost_context=self._cost_context,
         )
@@ -463,9 +484,48 @@ class InferenceAnalysisService:
                 )
             )
 
-        tasks = _task_reports(prefill.plan, prefill.estimate)
+        prefill_tasks = _task_reports(prefill.plan, prefill.estimate)
+        tasks = prefill_tasks
+        representative_tasks: tuple[TaskReport, ...] = ()
         if representative is not None:
-            tasks += _task_reports(representative.plan, representative.estimate)
+            representative_tasks = _task_reports(representative.plan, representative.estimate)
+            tasks += representative_tasks
+        phase_traces = []
+        for branch, derived, phase_tasks in (
+            ("prefill", prefill, prefill_tasks),
+            (
+                f"decode.context-{representative.estimate.context_tokens}" if representative is not None else "",
+                representative,
+                representative_tasks,
+            ),
+        ):
+            if derived is None:
+                continue
+            pipeline_result = PipelineResult(
+                ir=derived.plan,
+                records=tuple(item.record for item in derived.checkpoints),
+                checkpoints=derived.checkpoints,
+            )
+            trace = build_derivation_trace(
+                source,
+                self._pipeline,
+                pipeline_result,
+                request_digest=draft.fingerprint,
+                session_fingerprint=derived.session_fingerprint,
+                source_duration_ns=frontend_duration,
+                branch=branch,
+            )
+            phase_traces.append(
+                with_overlays(
+                    trace,
+                    portable_cost_overlay(
+                        derived.plan.digest,
+                        phase_tasks,
+                        provider=f"inference-cost:{draft.calibration_mode.value}",
+                        revision=hardware.evidence_revision,
+                    ),
+                )
+            )
         decode_steps = tuple(
             DecodeStepReport(
                 context_tokens=item.estimate.context_tokens,
@@ -535,7 +595,6 @@ class InferenceAnalysisService:
                 "hardware_name": hardware.name,
                 "hardware_revision": hardware.evidence_revision,
                 "mode": draft.calibration_mode.value,
-                "cost_provider_revision": self._cost_provider.revision if self._cost_provider is not None else "none",
                 "cost_resolver_revision": self._cost_resolver.revision if self._cost_resolver is not None else "none",
                 "revisions": FrozenDict(evidence_revisions),
             }
@@ -553,7 +612,7 @@ class InferenceAnalysisService:
             }
         )
         report = InferenceAnalysisReport(
-            schema="blueprinting.inference-analysis-report.v1",
+            schema="blueprinting.inference-analysis-report.v0",
             request_digest=draft.fingerprint,
             model_name=draft.model_name,
             execution_name=draft.execution_name,
@@ -576,6 +635,7 @@ class InferenceAnalysisService:
             workload=workload,
             evidence=evidence,
             configuration=configuration,
+            derivation_traces=tuple(phase_traces),
             stages=tuple(stages),
             tasks=tasks,
             decode_steps=decode_steps,
@@ -585,7 +645,7 @@ class InferenceAnalysisService:
                 "replicas 只参与映射合法性与 world-size 记账；当前报告是单 replica cohort latency，不估算跨 replica serving capacity。",
                 "当前 workload dialect 支持 dense multi-head attention 与非 gated MLP；embedding、LM head 和 sampler 尚未建模。",
                 "PortablePlanIR 尚未绑定 attention implementation；working memory 使用未融合 score materialization 的保守上界。",
-                "除非提供 Blueprinting cost resolver 或 legacy provider，组件耗时使用共享 system profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
+                "除非提供 Blueprinting cost resolver，组件耗时使用共享 system profile 的解析 roofline 证据；comparison baseline 不参与该选择。",
             ),
         )
         return InferenceAnalysisOutcome(draft.fingerprint, diagnostics, report)

@@ -46,12 +46,15 @@ DistributedTaskIR
 ├── mesh: LogicalMesh
 ├── values: DistributedValue[]
 ├── tasks: DistributedTask[]
+│   └── body: LocalCompute | Collective | PointToPoint | Reshard | Control
 ├── inputs / outputs
 ├── attributes
 └── lineage to ModelIR
 ```
 
 Communication operations retain logical semantics: participants, collective kind, reduction, tensor/value relation, and exact logical message bytes where derivable.
+
+`DistributedTask` is the shared graph-node envelope, while mutually exclusive semantics live in its `body` ADT. It no longer uses `kind + Optional collective/peer_transfer`, so constructor choice establishes communication-metadata presence instead of deferring invalid combinations to the verifier.
 
 ### Forbidden information
 

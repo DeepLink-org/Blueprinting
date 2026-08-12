@@ -14,7 +14,12 @@ from typing import Any
 from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict
 
-from .database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
+from .database import (
+    EvidenceProvenance,
+    PerformanceDatabase,
+    PerformanceRecord,
+    performance_record_identity_collisions,
+)
 from .protocol import CostSubject, EstimateMethod
 
 
@@ -110,7 +115,7 @@ class TabularImportSpec:
         collisions = set(self.selector_columns).intersection(self.constant_selectors)
         if collisions:
             raise ValueError(f"selector columns collide with constants: {', '.join(sorted(collisions))}")
-        duplicate_identity = {"subject", "operation", "hardware", "datatype"}.intersection(
+        duplicate_identity = performance_record_identity_collisions(
             set(self.selector_columns).union(self.constant_selectors)
         )
         if duplicate_identity:
@@ -177,14 +182,13 @@ def _required(row: dict[str, Any], column: str, row_number: int) -> Any:
 def _parse_scalar(value: Any, type_name: str, *, column: str, row_number: int) -> str | int | float | bool:
     value = _python_scalar(value)
     if type_name == "string":
-        if not isinstance(value, str):
-            value = str(value)
-        if not value:
+        text = str(value)
+        if not text:
             raise ValueError(f"row {row_number} has an empty string in {column!r}")
-        return value
+        return text
     if type_name == "bool":
         if isinstance(value, bool):
-            return value
+            return bool(value)
         normalized = str(value).strip().lower()
         if normalized in {"true", "1"}:
             return True
@@ -224,7 +228,7 @@ def _identity(
 class TabularPerformanceImporter:
     """Import simulator/profiler tables using an explicit, revisioned schema."""
 
-    IMPORTER_REVISION = "blueprinting-tabular-performance-v1"
+    IMPORTER_REVISION = "blueprinting-tabular-performance-v0"
 
     @classmethod
     def from_file(cls, path: str | Path, spec: TabularImportSpec) -> PerformanceDatabase:
@@ -244,11 +248,13 @@ class TabularPerformanceImporter:
         )
         records = []
         for row_number, row in enumerate(rows, start=1):
-            latency = _parse_scalar(
-                _required(row, spec.latency_column, row_number),
-                "float",
-                column=spec.latency_column,
-                row_number=row_number,
+            latency = float(
+                _parse_scalar(
+                    _required(row, spec.latency_column, row_number),
+                    "float",
+                    column=spec.latency_column,
+                    row_number=row_number,
+                )
             )
             if latency < 0:
                 raise ValueError(f"row {row_number} has negative latency")

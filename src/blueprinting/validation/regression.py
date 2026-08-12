@@ -102,7 +102,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _contract(repository_root: Path) -> dict[str, Any]:
     contract = _read_json(repository_root / _CONTRACT_PATH)
-    if contract.get("schema") != "blueprinting.baseline-regression-contract.v1":
+    if contract.get("schema") != "blueprinting.baseline-regression-contract.v0":
         raise ValueError("unsupported baseline regression contract schema")
     return contract
 
@@ -125,8 +125,28 @@ def _fixture_path(fixture_root: Path, relative_path: str) -> Path:
 def _training_checks(report: CalculonExperimentReport, contract: dict[str, Any]) -> tuple[RegressionCheck, ...]:
     budgets = contract["budgets"]
     golden = contract["golden"]
+    input_manifest: dict[str, dict[str, str]] = {"models": {}, "executions": {}, "systems": {}}
+    for case in report.cases:
+        input_manifest["models"][case.input_manifest["model"]["file"]] = case.input_manifest["model"]["sha256"]
+        input_manifest["executions"][case.input_manifest["execution"]["file"]] = case.input_manifest["execution"][
+            "sha256"
+        ]
+        input_manifest["systems"][case.input_manifest["system"]["file"]] = case.input_manifest["system"]["sha256"]
     checks = [
+        _exact("training.report_schema", report.schema, contract["report_schema"]),
+        _exact("training.oracle.name", report.oracle["name"], contract["oracle"]["name"]),
+        _exact(
+            "training.oracle.package_version",
+            report.oracle["package_version"],
+            contract["oracle"]["package_version"],
+        ),
+        _exact(
+            "training.oracle.source_digest",
+            report.oracle["source_digest"],
+            contract["oracle"]["source_digest"],
+        ),
         _exact("training.case_count", len(report.cases), contract["case_count"]),
+        _exact("training.input_manifest", input_manifest, contract["inputs"]),
         _exact("training.evidence_revision", report.evidence_revision, contract["evidence_revision"]),
         _at_most(
             "training.workload_max_absolute_error_percent",
@@ -142,6 +162,11 @@ def _training_checks(report: CalculonExperimentReport, contract: dict[str, Any])
             "training.calculon_max_absolute_error_percent",
             report.calibrated_max_absolute_error_percent,
             budgets["calculon_max_absolute_error_percent"],
+        ),
+        _at_most(
+            "training.breakdown_max_absolute_error_percent",
+            max(item["max_absolute_error_percent"] for item in report.breakdown_error.values()),
+            budgets["breakdown_max_absolute_error_percent"],
         ),
         _at_most(
             "training.paper_mean_absolute_error_percent",
@@ -180,14 +205,21 @@ def _training_checks(report: CalculonExperimentReport, contract: dict[str, Any])
         _exact(
             "training.policy.fit_against_case_outputs", report.calibration_policy["fit_against_case_outputs"], False
         ),
+        _exact(
+            "training.policy.oracle_read_during_lowering",
+            report.calibration_policy["oracle_read_during_lowering"],
+            False,
+        ),
+        _exact(
+            "training.policy.oracle_read_during_costing",
+            report.calibration_policy["oracle_read_during_costing"],
+            False,
+        ),
     ]
-    memory_error = max(
-        abs(case.calibrated.memory.total - case.calculon_stats["proc_mem_tier1_cap_req"]) for case in report.cases
-    )
     checks.append(
         _at_most(
             "training.memory_max_absolute_error_bytes",
-            memory_error,
+            report.memory_max_absolute_error_bytes,
             budgets["memory_max_absolute_error_bytes"],
         )
     )
@@ -200,11 +232,11 @@ def _training_checks(report: CalculonExperimentReport, contract: dict[str, Any])
         )
     )
     for case_name, expected_digest in golden["portable_digests"].items():
-        case = reports_by_name.get(case_name)
+        matched_case = reports_by_name.get(case_name)
         checks.append(
             _exact(
                 f"training.{case_name}.portable_digest",
-                case.portable_digest if case is not None else None,
+                matched_case.portable_digest if matched_case is not None else None,
                 expected_digest,
             )
         )
@@ -218,7 +250,7 @@ def run_training_baseline_regression(repository_root: str | Path) -> BaselineReg
     contract = _contract(root)["training"]
     report = run_calculon_experiment(discover_seqsel_tab5_cases(root / "data"))
     return BaselineRegressionGate(
-        schema="blueprinting.baseline-regression-gate.v1",
+        schema="blueprinting.baseline-regression-gate.v0",
         domain="training/calculon",
         checks=_training_checks(report, contract),
     )
@@ -240,7 +272,7 @@ def _load_vidur_report(
             _sha256(manifest_path),
             contract["fixture_manifest_sha256"],
         ),
-        _exact("inference.fixture.schema", manifest.get("schema"), "blueprinting.vidur-validation-slice.v1"),
+        _exact("inference.fixture.schema", manifest.get("schema"), "blueprinting.vidur-validation-slice.v0"),
         _exact(
             "inference.fixture.source_repository",
             manifest["source"].get("repository"),
@@ -470,7 +502,7 @@ def run_inference_baseline_regression(repository_root: str | Path) -> BaselineRe
     contract = _contract(root)["inference"]
     report, _, fixture_checks = _load_vidur_report(root, contract)
     return BaselineRegressionGate(
-        schema="blueprinting.baseline-regression-gate.v1",
+        schema="blueprinting.baseline-regression-gate.v0",
         domain="inference/vidur",
         checks=_inference_checks(report, contract, fixture_checks),
     )

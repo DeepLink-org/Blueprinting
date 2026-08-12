@@ -1,5 +1,5 @@
 {
-  "schema": "blueprinting.vidur-validation-slice.v1",
+  "schema": "blueprinting.vidur-validation-slice.v0",
   "source": {
     "repository": "https://github.com/microsoft/vidur",
     "revision": "8383d2935bc62723a212090baa9f98ada206fc14",

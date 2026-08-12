@@ -46,12 +46,15 @@ DistributedTaskIR
 ├── mesh: LogicalMesh
 ├── values: DistributedValue[]
 ├── tasks: DistributedTask[]
+│   └── body: LocalCompute | Collective | PointToPoint | Reshard | Control
 ├── inputs / outputs
 ├── attributes
 └── lineage to ModelIR
 ```
 
 Communication operation 保留 logical semantic：participant、collective kind、reduction、tensor/value relation，以及可推导时的 exact logical message bytes。
+
+`DistributedTask` 是统一图节点 envelope；互斥语义位于 `body` ADT，不再使用 `kind + Optional collective/peer_transfer`。因此 communication metadata 的存在性由 constructor 保证，而不是等到 verifier 才发现非法组合。
 
 ### 禁止的信息
 

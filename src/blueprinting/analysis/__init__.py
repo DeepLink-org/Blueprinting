@@ -49,7 +49,6 @@ from .inference_cost import (
 )
 from .inference_evidence import (
     InferenceBaseline,
-    InferenceCostProvider,
     InferenceEvidenceQuery,
     InferenceEvidenceResult,
 )
@@ -77,7 +76,6 @@ __all__ = [
     "EvidenceCoverage",
     "EvidenceDatabaseSummary",
     "InferenceBaseline",
-    "InferenceCostProvider",
     "InferenceEvidenceQuery",
     "InferenceEvidenceResult",
     "InferencePhaseEstimate",

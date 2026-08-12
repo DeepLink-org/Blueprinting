@@ -8,8 +8,19 @@ which is substantially more useful than failing on the first malformed edge.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from enum import Enum
+
+from blueprinting.schema.diagnostics import (
+    Diagnostic as Diagnostic,
+)
+from blueprinting.schema.diagnostics import (
+    DiagnosticBag as _DiagnosticBag,
+)
+from blueprinting.schema.diagnostics import (
+    DiagnosticSet,
+)
+from blueprinting.schema.diagnostics import (
+    Severity as Severity,
+)
 
 
 class SynthesisError(Exception):
@@ -45,49 +56,8 @@ class PassExecutionError(SynthesisError):
         super().__init__(f"pass {pass_name!r} failed: {cause}")
 
 
-class Severity(Enum):
-    """Diagnostic severity."""
-
-    ERROR = "error"
-    WARNING = "warning"
-
-
-@dataclass(frozen=True)
-class Diagnostic:
-    """One stable, machine-readable verification diagnostic."""
-
-    code: str
-    message: str
-    path: tuple[str, ...] = ()
-    severity: Severity = Severity.ERROR
-    hint: str | None = None
-
-    def render(self) -> str:
-        location = ".".join(self.path) if self.path else "<root>"
-        suffix = f" Hint: {self.hint}" if self.hint else ""
-        return f"[{self.code}] {location}: {self.message}{suffix}"
-
-
-@dataclass(frozen=True)
-class VerificationReport:
-    """Immutable result of verifying one IR snapshot."""
-
-    diagnostics: tuple[Diagnostic, ...] = ()
-
-    @property
-    def errors(self) -> tuple[Diagnostic, ...]:
-        return tuple(item for item in self.diagnostics if item.severity is Severity.ERROR)
-
-    @property
-    def warnings(self) -> tuple[Diagnostic, ...]:
-        return tuple(item for item in self.diagnostics if item.severity is Severity.WARNING)
-
-    @property
-    def ok(self) -> bool:
-        return not self.errors
-
-    def extend(self, other: VerificationReport) -> VerificationReport:
-        return VerificationReport(self.diagnostics + other.diagnostics)
+class VerificationReport(DiagnosticSet):
+    """Backward-compatible name for the domain-free immutable diagnostics."""
 
     def require_ok(self, subject: str = "IR") -> None:
         if not self.ok:
@@ -104,39 +74,8 @@ class IRVerificationError(SynthesisError, ValueError):
         super().__init__(f"{subject} verification failed:\n{rendered}")
 
 
-class DiagnosticBag:
-    """Mutable diagnostic accumulator scoped to one verifier invocation."""
-
-    __slots__ = ("_items",)
-
-    def __init__(self) -> None:
-        self._items = []
-
-    def error(
-        self,
-        code: str,
-        message: str,
-        *path: str,
-        hint: str | None = None,
-    ) -> None:
-        self._items.append(Diagnostic(code=code, message=message, path=tuple(path), hint=hint))
-
-    def warning(
-        self,
-        code: str,
-        message: str,
-        *path: str,
-        hint: str | None = None,
-    ) -> None:
-        self._items.append(
-            Diagnostic(
-                code=code,
-                message=message,
-                path=tuple(path),
-                severity=Severity.WARNING,
-                hint=hint,
-            )
-        )
+class DiagnosticBag(_DiagnosticBag):
+    """Compatibility builder that publishes VerificationReport."""
 
     def report(self) -> VerificationReport:
-        return VerificationReport(tuple(self._items))
+        return VerificationReport(super().report().diagnostics)

@@ -1,13 +1,41 @@
 {
-  "schema": "blueprinting.baseline-regression-contract.v1",
+  "schema": "blueprinting.baseline-regression-contract.v0",
   "training": {
     "baseline": "Calculon / SeqSel Table 5",
+    "report_schema": "blueprinting.calculon-calibration-experiment.v0",
+    "oracle": {
+      "name": "Calculon",
+      "package_version": "0.1.0",
+      "source_digest": "c72cf8a0a0fc9f1fb9813a2248747d6242bbc664b665abe4b5fc6b6b18f5927b"
+    },
+    "inputs": {
+      "models": {
+        "megatron-22B.json": "fd62296fa7370d0e84291003fb1057f4131553c973f65954afaecf0dea1c3b25",
+        "gpt3-175B.json": "fabfc66b4a57d3c357d410232a9805b004bbee8f23abbc505c0d23594c208c11",
+        "turing-530B.json": "2e855371e0abe718b346ad3f876436d0f61953ba6e2c828e68be664596b83667",
+        "megatron-1T.json": "5d5c2c6678b044897b1ea70fbaf2ab4ded83c643c3998b7e9e26ce57ae2967da"
+      },
+      "executions": {
+        "megatron-22B_full.json": "375e22afecdb4b24cf354b89ccce080c59e097ab8c85b5e73ecc142a120ef005",
+        "megatron-22B_seqsel.json": "94fc3a6b946fbcd19601410789690e68b36417032473f4cf65bd97e14d97fb74",
+        "gpt3-175B_full.json": "25ccadd0e39ba81f544ea3b0415189ea42102543d550cf725d8ae15ae99dbd81",
+        "gpt3-175B_seqsel.json": "99bd010ac34b52578a461aa877d208c65e777932e300b191d7c9e29d38cea6a8",
+        "turing-530B_full.json": "157ccecce654eb875b6a1682fca6bb2a10309961bc50382db56cfff54bd23bfe",
+        "turing-530B_seqsel.json": "2d6516a1ce9664951608239838572db5a0129ef794f90d4c46f5924a3221891a",
+        "megatron-1T_full.json": "24f738a12c5b1fc64b0c0c36bdfc70237032388bc0d383e0aac0d66ebb5b14e6",
+        "megatron-1T_seqsel.json": "7ba4278645e3ed2dbf26c4dddc007364a56fe495200061183a641de9c0dec9e4"
+      },
+      "systems": {
+        "a100_80g.json": "afdd153ff952babe2102c23c6eba390f67e624eddbd4159f61015a1486a556bc"
+      }
+    },
     "evidence_revision": "eb1eb9fcc4a6e414e85b0252c23ea9ad2730aae2",
     "case_count": 8,
     "budgets": {
       "workload_max_absolute_error_percent": 1e-9,
       "calculon_mean_absolute_error_percent": 1e-9,
       "calculon_max_absolute_error_percent": 1e-9,
+      "breakdown_max_absolute_error_percent": 1e-9,
       "paper_mean_absolute_error_percent": 3.7,
       "paper_max_absolute_error_percent": 8.9,
       "memory_max_absolute_error_bytes": 1.0
@@ -18,14 +46,14 @@
       "paper_mean_absolute_error_percent": 3.654361437637248,
       "paper_max_absolute_error_percent": 8.874452316395821,
       "portable_digests": {
-        "seqsel-tab5/megatron-22B/full": "00517ca9fb4df346eebe6d4aa63543ca666a7af4",
-        "seqsel-tab5/megatron-22B/seqsel": "8eb389c417a9b33124997c21afd5c18597a39404",
-        "seqsel-tab5/gpt3-175B/full": "2ce66153c5c81ee97c6fa1e2bc14b9e2c0d844ff",
-        "seqsel-tab5/gpt3-175B/seqsel": "5c888d51fd8d5ffb5bb515ff797a9776a12cea6c",
-        "seqsel-tab5/turing-530B/full": "99c4b79b949fa4f58ffbd1cc98661d3b2101f5d6",
-        "seqsel-tab5/turing-530B/seqsel": "4a33b75f901df8c5d4948a8f44d501e8f695674e",
-        "seqsel-tab5/megatron-1T/full": "0e203dc354d91a45d8860c15aee999d57dbb5bbf",
-        "seqsel-tab5/megatron-1T/seqsel": "e7c5e86b0f7e9f9f8f3f47124fc643cf4a4d8e09"
+        "seqsel-tab5/megatron-22B/full": "5a96a71f806f1aede2be8280be8b8436bea3c51d",
+        "seqsel-tab5/megatron-22B/seqsel": "02857f01085962db40c46d18288d9a61680389b0",
+        "seqsel-tab5/gpt3-175B/full": "5d8df3e92f712d42df1c8c1c97fffbbb3b5cc9eb",
+        "seqsel-tab5/gpt3-175B/seqsel": "362754f4f37894aa7bd50eb8e8b7d0319a748b61",
+        "seqsel-tab5/turing-530B/full": "b3fa239a4ef8a29609d5afcdb58b66ac479efd60",
+        "seqsel-tab5/turing-530B/seqsel": "126da397b345f17b828170a70e811be98398421f",
+        "seqsel-tab5/megatron-1T/full": "db115adc9fbe30965631fc3122b1976c751c9b9a",
+        "seqsel-tab5/megatron-1T/seqsel": "a27fd7b19ea9a120427cbfe6b522d13e4e3a6fc9"
       }
     }
   },
@@ -33,13 +61,13 @@
     "baseline": "Vidur Phi-2 / A100 / TP1 raw component-profile alignment",
     "validation_claim": "drift-detection-not-accuracy-validation",
     "fixture": "data/validation/vidur/phi2_a100_tp1",
-    "fixture_manifest_sha256": "24511af4979e32fdc0d1c610960f93e92ac816a2a5b30f30cf6015d2492b2c33",
+    "fixture_manifest_sha256": "89d507931b931c3bb1e84277a7bac637028ba3f8e80c842d1c2b554714c689a6",
     "source_repository": "https://github.com/microsoft/vidur",
     "source_revision": "8383d2935bc62723a212090baa9f98ada206fc14",
     "license_file": "LICENSE.vidur",
     "license_sha256": "7df20dcdf9197e9945c14858d41c60f11b52b93e5b69e2b63416b874d598d322",
-    "baseline_revision": "6a583f1c90969bd82ef82b8cf6dd26bcef914909",
-    "model_digest": "d67e201b24cc428ac0d3330d7fd597cfe90dcdf6",
+    "baseline_revision": "49f6d006968ffd30b465b3a67741a58053eb9e2b",
+    "model_digest": "5d48c3b4d4e8bae69e16b02675a0969f9bb81aca",
     "case_count": 3,
     "budgets": {
       "minimum_semantic_component_coverage": 0.75,
@@ -54,8 +82,8 @@
       "system_evidence_component_max_absolute_error_percent": 99.50036630036631,
       "cases": {
         "phi2-a100-tp1/decode/b1-c33": {
-          "distributed_digest": "3aaaddf8d05e49da9d675acc2b1dc0e252c4f1fc",
-          "portable_digest": "d96d85895fa4f19655b2dc0592b5dc402e1bfb0d",
+          "distributed_digest": "5427664e6e99885931f5f85f584e024287f37a88",
+          "portable_digest": "a5f111748cca9799c5878b1414fc63b4b749e53c",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.000147,
           "system_evidence_comparable_block_seconds": 0.00010824697435897437,
@@ -64,8 +92,8 @@
           "system_evidence_component_max_absolute_error_percent": 99.50036630036631
         },
         "phi2-a100-tp1/decode/b1-c129": {
-          "distributed_digest": "727acb5e4a18f54570180de6dfe7c6f28b634b92",
-          "portable_digest": "ce6e6d1fd1233134300445391f4cd33a4ae7dff3",
+          "distributed_digest": "c1fb781cb833250bbd1ed95c88f85b949a35a61a",
+          "portable_digest": "020a2870ec38c774feb4d33ef0fb250f6a22dff3",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.00015000000000000001,
           "system_evidence_comparable_block_seconds": 0.00010879564102564103,
@@ -74,8 +102,8 @@
           "system_evidence_component_max_absolute_error_percent": 99.50036630036631
         },
         "phi2-a100-tp1/prefill/b1-c128": {
-          "distributed_digest": "56e34687555489beae3d40b66deea30e529bde10",
-          "portable_digest": "71d41b98eb84dfc57ee3ec0e4614ce1a52622aef",
+          "distributed_digest": "7fd7bde9661c03f66806246744a4c268b2e69b61",
+          "portable_digest": "e87aaed848653b5e13bbe5048c828169b344499b",
           "component_coverage": 0.75,
           "baseline_comparable_block_seconds": 0.0002015,
           "system_evidence_comparable_block_seconds": 0.00023554310256410256,

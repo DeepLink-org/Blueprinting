@@ -21,12 +21,17 @@ from blueprinting.analysis import (
 )
 from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
 from blueprinting.synthesizer.bindings import InferencePhase
+from blueprinting.synthesizer.dialects.transformer import (
+    TransformerInferencePlanSemantic,
+    TransformerInferencePlanTaskSemantic,
+)
 from blueprinting.synthesizer.frontend import build_transformer_inference_model_ir, inference_synthesis_session_for
-from blueprinting.synthesizer.ir import PortablePlanIR
-from blueprinting.synthesizer.lowering import DistributeTransformerInferencePass, PlanTransformerInferencePass
 from blueprinting.synthesizer.passes import PassManager, PassPipeline
+from blueprinting.synthesizer.stages.distributed.passes import DistributeTransformerInferencePass
+from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR
+from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, require_transformer_data_type
 
 
 @dataclass(frozen=True)
@@ -164,7 +169,7 @@ class VidurExperimentCase:
     model: TransformerModelSpec
     mapping: TransformerInferenceMappingSpec
     network_binding: NetworkTierBinding
-    datatype: str
+    datatype: TransformerDataType
     hardware: SystemProfile
     phase: InferencePhase
     batch_size: int
@@ -182,8 +187,7 @@ class VidurExperimentCase:
         self.mapping.validate_model(self.model)
         if self.context_tokens > self.model.sequence_length:
             raise ValueError("context_tokens cannot exceed model sequence_length")
-        if self.datatype not in {"float8", "float16", "bfloat16", "float32"}:
-            raise ValueError(f"unsupported datatype: {self.datatype!r}")
+        require_transformer_data_type(self.datatype)
         if self.hardware.datatype != self.datatype:
             raise ValueError("hardware and workload datatype must match")
 
@@ -300,22 +304,22 @@ def compare_inference_phase_to_vidur(
 ) -> VidurPhaseComparison:
     """Compare an already-lowered and already-costed phase with Vidur."""
 
-    model = plan.attributes.get("model_spec")
-    mapping = plan.attributes.get("inference_mapping_spec")
-    datatype = plan.attributes.get("datatype")
-    if not isinstance(model, TransformerModelSpec):
-        raise TypeError("portable inference plan is missing TransformerModelSpec")
-    if not isinstance(mapping, TransformerInferenceMappingSpec):
-        raise TypeError("portable inference plan is missing TransformerInferenceMappingSpec")
-    if not isinstance(datatype, str):
-        raise TypeError("portable inference plan is missing its datatype")
+    semantic = plan.semantic
+    if not isinstance(semantic, TransformerInferencePlanSemantic):
+        raise TypeError("portable inference plan is missing typed Transformer semantics")
+    model = semantic.model
+    mapping = semantic.mapping
+    datatype = semantic.datatype
     if len(plan.tasks) != len(estimate.tasks):
         raise ValueError("plan and estimate task counts differ")
 
     components = []
     for plan_task, task_estimate in zip(plan.tasks, estimate.tasks):
         invocation = task_estimate.invocation
-        if plan_task.workload.attributes.get("name") != invocation.name:
+        task_semantic = plan_task.semantic
+        if not isinstance(task_semantic, TransformerInferencePlanTaskSemantic):
+            raise TypeError("portable inference task is missing typed Transformer semantics")
+        if task_semantic.name != invocation.name:
             raise ValueError("plan and estimate task order differs")
         reference = baseline.lookup(
             inference_evidence_query_for(
@@ -366,7 +370,7 @@ def run_vidur_experiment(
     manager = PassManager()
     for case in cases:
         source = build_transformer_inference_model_ir(case.model, datatype=case.datatype)
-        result = manager.run(
+        result = manager.require_run(
             pipeline,
             source,
             session=inference_synthesis_session_for(
@@ -413,7 +417,7 @@ def run_vidur_experiment(
             )
         )
     return VidurExperimentReport(
-        schema="blueprinting.vidur-baseline-experiment.v2",
+        schema="blueprinting.vidur-baseline-experiment.v0",
         baseline_revision=baseline.revision,
         policy={
             "baseline_role": "post-hoc-comparison-only",

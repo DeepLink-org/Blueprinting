@@ -1,30 +1,41 @@
-"""Minimal immutable expression AST for exact workload quantities.
+"""Immutable algebraic expressions for exact workload quantities.
 
-This AST deliberately models exact quantities, not target performance.  It is
-closed, serializable, and safe to partially bind without evaluating arbitrary
-Python or SymPy input.
+Each operation is a distinct constructor, so invalid arity is not representable.
+The small ``ExprOp`` enum remains only as a convenient smart-constructor input;
+it is not part of the canonical expression representation.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
 from enum import Enum
 from numbers import Real
-from typing import Any, Union
+from typing import Annotated, Any, ClassVar, TypeAlias, cast
 
-from blueprinting.schema.codec import enum_type, record_type
+from typing_extensions import assert_never
+
+from blueprinting.schema.authoring import (
+    FiniteFloat,
+    SymbolName,
+    ValueConstraint,
+    VariantSpec,
+    adt,
+    is_adt_variant,
+    record,
+    seal_adt,
+    variant,
+)
 
 from .axes import BindingAxis
 from .errors import BindingError
 
 Number = int | float
-Scalar = Union[int, float, "Symbol", "ScalarExpr"]
 
 
-@enum_type("compiler.expr_op")
 class ExprOp(Enum):
+    """Surface syntax accepted by :func:`expression`; not a wire discriminator."""
+
     ADD = "add"
     SUB = "sub"
     MUL = "mul"
@@ -36,106 +47,172 @@ class ExprOp(Enum):
 
 class _ExpressionOperators:
     def __add__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.ADD, self, other)
+        return expression(ExprOp.ADD, cast(Scalar, self), other)
 
     def __radd__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.ADD, other, self)
+        return expression(ExprOp.ADD, other, cast(Scalar, self))
 
     def __sub__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.SUB, self, other)
+        return expression(ExprOp.SUB, cast(Scalar, self), other)
 
     def __rsub__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.SUB, other, self)
+        return expression(ExprOp.SUB, other, cast(Scalar, self))
 
     def __mul__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.MUL, self, other)
+        return expression(ExprOp.MUL, cast(Scalar, self), other)
 
     def __rmul__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.MUL, other, self)
+        return expression(ExprOp.MUL, other, cast(Scalar, self))
 
     def __truediv__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.DIV, self, other)
+        return expression(ExprOp.DIV, cast(Scalar, self), other)
 
     def __rtruediv__(self, other: Scalar) -> Scalar:
-        return expression(ExprOp.DIV, other, self)
+        return expression(ExprOp.DIV, other, cast(Scalar, self))
 
 
-@record_type("compiler.symbol")
-@dataclass(frozen=True)
+@record("blueprinting.expression.symbol")
 class Symbol(_ExpressionOperators):
-    name: str
+    name: SymbolName
     axis: BindingAxis
     integer: bool = True
     positive: bool = False
 
-    def __post_init__(self) -> None:
-        if not self.name or not self.name.replace("_", "a").isalnum():
-            raise ValueError(f"invalid symbol name: {self.name!r}")
-        if not isinstance(self.axis, BindingAxis):
-            raise TypeError("symbol axis must be a BindingAxis")
 
-
-@record_type("compiler.scalar_expr")
-@dataclass(frozen=True)
+@adt(wire="blueprinting.expression.scalar")
 class ScalarExpr(_ExpressionOperators):
-    op: ExprOp
-    args: tuple[Scalar, ...]
+    """Closed family of exact scalar expression constructors."""
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.op, ExprOp):
-            raise TypeError("scalar expression operation must be ExprOp")
-        args = tuple(_coerce(item) for item in self.args)
-        object.__setattr__(self, "args", args)
-        if self.op in (ExprOp.SUB, ExprOp.DIV, ExprOp.CEIL_DIV) and len(args) != 2:
-            raise ValueError(f"{self.op.value} expects exactly two arguments")
-        if self.op in (ExprOp.ADD, ExprOp.MUL, ExprOp.MAX, ExprOp.MIN) and len(args) < 2:
-            raise ValueError(f"{self.op.value} expects at least two arguments")
+    __variant_spec__: ClassVar[VariantSpec]
 
     @property
     def free_symbols(self) -> tuple[Symbol, ...]:
-        found = set()
-        for item in self.args:
+        found: set[Symbol] = set()
+        for item in operands(cast(ScalarExprVariant, self)):
             found.update(free_symbols(item))
         return tuple(sorted(found, key=lambda symbol: (symbol.axis.value, symbol.name)))
 
     def subs(self, bindings: Mapping[Any, Number]) -> Scalar:
-        return substitute(self, bindings)
+        return substitute(cast(ScalarExprVariant, self), bindings)
 
     def evaluate(self, bindings: Mapping[Any, Number]) -> Number:
-        result = substitute(self, bindings)
-        if isinstance(result, (Symbol, ScalarExpr)):
-            missing = ", ".join(f"{item.axis.value}.{item.name}" for item in free_symbols(result))
+        result = substitute(cast(ScalarExprVariant, self), bindings)
+        if isinstance(result, Symbol) or is_adt_variant(result, ScalarExpr):
+            missing = ", ".join(f"{item.axis.value}.{item.name}" for item in free_symbols(cast(Scalar, result)))
             raise BindingError(f"expression still has unbound symbols: {missing}")
-        return result
+        return cast(Number, result)
+
+
+@variant("add")
+class Add(ScalarExpr):
+    terms: ScalarOperands
+
+
+@variant("subtract")
+class Subtract(ScalarExpr):
+    left: Scalar
+    right: Scalar
+
+
+@variant("multiply")
+class Multiply(ScalarExpr):
+    factors: ScalarOperands
+
+
+@variant("divide")
+class Divide(ScalarExpr):
+    numerator: Scalar
+    denominator: Scalar
+
+
+@variant("ceil-divide")
+class CeilDivide(ScalarExpr):
+    numerator: Scalar
+    denominator: Scalar
+
+
+@variant("maximum")
+class Maximum(ScalarExpr):
+    values: ScalarOperands
+
+
+@variant("minimum")
+class Minimum(ScalarExpr):
+    values: ScalarOperands
+
+
+ScalarExprVariant: TypeAlias = Add | Subtract | Multiply | Divide | CeilDivide | Maximum | Minimum
+seal_adt(ScalarExpr, ScalarExprVariant)
+Scalar: TypeAlias = int | FiniteFloat | Symbol | ScalarExprVariant
+ScalarOperands: TypeAlias = Annotated[
+    tuple[Scalar, ...],
+    ValueConstraint.AT_LEAST_TWO_ITEMS,
+]
 
 
 def _coerce(value: Scalar) -> Scalar:
-    if isinstance(value, bool) or not isinstance(value, (Real, Symbol, ScalarExpr)):
+    if isinstance(value, bool) or not (isinstance(value, (Real, Symbol)) or is_adt_variant(value, ScalarExpr)):
         raise TypeError(f"unsupported scalar expression value: {value!r}")
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("scalar expressions do not permit NaN or infinity")
-    return value
+    return cast(Scalar, value)
+
+
+def operands(value: ScalarExprVariant) -> tuple[Scalar, ...]:
+    """Return constructor operands for generic visitors without exposing arity tags."""
+
+    match value:
+        case Add(terms=terms):
+            return terms
+        case Subtract(left=left, right=right):
+            return (left, right)
+        case Multiply(factors=factors):
+            return factors
+        case Divide(numerator=left, denominator=right) | CeilDivide(numerator=left, denominator=right):
+            return (left, right)
+        case Maximum(values=values) | Minimum(values=values):
+            return values
+    assert_never(value)
 
 
 def expression(op: ExprOp, *args: Scalar) -> Scalar:
-    """Create a lightly folded expression while preserving operand order."""
+    """Create a lightly folded algebraic expression while preserving operand order."""
 
     values = tuple(_coerce(item) for item in args)
     if all(isinstance(item, Real) and not isinstance(item, bool) for item in values):
-        return _evaluate_numeric(op, values)  # type: ignore[arg-type]
-    if op is ExprOp.ADD:
-        values = tuple(item for item in values if item != 0)
-        if len(values) == 1:
-            return values[0]
-    elif op is ExprOp.MUL:
-        if any(item == 0 for item in values):
-            return 0
-        values = tuple(item for item in values if item != 1)
-        if len(values) == 1:
-            return values[0]
-    elif op is ExprOp.SUB and values[1] == 0:
-        return values[0]
-    return ScalarExpr(op=op, args=values)
+        return _evaluate_numeric(op, cast(tuple[Number, ...], values))
+    match op:
+        case ExprOp.ADD:
+            values = tuple(item for item in values if item != 0)
+            if len(values) == 1:
+                return values[0]
+            return Add(values)
+        case ExprOp.SUB:
+            if len(values) != 2:
+                raise ValueError("subtract expects exactly two arguments")
+            if values[1] == 0:
+                return values[0]
+            return Subtract(values[0], values[1])
+        case ExprOp.MUL:
+            if any(item == 0 for item in values):
+                return 0
+            values = tuple(item for item in values if item != 1)
+            if len(values) == 1:
+                return values[0]
+            return Multiply(values)
+        case ExprOp.DIV:
+            if len(values) != 2:
+                raise ValueError("divide expects exactly two arguments")
+            return Divide(values[0], values[1])
+        case ExprOp.CEIL_DIV:
+            if len(values) != 2:
+                raise ValueError("ceil-divide expects exactly two arguments")
+            return CeilDivide(values[0], values[1])
+        case ExprOp.MAX:
+            return Maximum(values)
+        case ExprOp.MIN:
+            return Minimum(values)
+    assert_never(op)
 
 
 def ceil_div(left: Scalar, right: Scalar) -> Scalar:
@@ -153,7 +230,7 @@ def minimum(*values: Scalar) -> Scalar:
 def free_symbols(value: Scalar) -> tuple[Symbol, ...]:
     if isinstance(value, Symbol):
         return (value,)
-    if isinstance(value, ScalarExpr):
+    if is_adt_variant(value, ScalarExpr):
         return value.free_symbols
     return ()
 
@@ -168,9 +245,24 @@ def substitute(value: Scalar, bindings: Mapping[Any, Number]) -> Scalar:
         if value.name in bindings:
             return _validate_bound_value(value, bindings[value.name])
         return value
-    if isinstance(value, ScalarExpr):
-        return expression(value.op, *(substitute(item, bindings) for item in value.args))
-    return value
+    match value:
+        case Add(terms=terms):
+            return expression(ExprOp.ADD, *(substitute(item, bindings) for item in terms))
+        case Subtract(left=left, right=right):
+            return expression(ExprOp.SUB, substitute(left, bindings), substitute(right, bindings))
+        case Multiply(factors=factors):
+            return expression(ExprOp.MUL, *(substitute(item, bindings) for item in factors))
+        case Divide(numerator=left, denominator=right):
+            return expression(ExprOp.DIV, substitute(left, bindings), substitute(right, bindings))
+        case CeilDivide(numerator=left, denominator=right):
+            return expression(ExprOp.CEIL_DIV, substitute(left, bindings), substitute(right, bindings))
+        case Maximum(values=values):
+            return expression(ExprOp.MAX, *(substitute(item, bindings) for item in values))
+        case Minimum(values=values):
+            return expression(ExprOp.MIN, *(substitute(item, bindings) for item in values))
+        case int() | float():
+            return value
+    assert_never(value)
 
 
 def _validate_bound_value(symbol: Symbol, value: Number) -> Number:
@@ -184,25 +276,63 @@ def _validate_bound_value(symbol: Symbol, value: Number) -> Number:
 
 
 def _evaluate_numeric(op: ExprOp, values: tuple[Number, ...]) -> Number:
-    if op is ExprOp.ADD:
-        return sum(values)
-    if op is ExprOp.SUB:
-        return values[0] - values[1]
-    if op is ExprOp.MUL:
-        result: Number = 1
-        for item in values:
-            result *= item
-        return result
-    if op is ExprOp.DIV:
-        if values[1] == 0:
-            raise ZeroDivisionError("division by zero in scalar expression")
-        return values[0] / values[1]
-    if op is ExprOp.CEIL_DIV:
-        if values[1] == 0:
-            raise ZeroDivisionError("division by zero in scalar expression")
-        return math.ceil(values[0] / values[1])
-    if op is ExprOp.MAX:
-        return max(values)
-    if op is ExprOp.MIN:
-        return min(values)
-    raise AssertionError(f"unhandled expression operation: {op}")
+    match op:
+        case ExprOp.ADD:
+            if len(values) < 2:
+                raise ValueError("add expects at least two arguments")
+            return sum(values)
+        case ExprOp.SUB:
+            if len(values) != 2:
+                raise ValueError("subtract expects exactly two arguments")
+            return values[0] - values[1]
+        case ExprOp.MUL:
+            if len(values) < 2:
+                raise ValueError("multiply expects at least two arguments")
+            result: Number = 1
+            for item in values:
+                result *= item
+            return result
+        case ExprOp.DIV:
+            if len(values) != 2:
+                raise ValueError("divide expects exactly two arguments")
+            if values[1] == 0:
+                raise ZeroDivisionError("division by zero in scalar expression")
+            return values[0] / values[1]
+        case ExprOp.CEIL_DIV:
+            if len(values) != 2:
+                raise ValueError("ceil-divide expects exactly two arguments")
+            if values[1] == 0:
+                raise ZeroDivisionError("division by zero in scalar expression")
+            return math.ceil(values[0] / values[1])
+        case ExprOp.MAX:
+            if len(values) < 2:
+                raise ValueError("maximum expects at least two arguments")
+            return max(values)
+        case ExprOp.MIN:
+            if len(values) < 2:
+                raise ValueError("minimum expects at least two arguments")
+            return min(values)
+    assert_never(op)
+
+
+__all__ = [
+    "Add",
+    "CeilDivide",
+    "Divide",
+    "ExprOp",
+    "Maximum",
+    "Minimum",
+    "Multiply",
+    "Scalar",
+    "ScalarExpr",
+    "ScalarExprVariant",
+    "Subtract",
+    "Symbol",
+    "ceil_div",
+    "expression",
+    "free_symbols",
+    "maximum",
+    "minimum",
+    "operands",
+    "substitute",
+]

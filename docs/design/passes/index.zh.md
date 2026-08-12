@@ -9,7 +9,7 @@ Blueprinting 的 `Pass` 是当前实现中对 immutable derivation state 执行 
 每个 Pass 声明：
 
 ```text
-pass_id and revision
+pass identity 与 contract digest
 input IR type and accepted schema range
 output IR type and produced schema version
 required bindings
@@ -19,9 +19,25 @@ produced analyses
 mutation model
 verification policy
 determinism and seed usage
+带独立 semantic invariant 的 typed lineage relation
+可执行 canonical normal form
 ```
 
 Pipeline 根据这些 contract 组合，而不是对具体 Pass class 进行 `isinstance` 判断。
+
+Production pass 使用单一低噪声 authoring syntax：`relation()` 同时声明 typed entity mapping、独立 executable semantic invariant 与可选具名 `claim`；`@derivation` 从 `DerivationPass[SourceIR, TargetIR]` 推导 IR 类型与精确 schema，并绑定模块级纯 normalizer。Normalizer 证明 implementation 产出了声明的 canonical construction；relation invariant 独立检查守恒、合法性与 dependency correspondence 等语义事实，不能把 implementation 本身当作自己的证明。Binding、analysis effect 与 relation identity 仍显式声明；唯一的 pass decorator 只构造 metadata，不包装或改变 `run()`。
+
+每个 pass 定义在其输出层：
+
+```text
+ModelIR producer            -> stages/model/passes.py
+DistributedTaskIR producer  -> stages/distributed/passes.py
+PortablePlanIR producer     -> stages/portable_plan/passes.py
+ConcretePlanIR producer     -> stages/concrete_plan/passes.py
+MachineIR producer          -> stages/machine/passes.py
+```
+
+方言模块可以提供纯推导函数，但不能拥有第二个 public pass class，也不能通过 import forwarding 隐藏 contract。
 
 ## Transaction 顺序
 
@@ -34,6 +50,9 @@ check input type/schema
   -> execute immutable or isolated mutation
   -> check output type/schema and input immutability
   -> verify output and parent lineage
+  -> 解析全部跨 boundary lineage relation
+  -> 重新求值 canonical normal form 并要求 snapshot 完全相等
+  -> 执行每条 relation 的独立 semantic invariant
   -> create PassRecord and PassCheckpoint
   -> invoke synchronous observers
   -> atomically preserve/publish analyses
@@ -66,7 +85,7 @@ Observer 是只读的，不能重写 representation 或直接 publish analysis�
 
 ## 确定性
 
-Pass 声明自己是否 deterministic，以及如何使用 seed。Deterministic pass 在相同 input digest、session fingerprint、pass revision 和 required analysis 上必须产生相同 output digest 或 diagnostic。
+Pass 声明自己是否 deterministic，以及如何使用 seed。CI 与可选的 `PassManager` verification 会在相互隔离的 analysis-store snapshot 上执行 deterministic pass 两次，并比较 output digest 与 analysis-product digest；正常 production execution 默认关闭 replay。同 seed 结果不一致会在发布前终止 transaction。
 
 Search pass 可以具有 seed 和 budget。Candidate order、pruning 和 rejection reason 都保留 provenance，使 search result 可以 replay。
 
@@ -86,4 +105,4 @@ Search pass 可以具有 seed 和 budget。Candidate order、pruning 和 rejecti
 
 ## 当前实现
 
-仓库在 `src/blueprinting/synthesizer/passes/base.py` 中实现了 `SchemaRange`、`PassContract`、`PassPipeline`、`PassManager`、content-addressed `AnalysisStore`、pass record、checkpoint 和 observer。Contract 与 failure behavior 由 `tests/synthesizer/test_pass_manager.py` 覆盖。
+仓库在 `src/blueprinting/synthesizer/passes/base.py` 中实现 transaction runner，在 `passes/deriving.py` 中实现内部 registry，并通过 `passes/authoring.py` 只向扩展作者暴露 `@derivation`、`relation` 与 `claim`。各层 public pass 位于 `stages/*/passes.py`。Contract inference、failure behavior 与 determinism 由 `tests/synthesizer/test_pass_manager.py` 覆盖。

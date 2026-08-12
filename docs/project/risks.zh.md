@@ -19,7 +19,7 @@
 | R-03 | P0 | 文档把 schema/verifier 骨架写成 resource-complete plan | 当前没有 portable-to-concrete producer；route、occupancy 和 target-specific schedule semantic 不完整 | 状态页明确降级为 experimental contract；producer、consumer 与 end-to-end verifier 通过后再升级 | 已降级措辞，能力未实现 |
 | R-04 | P1 | Planning evidence 与 evaluation evidence identity 混淆 | `ConcretePlanIR.evidence_revision` 记录构造输入，derived cost view 也有独立 evidence | Contract 中区分 construction provenance 与 re-evaluation revision；验证 re-cost 不会静默改 plan | 开放 |
 | R-05 | P0 | Simulator/runtime “等价”被误读为时间行为相同 | 没有真实 backend 或 conformance evidence | 只承诺 command/event correspondence；定义 strict、bounded-divergence 和 partial-observation 等级 | 文档已纠正，测试待实现 |
-| R-06 | P1 | `1.0.0` schema version 被误认为 public stability | 五个 IR schema 有版本，但 target producer/consumer 未贯通 | 明确 internal serialization version 不等于 compatibility promise；建立 graduation checklist | 文档已纠正，policy 待实现 |
+| R-06 | P1 | Pre-graduation schema 被误认为 public stability | 五层 IR root 保持 `0.0.0`，target producer/consumer 尚未贯通 | Component identity 保持无版本，并在首次 schema increment 前建立 graduation checklist | Zero epoch 已强制；graduation policy 待实现 |
 | R-07 | P0 | “Runtime 零决策”忽略 backpressure、failure 与动态 duration | 当前没有 runtime contract | Runtime 禁止无界 global replanning，但保留 bounded safety/mechanism decisions；在 artifact 中声明 policy | 文档已纠正，runtime 待实现 |
 | R-08 | P0 | LPU 特性提前污染 portable semantic | LPU ABI、capability 和 resource contract 尚未存在 | 按 Architecture/Simulation/Replay/Executable maturity 分层；physical detail 只在 target gate 后出现 | 受控 |
 | R-09 | P1 | Simulator 与 emitter 各自补全缺失 schedule | 两条 production path 均未实现，缺少 cross-consumer conformance test | 两者消费同一 concrete digest + typed target extension；emitter decision delta 必须为空 | 开放 |

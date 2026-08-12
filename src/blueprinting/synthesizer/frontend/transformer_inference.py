@@ -6,28 +6,32 @@ from typing import Any
 
 from blueprinting.mapping import TransformerInferenceMappingSpec
 from blueprinting.schema.frozen import FrozenDict
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, require_transformer_data_type
 
 from ..axes import BindingAxis
-from ..bindings import BindingSet, InferencePhase, StrategyBinding, WorkloadBinding, WorkloadMode
+from ..bindings import BindingSet, InferencePhase, InferenceWorkload, StrategyBinding, WorkloadBinding
+from ..dialects.transformer import (
+    TransformerInferenceStrategySemantic,
+    TransformerInferenceWorkloadSemantic,
+    TransformerModelOperationSemantic,
+)
 from ..expr import Symbol
 from ..ids import Lineage, NodeId, ValueId
-from ..ir import Effect, EffectKind, ModelIR, ModelOperation, ModelValue, OperationName, TensorType, ValueRole
 from ..session import SynthesisSession
-
-_SUPPORTED_DATATYPES = frozenset({"float8", "float16", "bfloat16", "float32"})
+from ..stages.common import Effect, EffectKind, OperationName, TensorType
+from ..stages.model.ir import ModelIR, ModelOperation, ModelValue, ValueRole
 
 
 def _positive_integer(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer")
-    return value
+    return int(value)
 
 
 def build_transformer_inference_model_ir(
     model: TransformerModelSpec,
     *,
-    datatype: str = "float16",
+    datatype: TransformerDataType = "float16",
 ) -> ModelIR:
     """Import a phase-neutral decoder inference operation.
 
@@ -35,8 +39,7 @@ def build_transformer_inference_model_ir(
     extent is supplied by a phase workload binding, not embedded in the model.
     """
 
-    if datatype not in _SUPPORTED_DATATYPES:
-        raise ValueError(f"unsupported datatype: {datatype!r}")
+    datatype = require_transformer_data_type(datatype)
     batch = Symbol("batch_size", BindingAxis.WORKLOAD, positive=True)
     context = Symbol("sequence_length", BindingAxis.WORKLOAD, positive=True)
     query = Symbol("query_tokens", BindingAxis.WORKLOAD, positive=True)
@@ -71,7 +74,7 @@ def build_transformer_inference_model_ir(
                 (output_id,),
                 Lineage.root("transformer-inference-import"),
                 effects=(Effect(EffectKind.STATE, "kv_cache"),),
-                attributes=FrozenDict({"model_spec": model}),
+                semantic=TransformerModelOperationSemantic(model),
             ),
         ),
         inputs=(input_id,),
@@ -79,7 +82,7 @@ def build_transformer_inference_model_ir(
         attributes=FrozenDict(
             {
                 "model_family": "decoder-only-transformer",
-                "workload_mode": WorkloadMode.INFERENCE.value,
+                "workload_mode": "inference",
             }
         ),
     )
@@ -92,40 +95,24 @@ def inference_synthesis_session_for(
     phase: InferencePhase,
     batch_size: int,
     context_tokens: int,
-    datatype: str = "float16",
+    datatype: TransformerDataType = "float16",
 ) -> SynthesisSession:
     """Create an explicit phase binding for static inference specialization."""
 
     mapping.validate_model(model)
     _positive_integer(batch_size, "batch_size")
     _positive_integer(context_tokens, "context_tokens")
-    if datatype not in _SUPPORTED_DATATYPES:
-        raise ValueError(f"unsupported datatype: {datatype!r}")
+    datatype = require_transformer_data_type(datatype)
     if not isinstance(phase, InferencePhase):
         raise TypeError("phase must be InferencePhase")
-    query_tokens = context_tokens if phase is InferencePhase.PREFILL else 1
     workload = WorkloadBinding(
-        WorkloadMode.INFERENCE,
-        batch_size=batch_size,
-        sequence_length=context_tokens,
-        inference_phase=phase,
-        attributes=FrozenDict(
-            {
-                "query_tokens": query_tokens,
-                "context_tokens": context_tokens,
-                "datatype": datatype,
-            }
-        ),
+        InferenceWorkload(phase),
+        semantic=TransformerInferenceWorkloadSemantic(batch_size, context_tokens, datatype),
     )
     strategy = StrategyBinding(
-        tensor_parallel=mapping.tensor_parallel,
-        pipeline_parallel=mapping.pipeline_parallel,
-        data_parallel=mapping.replicas,
-        recompute_policy="none",
-        pipeline_policy="static-inference",
-        attributes=FrozenDict({"inference_mapping_spec": mapping}),
+        semantic=TransformerInferenceStrategySemantic(mapping),
     )
     return SynthesisSession(
         bindings=BindingSet(workload=workload, strategy=strategy),
-        features=frozenset({"transformer-inference-analysis-v2", f"inference-{phase.value}"}),
+        features=frozenset({"transformer-inference-analysis"}),
     )

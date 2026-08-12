@@ -97,7 +97,7 @@ LPU 在 Blueprinting 中首先是 architecture candidate，其次才是 executab
 
 共同层只应该表达跨 target 稳定的 coordination kernel：identity、dependency、resource claim、buffer reference、synchronization 与 lineage。Spatial dataflow、route、issue slot、collective micro-protocol 或特殊 memory movement 必须进入 namespaced **typed target extension**，并由 target plugin 验证。
 
-当前 `ConcretePlanIR` v1 只有通用 device/queue/buffer/command schema，还没有这种 typed extension，也没有 production producer。它是实现骨架，不是已经冻结的跨 target ABI。引入第一个 non-queue-centric virtual target 前，必须先验证公共 core 不会把所有架构强行拟合成 GPU stream 模型。
+当前 `ConcretePlanIR` v1 已有 typed queue-order/slot-dataflow extension 与 deterministic virtual reference binder，因此完成了 schema 层对 queue-centric 和 queue-free target 的对照验证；但 production scheduling、resource occupancy、target-plugin legality、simulation 与 emission 仍未完成。它依然是实现骨架，不是已经冻结的跨 target ABI。
 
 ## 每层如何与观测联动
 

@@ -33,12 +33,26 @@ def main() -> int:
         arguments.output.write_text(payload, encoding="utf-8")
 
     print("Blueprinting synthesis ↔ Calculon calibration")
+    print(f"report schema: {report.schema}")
+    print(f"oracle: {report.oracle['name']} {report.oracle['package_version']} / {report.oracle['source_digest']}")
     print(f"hardware evidence: {report.hardware_name} / {report.evidence_revision}")
     print(
         "mean absolute error: "
         f"peak-only={report.peak_mean_absolute_error_percent:.3f}%  "
         f"system-evidence={report.calibrated_mean_absolute_error_percent:.6f}%"
     )
+    print(
+        "alignment audit: "
+        f"workload-max={report.workload_max_absolute_error_percent:.6g}%  "
+        f"component-max={max(item['max_absolute_error_percent'] for item in report.breakdown_error.values()):.6g}%  "
+        f"memory-max={report.memory_max_absolute_error_bytes:.0f} B"
+    )
+    if report.paper_mean_absolute_error_percent is not None and report.paper_max_absolute_error_percent is not None:
+        print(
+            "paper holdout: "
+            f"MAPE={report.paper_mean_absolute_error_percent:.3f}%  "
+            f"max={report.paper_max_absolute_error_percent:.3f}%"
+        )
     print()
     print(f"{'case':42} {'peak':>10} {'calibrated':>12} {'Calculon':>10} {'error':>9}")
     for case in report.cases:
@@ -49,6 +63,8 @@ def main() -> int:
             f"{case.calculon_total_seconds:10.4f} "
             f"{case.calibrated_error_percent:+8.4f}%"
         )
+    if arguments.output is not None:
+        print(f"\nreport: {arguments.output}")
     return 0
 
 

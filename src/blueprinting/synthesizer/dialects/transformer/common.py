@@ -2,36 +2,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 
-from blueprinting.schema.codec import enum_type, record_type
+from blueprinting.schema.authoring import NonNegativeInt, enum, record
 
 # Codec tags retain their legacy namespace as stable serialized identities.
 
 
-@enum_type("compiler.analysis.engine_kind")
+@enum("blueprinting.analysis.transformer.engine-kind")
 class EngineKind(Enum):
     MATRIX = "matrix"
     VECTOR = "vector"
     COLLECTIVE = "collective"
 
 
-@record_type("compiler.analysis.phase_work.v1")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.transformer.phase-work")
 class PhaseWork:
     """Exact work for one invocation, before target binding."""
 
-    operations: int = 0
-    read_bytes: int = 0
-    write_bytes: int = 0
-    message_bytes: int = 0
-
-    def __post_init__(self) -> None:
-        for field_name in ("operations", "read_bytes", "write_bytes", "message_bytes"):
-            value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{field_name} must be a non-negative integer")
+    operations: NonNegativeInt = 0
+    read_bytes: NonNegativeInt = 0
+    write_bytes: NonNegativeInt = 0
+    message_bytes: NonNegativeInt = 0
 
     @property
     def memory_bytes(self) -> int:

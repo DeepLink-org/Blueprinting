@@ -2,7 +2,7 @@
 
 This page separates Blueprinting's hardware-exploration product goals from the engineering foundation already connected in the repository. A schema or design contract is useful groundwork, but it is not a working exploration capability until a candidate can be constructed, evaluated, and consumed end to end.
 
-**Status date:** 2026-08-09
+**Status date:** 2026-08-11
 
 ## Status vocabulary
 
@@ -22,6 +22,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Static Transformer inference phase planning | **Implemented slice** | independently verified prefill/decode plans, KV capacity, and decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path reaches `PortablePlanIR` |
 | Portable dependency-projection Chrome Trace export | **Implemented presentation adapter** | the workbench can open it in Perfetto through a PING/PONG bridge; metadata explicitly says `executable=false`, and the export is not a `TimelineBundle` |
+| Five-stage IR Explorer and lowering replay audit | **Implemented presentation adapter** | current runs capture the first three stages; five graph adapters, lineage boundaries, debug bundles, and a derived cost overlay exist, while the last two stages still have no production producers |
 | Versioned compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` and two analytical estimate modes |
 | Normalized task-cost resolution and performance-data ingestion | **Implemented slice** | immutable query/result/store, ordered resolver, roofline fallback, generic simulator tables, Vidur profiles, and four AIConfigurator table families |
 | Vidur raw component-profile alignment | **Implemented experiment** | exact-key CSV lookup after independent lowering/costing, with component coverage and non-cancelling error attribution |
@@ -30,7 +31,7 @@ This page separates Blueprinting's hardware-exploration product goals from the e
 | Hardware design variables and constraint-aware candidate generation | **Planned** | no design-space generator or search session |
 | Workload suite and scenario weighting | **Planned** | current path evaluates explicit individual configurations |
 | Architecture capability/legalization model | **Planned** | target/deployment bindings exist; general plugin path does not |
-| Architecture-bound placement, schedule, and memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` has only a generic queue-oriented schema and structural verifier; producer, route/occupancy semantics, and typed target extensions do not exist |
+| Architecture-bound placement, schedule, and memory plan | **Experimental Contract / Reference Slice** | `ConcretePlanIR` has typed queue-order and slot/dataflow extensions plus deterministic virtual binders; production target plugins, resource scheduling, occupancy, and hardware legality do not exist |
 | Discrete-event compute/memory/resource simulation | **Planned** | current result is analytical composition, not event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`, `SimulationTraceIR`, and `TimelineBundle` are design contracts only |
 | General network/hardware simulator adapters | **Implemented slice / Planned** | explicit tabular ingestion and a general resolver exist; simulator execution, calibrated interpolation, contention validity, and environment manifests remain planned |
@@ -44,7 +45,7 @@ This matrix is authoritative for user-facing claims. The existence of five IR cl
 
 ## Schema maturity is not capability maturity
 
-The five current IR classes use `1.0.0` as an internal canonical serialization version. The number does not mean a public API or ABI is frozen, nor that every layer has a production producer and consumer. `ConcretePlanIR` and `MachineIR` in particular remain experimental scaffolds; they must pass the compatibility gate in the [risk register](risks.md) before graduating to stable contracts.
+The five current IR classes use `0.0.0` as their pre-graduation canonical schema epoch and require the `typed-semantics` feature. Nested canonical type identities and internal pass/planner identities are semantic names without independent version counters. The migration mechanism is exercised with a synthetic test schema, while the production registry remains empty. `ConcretePlanIR` and `MachineIR` remain experimental and must pass the [risk-register](risks.md) graduation gates.
 
 ## Connected analysis path
 
@@ -82,14 +83,15 @@ It cannot yet claim serving-system SLO accuracy: arrivals, queueing, continuous 
 | Foundation | Status | Source of truth |
 |---|---|---|
 | Immutable values, stable IDs, lineage, codec, digests | **Implemented** | `src/blueprinting/schema/`, `src/blueprinting/synthesizer/ids.py` |
-| Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`; only the first three have a production derivation slice |
+| Progressive typed-Python contracts | **Implemented foundation** | runtime `Result`/diagnostics, sealed ADTs and consumers, deterministic `ContractCompiler`; standard mypy is an optional independent CI layer |
+| Five progressive formal-representation schemas (`*IR`) and verifiers | **Experimental Contract** | `src/blueprinting/synthesizer/stages/*/ir.py`; only the first three have a production derivation slice |
 | Typed workload/strategy/target/deployment bindings | **Implemented** | `bindings.py`, `session.py` |
 | Chip, memory, interconnect, and aggregate system profile | **Implemented adapter** | `src/blueprinting/system/`; evidence-bearing profile, not the planned `ArchitectureBlueprint` |
 | Transactional analyses/transformations, checkpoints, observers | **Implemented** | `passes/base.py` |
 | Transformer workload/mapping contracts, frontend, and workload algebra | **Implemented slice** | `workload/transformer.py`, `mapping/transformer.py`, `synthesizer/frontend/transformer.py`, `synthesizer/dialects/transformer/` |
-| Distributed and portable mapping derivations | **Implemented slice** | `lowering/transformer.py` |
+| Distributed and portable mapping derivations | **Implemented slice** | `stages/{distributed,portable_plan}/passes.py`, `dialects/transformer/*_derivation.py` |
 | Cost protocol, resolver, roofline, database, and external importers | **Implemented slice** | `analysis/cost/`, `analysis/vidur.py`; exact task latency only, not plan simulation |
-| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `workload/transformer_inference.py`, `mapping/transformer.py`, `synthesizer/{frontend,lowering}/transformer_inference.py`, `synthesizer/dialects/transformer/inference.py`, `analysis/inference_cost.py`, `application/inference.py` |
+| Static inference frontend, lowering, cost, and request composition | **Implemented slice** | `workload/transformer_inference.py`, `mapping/transformer.py`, `synthesizer/frontend/transformer_inference.py`, `synthesizer/stages/{distributed,portable_plan}/passes.py`, `synthesizer/dialects/transformer/{inference,inference_derivation}.py`, `analysis/inference_cost.py`, `application/inference.py` |
 | Vidur raw component-profile alignment | **Implemented experiment** | `analysis/vidur.py` + `validation/vidur.py`; a minimal licensed CI slice is pinned locally and the full upstream corpus remains external |
 | Calculon experiment | **Implemented experiment** | `validation/calculon.py` |
 | External-baseline regression gate | **Implemented** | frozen contract and licensed offline fixtures under `data/validation/`; `validation/regression.py`; `.github/workflows/quality.yml` |
@@ -98,7 +100,7 @@ These typed representations, verifiers, derivation transactions, and analyses ar
 
 ## Verification baseline
 
-The current test suite covers binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, Calculon calibration, prefill/decode scaling, KV capacity, static request composition, baseline-only Vidur comparison, roofline components, exact/ambiguous database resolution, simulator unit normalization, AIConfigurator CSV/Parquet schemas, explicit Vidur ingestion, and inference resolver fallback. A dedicated CI job runs the eight-case Calculon/SeqSel and three-case pinned Vidur gates on every main-branch pull request and push. It freezes provenance, semantic policy, coverage, comparable-subtotal drift budgets, non-cancelling component errors, aggregate results, and IR digests; it cannot silently regenerate goldens. The Vidur gate is drift detection, not an accuracy certification. Documentation checks enforce complete bilingual page pairs and strict site builds.
+The current test suite covers runtime type-contract compilation, ADT closure, checked failure paths, binding consistency, canonical serialization, verifier rejection, pass transaction rollback, checkpoint observers, workload conservation, Calculon calibration, prefill/decode scaling, KV capacity, static request composition, baseline-only Vidur comparison, roofline components, exact/ambiguous database resolution, simulator unit normalization, AIConfigurator CSV/Parquet schemas, explicit Vidur ingestion, and inference resolver fallback. The base CI job compiles runtime contracts without installing mypy; a separate optional-typing job analyzes source with standard mypy. A dedicated regression job runs the eight-case Calculon/SeqSel and three-case pinned Vidur gates on every main-branch pull request and push. It freezes provenance, semantic policy, coverage, comparable-subtotal drift budgets, non-cancelling component errors, aggregate results, and IR digests; it cannot silently regenerate goldens. The Vidur gate is drift detection, not an accuracy certification. Documentation checks enforce complete bilingual page pairs and strict site builds.
 
 Status promotion requires an end-to-end product test. For example, introducing `ArchitectureBlueprint` as a dataclass is Contract Only; constructing two different candidates, mapping the same workload, producing comparable results, and preserving provenance is the minimum product-level evidence.
 

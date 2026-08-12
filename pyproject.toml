@@ -42,9 +42,10 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.20.0",
-    "pandas>=1.3.0",
-    "rich>=12.0.0",
     "nicegui>=3.15,<4",
+    "typing-extensions>=4.4.0",
+    # Runtime requirements of the retained vendored Calculon comparison oracle.
+    "pandas>=1.3.0",
     "psutil>=5.9.0",
 ]
 
@@ -52,14 +53,14 @@ dependencies = [
 performance-data = [
     "pyarrow>=12.0.0",
 ]
-full = [
-    "plotly>=5.0.0",
-]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "pytest-asyncio>=0.24.0",
+]
+typing = [
+    "mypy>=1.17,<2",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -68,10 +69,6 @@ docs = [
     "mkdocstrings[python]>=0.24.0",
     "pymdown-extensions>=10.21.3,<11.0.0",
 ]
-all = [
-    "blueprinting[full,dev,docs,performance-data]",
-]
-
 [project.urls]
 Homepage = "https://github.com/DeepLink-org/Blueprinting"
 Documentation = "https://deeplink-org.github.io/Blueprinting/"
@@ -118,7 +115,7 @@ packages = ["src/blueprinting", "src/calculon"]
 "data/validation/vidur/phi2_a100_tp1" = "blueprinting/presets/evidence/vidur/phi2_a100_tp1"
 
 [tool.hatch.envs.default]
-features = ["dev", "full"]
+features = ["dev"]
 
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
@@ -132,7 +129,7 @@ features = ["docs"]
 
 [tool.hatch.envs.docs.scripts]
 check = "python scripts/check_docs_i18n.py"
-build = "python scripts/check_docs_i18n.py && mkdocs build --strict"
+build = "python scripts/check_docs_i18n.py && mkdocs build --strict && python scripts/check_rendered_code_docs.py"
 serve = "mkdocs serve"
 
 # ============================================================================
@@ -145,7 +142,6 @@ target-version = "py310"
 src = ["src", "tests"]
 exclude = [
     "src/calculon/*",
-    "scripts/*",
     ".git",
     "__pycache__",
     "*.egg-info",
@@ -179,7 +175,6 @@ known-first-party = ["blueprinting", "calculon"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B", "SIM"]
-"__init__.py" = ["F401"]
 
 # ============================================================================
 # Pytest Configuration
@@ -202,8 +197,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
 ]
 
 # ============================================================================
@@ -243,10 +238,33 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+enable_error_code = ["exhaustive-match"]
 exclude = [
     "src/calculon/",
     "tests/",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+    "blueprinting.contracts",
+    "blueprinting.schema.authoring",
+    "blueprinting.schema.contracts",
+    "blueprinting.schema.diagnostics",
+    "blueprinting.schema.deriving",
+    "blueprinting.schema.result",
+    "blueprinting.mapping.transformer",
+    "blueprinting.workload.transformer",
+    "blueprinting.workload.transformer_inference",
+    "blueprinting.synthesizer.bindings",
+    "blueprinting.synthesizer.passes.base",
+    "blueprinting.synthesizer.passes.authoring",
+    "blueprinting.synthesizer.passes.deriving",
+    "blueprinting.synthesizer.stages.common",
+    "blueprinting.synthesizer.stages.distributed.ir",
+    "blueprinting.synthesizer.stages.portable_plan.ir",
+    "blueprinting.analysis.cost.protocol",
+]
+strict = true
 
 [dependency-groups]
 dev = [
@@ -254,4 +272,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
+]
+typing = [
+    "mypy>=1.17,<2",
 ]

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from blueprinting.schema.frozen import FrozenDict
 from blueprinting.system import SystemProfile
+from blueprinting.workload import require_transformer_data_type, transformer_element_bytes
 
 from ..cost_model import CalibrationMode
 from .database import PerformanceDatabase, PerformanceDatabaseProvider, PerformanceRecord
@@ -268,10 +269,9 @@ def _gemm_shape(selector: FrozenDict, semantic_operation: str) -> tuple[int, int
 
 
 def _datatype_bytes(datatype: str) -> int:
-    sizes = {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}
     try:
-        return sizes[datatype]
-    except KeyError as error:
+        return transformer_element_bytes(require_transformer_data_type(datatype))
+    except ValueError as error:
         raise ValueError(f"unsupported datatype size: {datatype!r}") from error
 
 

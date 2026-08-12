@@ -16,6 +16,8 @@ def main(argv: list[str]) -> int:
     with zipfile.ZipFile(wheel) as archive:
         members = archive.infolist()
     names = tuple(item.filename for item in members)
+    if "blueprinting/py.typed" not in names:
+        raise SystemExit("wheel is missing the PEP 561 blueprinting/py.typed marker")
     required_prefixes = (
         "blueprinting/presets/models/",
         "blueprinting/presets/systems/",
@@ -38,7 +40,15 @@ def main(argv: list[str]) -> int:
     )
     if unexpected_evidence:
         raise SystemExit(f"wheel contains unapproved evidence: {unexpected_evidence[:3]!r}")
-    forbidden_prefixes = ("blueprinting/systems/", "data/evidence/")
+    forbidden_prefixes = (
+        "blueprinting/compiler/",
+        "blueprinting/fp/",
+        "blueprinting/synthesizer/ir/",
+        "blueprinting/synthesizer/lowering/",
+        "blueprinting/synthesizer/stages/distributed_task/",
+        "blueprinting/systems/",
+        "data/evidence/",
+    )
     leaked = tuple(name for name in names if name.startswith(forbidden_prefixes))
     if leaked:
         raise SystemExit(f"wheel contains optional evidence: {leaked[:3]!r}")

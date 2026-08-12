@@ -341,13 +341,6 @@ body {
   background: #22c55e;
 }
 
-.bp-sidebar-legacy {
-  min-height: 34px;
-  padding: 0 6px !important;
-  color: var(--bp-sidebar-muted) !important;
-  font-size: 11px;
-}
-
 .bp-main {
   width: 100%;
   max-width: 1600px;
@@ -1416,6 +1409,129 @@ body {
   --ag-odd-row-background-color: #fbfdff;
   --ag-selected-row-background-color: #eff6ff;
   --ag-font-size: 12px;
+}
+
+.bp-lowering-table .bp-entity-cell {
+  --entity-color: #64748b;
+  --entity-tint: #f8fafc;
+  align-items: center;
+  background: transparent;
+}
+
+.bp-lowering-table .bp-entity-cell--blue {
+  --entity-color: #2563eb;
+  --entity-tint: #eff6ff;
+}
+
+.bp-lowering-table .bp-entity-cell--green {
+  --entity-color: #15803d;
+  --entity-tint: #f0fdf4;
+}
+
+.bp-lowering-table .bp-entity-cell--violet {
+  --entity-color: #7c3aed;
+  --entity-tint: #f5f3ff;
+}
+
+.bp-lowering-table .bp-entity-cell--amber {
+  --entity-color: #b45309;
+  --entity-tint: #fffbeb;
+}
+
+.bp-lowering-table .bp-entity-cell--cyan {
+  --entity-color: #0e7490;
+  --entity-tint: #ecfeff;
+}
+
+.bp-lowering-table .bp-pass-cell {
+  --entity-color: #4f46e5;
+  --entity-tint: #eef2ff;
+}
+
+.bp-semantic-expression {
+  display: block;
+  width: 100%;
+  padding: 5px 0;
+  line-height: 1.45;
+}
+
+.bp-expression-stack {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.bp-expression {
+  display: inline;
+  max-width: 100%;
+  padding: 3px 4px;
+  color: var(--entity-color);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--entity-color) 7%, white);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+  font: 650 11px/2.15 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.bp-expression-component {
+  display: inline;
+  padding: 2px 3px;
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.bp-expression-component--name {
+  color: var(--entity-color);
+  background: color-mix(in srgb, var(--entity-color) 18%, white);
+  font-weight: 750;
+}
+
+.bp-expression-component--structure {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.bp-expression-component--type {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.bp-expression-component--topology {
+  color: #0e7490;
+  background: #cffafe;
+}
+
+.bp-expression-component--workload {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.bp-expression-component--mapping {
+  color: #a16207;
+  background: #fef3c7;
+}
+
+.bp-expression-component--property {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.bp-expression-component--punctuation {
+  color: var(--entity-color);
+  background: color-mix(in srgb, var(--entity-color) 10%, white);
+}
+
+.bp-expression-detail {
+  max-width: 100%;
+  margin-top: 4px;
+  color: #64748b;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .bp-loading-panel {

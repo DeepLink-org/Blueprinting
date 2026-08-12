@@ -12,6 +12,36 @@
 
 在 8 个 SeqSel Table 5 case 上，当前 system-evidence path 与 Calculon 在 floating-point 精度内数值等价。这表示 Blueprinting 的 workload/analytical mapping path 独立复现了 reference work、system curve 与 schedule semantic；它既不是“真实硬件误差为零”的证据，也不能证明已具备广泛 architecture-exploration coverage。相对于论文报告的实测值，MAPE 为 3.65%，最大绝对误差为 8.87%。
 
+## 实验身份与指标定义
+
+### 冻结的 provenance
+
+本报告的 machine-readable schema 是 `blueprinting.calculon-calibration-experiment.v0`。当前 oracle 是 vendored Calculon `0.1.0`，本地 Python source-tree SHA-256 为 `c72cf8a0a0fc9f1fb9813a2248747d6242bbc664b665abe4b5fc6b6b18f5927b`；硬件 evidence revision 为 `eb1eb9fcc4a6e414e85b0252c23ea9ad2730aae2`。JSON 产物还逐 case 保存 model、execution 与 system 输入文件的 SHA-256，以及 ModelIR、DistributedTaskIR、PortablePlanIR 和两个 PassCheckpoint digest。
+
+Oracle 为 [Calculon](https://github.com/calculon-ai/calculon)，论文 holdout 来自 Korthikanti et al. 的 [Reducing Activation Recomputation in Large Transformer Models](https://arxiv.org/abs/2205.05198) Table 5。Blueprinting 的两个 estimate 会先完成，之后才运行 Calculon；`test_oracle_runs_only_after_both_blueprinting_estimates` 对调用顺序执行负担明确的测试。
+
+### 误差定义
+
+对 Blueprinting 结果 $x_i$ 和 reference $r_i$，逐 case signed relative error 与跨 case MAPE 为：
+
+$$
+e_i=100\frac{x_i-r_i}{r_i},\qquad
+\operatorname{MAPE}=\frac{1}{N}\sum_{i=1}^{N}|e_i|.
+$$
+
+当一个 component 的 reference 与 estimate 均为零时，其误差定义为零；若 reference 为零而 estimate 非零，则记为无穷大并使 gate 失败。Memory 另报告绝对 byte error，避免大容量使微小 byte 差异在百分比中消失。
+
+对齐不是只看 total：每个 case 检查 19 个 operation/memory/message/capacity workload metric、总 memory、9 个 timing component、iteration total 和论文 holdout。共计 152 个 workload comparison。
+
+### 覆盖矩阵
+
+| Model | TP | PP | DP | Global batch | Microbatch | Interleave | 两种模式 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Megatron-22B | 8 | 1 | 1 | 4 | 4 | 1 | full / seqsel |
+| GPT-175B | 8 | 8 | 1 | 64 | 1 | 3 | full / seqsel |
+| Turing-530B | 8 | 35 | 1 | 280 | 1 | 3 | full / seqsel |
+| Megatron-1T | 8 | 64 | 1 | 512 | 1 | 1 | full / seqsel |
+
 ## 实验路径
 
 ```text
@@ -19,13 +49,13 @@ model.json
    | semantic import
    v
 ModelIR: transformer.decoder_training
-   | transformer-distribute-v2
+   | transformer-distribute
    | - decompose Transformer primitives
    | - insert explicit TP collectives
    | - clone selective/full recomputation primitives
    v
 DistributedTaskIR: local TP block task DAG
-   | transformer-plan-work-v2
+   | transformer-plan-work
    | - derive operations/read/write/message bytes
    | - do not bind GPU/LPU or write duration
    v
@@ -131,6 +161,22 @@ System profile：`a100_80g`；8 个 case 共用一个 evidence revision。
 - system-evidence vs 论文 MAPE：**3.65%**；
 - system-evidence vs 论文最大绝对误差：**8.87%**。
 
+### Component-level parity
+
+| Timing component | MAPE | 最大绝对误差 | 最大绝对时间误差 |
+|---|---:|---:|---:|
+| forward | 0 | 0 | 0 s |
+| backward | 1.53e-14% | 2.80e-14% | 7.11e-15 s |
+| optimizer | 0 | 0 | 0 s |
+| recompute | 0 | 0 | 0 s |
+| tensor parallel | 6.49e-15% | 1.98e-14% | 8.88e-16 s |
+| pipeline parallel | 0 | 0 | 0 s |
+| data parallel | 0 | 0 | 0 s |
+| recommunication | 0 | 0 | 0 s |
+| pipeline bubble | 2.25e-15% | 1.80e-14% | 1.78e-15 s |
+
+所有 workload metric 和 8 个 memory total 都是 exact match；memory 最大绝对误差为 **0 byte**。非零 timing 差异的量级符合不同浮点运算结合顺序造成的 roundoff，而不是可观察的模型误差。
+
 两个最大 seqsel case 的误差方向一致。下一轮应优先检查 sequence-parallel collective、大规模 topology 或论文环境差异，而不是增加 model-specific coefficient。
 
 ## 复现方式与产物
@@ -144,14 +190,18 @@ uv run python examples/calculon_calibration.py \
 uv run pytest -m baseline_regression tests/regression
 ```
 
-原有的 8 组参数化训练回归仍保留在 `tests/synthesizer/test_calculon_calibration.py`。仓库级 gate 还会把 8 个 case 作为一个完整实验运行，并检查 `data/validation/baseline_regression_contract.json`：workload/Calculon 等价性、memory、论文误差预算、evidence revision、case identity、aggregate golden 与每个 `PortablePlanIR` digest 被一起冻结。更新 golden 是必须经过 review 的 contract 变更；gate 不提供自动“接受当前输出”的模式。
+8 组参数化训练回归位于 `tests/validation/test_calculon.py`。仓库级 gate 还会把 8 个 case 作为一个完整实验运行，并检查 `data/validation/baseline_regression_contract.json`：report schema、oracle source digest、输入 provenance、oracle 隔离策略、workload/component/total Calculon 等价性、memory、论文误差预算、evidence revision、case identity、aggregate golden 与每个 `PortablePlanIR` digest 被一起冻结。更新 golden 是必须经过 review 的 contract 变更；gate 不提供自动“接受当前输出”的模式。
+
+CI 精度预算为 workload、component timing、Calculon total 均不超过 `1e-9%`，memory 最大绝对误差不超过 `1 byte`；当前结果显著严于这些阈值。完整机器报告位于 `examples/calculon_calibration_result.json`。
 
 实现映射：
 
 - `workload/transformer.py`：typed workload 与 execution facts；
 - `synthesizer/frontend/transformer.py`：canonical import 与 binding adapter；
 - `synthesizer/dialects/transformer/training.py`：静态 operation/byte derivation；
-- `synthesizer/lowering/transformer.py`：两个 canonical derivation pass；
+- `synthesizer/stages/distributed/passes.py`：ModelIR 到 DistributedTaskIR 的 pass contract；
+- `synthesizer/stages/portable_plan/passes.py`：DistributedTaskIR 到 PortablePlanIR 的 pass contract；
+- `synthesizer/dialects/transformer/training_derivation.py`：纯推导与 pattern matching；
 - `analysis/cost_model.py`：peak-only 与 evidence-backed view；
 - `validation/calculon.py`：oracle adapter、audit 与 report。
 - `validation/regression.py`：严格的跨域 baseline gate 与诊断。

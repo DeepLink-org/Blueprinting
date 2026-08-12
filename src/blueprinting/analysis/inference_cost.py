@@ -6,15 +6,27 @@ from dataclasses import dataclass
 
 from blueprinting.mapping import NetworkTierBinding, TransformerInferenceMappingSpec
 from blueprinting.schema.frozen import FrozenDict
-from blueprinting.synthesizer.dialects.transformer import EngineKind, InferenceInvocation, PhaseWork
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.synthesizer.dialects.transformer import (
+    EngineKind,
+    InferenceInvocation,
+    PhaseWork,
+    TransformerBufferSemantic,
+    TransformerInferencePlanSemantic,
+    TransformerInferencePlanTaskSemantic,
+)
+from blueprinting.workload import TransformerDataType, TransformerModelSpec
 
 from ..synthesizer.bindings import InferencePhase
-from ..synthesizer.ir import CollectiveKind, PlanBuffer, PlanTask, PortablePlanIR
+from ..synthesizer.stages.portable_plan.ir import (
+    PlanBuffer,
+    PlanTask,
+    PortablePlanIR,
+    require_concrete_quantity,
+)
 from ..system import SystemProfile
 from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject, EstimateUncertainty
 from .cost_model import CalibrationMode
-from .inference_evidence import InferenceCostProvider, InferenceEvidenceQuery
+from .inference_evidence import InferenceEvidenceQuery, inference_cost_operation
 
 
 @dataclass(frozen=True)
@@ -68,7 +80,7 @@ def inference_evidence_query_for(
     *,
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -94,16 +106,6 @@ def inference_evidence_query_for(
     )
 
 
-_GEMM_PRIMITIVES = frozenset(
-    {
-        "attention_pre_projection",
-        "attention_post_projection",
-        "mlp_up_projection",
-        "mlp_down_projection",
-    }
-)
-
-
 def _merge_dimensions(base: dict[str, object], extra: FrozenDict) -> FrozenDict:
     overlap = set(base).intersection(extra)
     conflicts = tuple(key for key in overlap if base[key] != extra[key])
@@ -119,7 +121,7 @@ def cost_query_for_inference_task(
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
     network_binding: NetworkTierBinding,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -132,7 +134,7 @@ def cost_query_for_inference_task(
         raise TypeError("context must be CostQueryContext")
     invocation = _invocation_from_plan_task(task)
     primitive = invocation.primitive
-    operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+    operation = inference_cost_operation(primitive)
     subject = CostSubject.COMMUNICATION if invocation.engine is EngineKind.COLLECTIVE else CostSubject.OPERATOR
     tensor_parallel = mapping.tensor_parallel
     dimensions: dict[str, object] = {
@@ -158,7 +160,7 @@ def cost_query_for_inference_task(
         "window_size": 0,
         "kv_cache_datatype": datatype,
     }
-    if primitive in _GEMM_PRIMITIVES:
+    if operation == "gemm":
         tokens = batch_size * query_tokens
         local_hidden = model.hidden_size // tensor_parallel
         local_feedforward = model.feedforward_size // tensor_parallel
@@ -172,16 +174,16 @@ def cost_query_for_inference_task(
         else:
             n, k = model.hidden_size, local_feedforward
         dimensions.update({"m": m, "n": n, "k": k})
-    dimensions = _merge_dimensions(dimensions, context.dimensions_for(primitive, operation)).to_dict()
+    query_dimensions = _merge_dimensions(dimensions, context.dimensions_for(primitive, operation))
     return CostQuery(
         subject=subject,
         operation=operation,
         hardware=hardware.name,
         datatype=datatype,
-        operations=task.workload.operations,
-        read_bytes=task.workload.read_bytes,
-        write_bytes=task.workload.write_bytes,
-        message_bytes=task.workload.message_bytes,
+        operations=require_concrete_quantity(task.workload.operations, f"task {task.id} operations"),
+        read_bytes=require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes"),
+        write_bytes=require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes"),
+        message_bytes=require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes"),
         participants=tensor_parallel if subject is CostSubject.COMMUNICATION else 1,
         network_tier=network_binding.tensor_parallel,
         engine=invocation.engine.value,
@@ -192,7 +194,7 @@ def cost_query_for_inference_task(
         runtime_revision=context.runtime_revision,
         topology=context.topology,
         power_mode=context.power_mode,
-        dimensions=FrozenDict(dimensions),
+        dimensions=query_dimensions,
     )
 
 
@@ -202,13 +204,12 @@ def _task_estimate(
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
     network_binding: NetworkTierBinding,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
     context_tokens: int,
     mode: CalibrationMode,
-    cost_provider: InferenceCostProvider | None,
     cost_resolver: CostResolver | None,
     cost_context: CostQueryContext,
 ) -> InferenceTaskEstimate:
@@ -251,7 +252,7 @@ def _task_estimate(
     assumptions: tuple[str, ...] = ()
     total_seconds = analytical_seconds
     if cost_resolver is not None:
-        resolution = cost_resolver.resolve(
+        resolution = cost_resolver.require(
             cost_query_for_inference_task(
                 task,
                 model=model,
@@ -275,26 +276,6 @@ def _task_estimate(
         method = evidence.method.value
         uncertainty = evidence.uncertainty
         assumptions = evidence.assumptions
-    elif cost_provider is not None:
-        evidence = cost_provider.resolve(
-            inference_evidence_query_for(
-                invocation,
-                model=model,
-                mapping=mapping,
-                datatype=datatype,
-                hardware=hardware,
-                batch_size=batch_size,
-                query_tokens=query_tokens,
-                context_tokens=context_tokens,
-            )
-        )
-        if evidence is not None:
-            total_seconds = evidence.seconds
-            provider_name = evidence.provider
-            revision = evidence.revision
-            source_revision = evidence.revision
-            match = evidence.match
-            method = "external"
     return InferenceTaskEstimate(
         invocation=invocation,
         compute_seconds=compute_seconds,
@@ -321,42 +302,23 @@ def _invocation_from_plan_task(task: PlanTask) -> InferenceInvocation:
     embedded in ``PortablePlanIR`` as a second source of workload truth.
     """
 
-    attributes = task.workload.attributes
-    try:
-        phase = InferencePhase(attributes["phase"])
-        engine = EngineKind(attributes["engine"])
-        name = attributes["name"]
-        primitive = attributes["primitive"]
-        source_layer = attributes["source_layer"]
-    except (KeyError, ValueError) as error:
-        raise ValueError(f"portable inference task {task.id} has invalid semantic workload metadata") from error
-    for field_name, value in (("name", name), ("primitive", primitive), ("source_layer", source_layer)):
-        if not isinstance(value, str) or not value:
-            raise ValueError(f"portable inference task {task.id} has invalid {field_name}")
-
-    collective_value = attributes.get("collective", "")
-    collective = None
-    if engine is EngineKind.COLLECTIVE:
-        try:
-            collective = CollectiveKind(collective_value)
-        except ValueError as error:
-            raise ValueError(f"portable inference task {task.id} has invalid collective metadata") from error
-    elif collective_value != "":
-        raise ValueError(f"local portable inference task {task.id} carries collective metadata")
+    semantic = task.semantic
+    if not isinstance(semantic, TransformerInferencePlanTaskSemantic):
+        raise ValueError(f"portable inference task {task.id} is missing typed Transformer semantics")
 
     return InferenceInvocation(
-        name=name,
-        source_layer=source_layer,
-        primitive=primitive,
-        phase=phase,
-        engine=engine,
+        name=semantic.name,
+        source_layer=semantic.source_layer,
+        primitive=semantic.primitive,
+        phase=semantic.phase,
+        engine=semantic.engine,
         work=PhaseWork(
-            operations=task.workload.operations,
-            read_bytes=task.workload.read_bytes,
-            write_bytes=task.workload.write_bytes,
-            message_bytes=task.workload.message_bytes,
+            operations=require_concrete_quantity(task.workload.operations, f"task {task.id} operations"),
+            read_bytes=require_concrete_quantity(task.workload.read_bytes, f"task {task.id} read_bytes"),
+            write_bytes=require_concrete_quantity(task.workload.write_bytes, f"task {task.id} write_bytes"),
+            message_bytes=require_concrete_quantity(task.workload.message_bytes, f"task {task.id} message_bytes"),
         ),
-        collective=collective,
+        collective=semantic.collective,
     )
 
 
@@ -368,7 +330,11 @@ def _concrete_buffer_size(buffer: PlanBuffer) -> int:
 
 
 def _semantic_buffer_size(plan: PortablePlanIR, semantic: str) -> int:
-    buffers = tuple(buffer for buffer in plan.buffers if buffer.attributes.get("semantic") == semantic)
+    buffers = tuple(
+        buffer
+        for buffer in plan.buffers
+        if isinstance(buffer.semantic, TransformerBufferSemantic) and buffer.semantic.role == semantic
+    )
     if len(buffers) != 1:
         raise ValueError(f"portable inference plan must contain exactly one {semantic!r} buffer")
     return _concrete_buffer_size(buffers[0])
@@ -380,37 +346,27 @@ def estimate_inference_phase(
     mode: CalibrationMode = CalibrationMode.SYSTEM_EVIDENCE,
     *,
     network_binding: NetworkTierBinding,
-    cost_provider: InferenceCostProvider | None = None,
     cost_resolver: CostResolver | None = None,
     cost_context: CostQueryContext = CostQueryContext(),
 ) -> InferencePhaseEstimate:
     """Cost one prefill or decode phase point without queueing assumptions."""
 
-    model = plan.attributes.get("model_spec")
-    mapping = plan.attributes.get("inference_mapping_spec")
-    phase = plan.attributes.get("inference_phase")
-    datatype = plan.attributes.get("datatype")
-    if not isinstance(model, TransformerModelSpec):
-        raise TypeError("portable inference plan is missing TransformerModelSpec")
-    if not isinstance(mapping, TransformerInferenceMappingSpec):
-        raise TypeError("portable inference plan is missing TransformerInferenceMappingSpec")
-    if not isinstance(phase, InferencePhase):
-        raise TypeError("portable inference plan is missing InferencePhase")
-    if not isinstance(datatype, str):
-        raise TypeError("portable inference plan is missing its datatype")
+    semantic = plan.semantic
+    if not isinstance(semantic, TransformerInferencePlanSemantic):
+        raise TypeError("portable inference plan is missing typed Transformer inference semantics")
+    model = semantic.model
+    mapping = semantic.mapping
+    phase = semantic.phase
+    datatype = semantic.datatype
     if hardware.datatype != datatype:
         raise ValueError("system profile datatype does not match inference workload datatype")
     if not isinstance(network_binding, NetworkTierBinding):
         raise TypeError("network_binding must be NetworkTierBinding")
-    if cost_provider is not None and cost_resolver is not None:
-        raise ValueError("cost_provider and cost_resolver are mutually exclusive")
     if not isinstance(cost_context, CostQueryContext):
         raise TypeError("cost_context must be CostQueryContext")
-    batch_size = plan.attributes.get("batch_size")
-    query_tokens = plan.attributes.get("query_tokens")
-    context_tokens = plan.attributes.get("context_tokens")
-    if any(not isinstance(value, int) for value in (batch_size, query_tokens, context_tokens)):
-        raise TypeError("portable inference plan has non-concrete workload facts")
+    batch_size = semantic.batch_size
+    query_tokens = semantic.query_tokens
+    context_tokens = semantic.context_tokens
 
     task_estimates = []
     for task in plan.tasks:
@@ -426,7 +382,6 @@ def estimate_inference_phase(
                 query_tokens=query_tokens,
                 context_tokens=context_tokens,
                 mode=mode,
-                cost_provider=cost_provider,
                 cost_resolver=cost_resolver,
                 cost_context=cost_context,
             )
@@ -450,7 +405,7 @@ def estimate_inference_phase(
                 apply_efficiency=mode is CalibrationMode.SYSTEM_EVIDENCE,
             )
         else:
-            pipeline_dimensions = {
+            pipeline_dimensions: dict[str, object] = {
                 "semantic_operation": "p2p",
                 "phase": phase.value,
                 "model_name": model.name,
@@ -459,11 +414,11 @@ def estimate_inference_phase(
                 "context_tokens": context_tokens,
                 "pipeline_parallel": mapping.pipeline_parallel,
             }
-            pipeline_dimensions = _merge_dimensions(
+            resolved_pipeline_dimensions = _merge_dimensions(
                 pipeline_dimensions,
                 cost_context.dimensions_for("p2p", "p2p"),
             )
-            pipeline_estimate = cost_resolver.resolve(
+            pipeline_estimate = cost_resolver.require(
                 CostQuery(
                     subject=CostSubject.COMMUNICATION,
                     operation="p2p",
@@ -480,7 +435,7 @@ def estimate_inference_phase(
                     runtime_revision=cost_context.runtime_revision,
                     topology=cost_context.topology,
                     power_mode=cost_context.power_mode,
-                    dimensions=pipeline_dimensions,
+                    dimensions=resolved_pipeline_dimensions,
                 )
             ).estimate
             one_hop_seconds = pipeline_estimate.seconds

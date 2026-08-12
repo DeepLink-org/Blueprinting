@@ -288,9 +288,7 @@ class EvidenceLabPanel:
                             value=self.semantic_operation,
                             label="对比 Primitive",
                             on_change=self._semantic_changed,
-                        ).props("outlined dense").classes("bp-evidence-selector").mark(
-                            "evidence-semantic-operation"
-                        )
+                        ).props("outlined dense").classes("bp-evidence-selector").mark("evidence-semantic-operation")
                         ui.label("EXACT · NO INTERPOLATION").classes("bp-fidelity-tag bp-mono")
             if self.error is not None or self.data is None:
                 with (
@@ -362,11 +360,15 @@ class EvidenceLabPanel:
             with ui.element("section").classes("bp-evidence-surface"):
                 with ui.element("div").classes("bp-evidence-section bp-evidence-compact-head"):
                     ui.label("Measured vs analytical").classes("bp-card-title")
-                    ui.label("散点是 Vidur exact records；连线只帮助阅读，不表示中间点已有证据。 ").classes("bp-card-copy")
+                    ui.label("散点是 Vidur exact records；连线只帮助阅读，不表示中间点已有证据。 ").classes(
+                        "bp-card-copy"
+                    )
                 with ui.element("div").classes("bp-evidence-chart-grid"):
                     with ui.element("section").classes("bp-evidence-chart"):
                         ui.label("Latency · µs").classes("bp-section-title")
-                        ui.echart(latency_curve_options(report), renderer="svg").classes("w-full bp-evidence-chart-canvas")
+                        ui.echart(latency_curve_options(report), renderer="svg").classes(
+                            "w-full bp-evidence-chart-canvas"
+                        )
                     with ui.element("section").classes("bp-evidence-chart"):
                         ui.label("Effective throughput · TOPS").classes("bp-section-title")
                         ui.echart(throughput_curve_options(report), renderer="svg").classes(

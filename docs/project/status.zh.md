@@ -2,7 +2,7 @@
 
 本页区分 Blueprinting 的硬件探索产品目标与仓库中已经贯通的工程基础。Schema 或 design contract 是有价值的基础，但只有 candidate 能够被端到端构造、评估与消费时，才算真正的 exploration capability。
 
-**状态日期：** 2026-08-09
+**状态日期：** 2026-08-11
 
 ## 状态词汇
 
@@ -22,6 +22,7 @@
 | Static Transformer inference phase planning | **Implemented slice** | 独立验证的 prefill/decode plan、KV 容量以及 decoder-block phase composition |
 | Target-neutral workload/mapping plan | **Implemented slice** | Transformer path 到达 `PortablePlanIR` |
 | Portable dependency projection Chrome Trace export | **Implemented presentation adapter** | Workbench 可通过 PING/PONG bridge 在 Perfetto 打开；metadata 明确 `executable=false`，不是 `TimelineBundle` |
+| 五层 IR Explorer 与 lowering replay audit | **Implemented presentation adapter** | 当前运行捕获前三层；五层 graph adapter、lineage boundary、调试包与 derived cost overlay 已实现，后两层仍无 production producer |
 | 版本化 compute/memory/network efficiency profile | **Implemented adapter** | `SystemProfile` 与两种 analytical estimate mode |
 | Normalized task-cost resolution 与性能数据导入 | **Implemented slice** | immutable query/result/store、ordered resolver、roofline fallback、通用 simulator 表、Vidur profile 与四类 AIConfigurator 表 |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | 独立 lowering/costing 后进行 exact-key CSV lookup，并报告 component coverage 与不可抵消的误差归因 |
@@ -30,7 +31,7 @@
 | Hardware design variable 与 constraint-aware candidate generation | **Planned** | 无 design-space generator 或 search session |
 | Workload suite 与 scenario weighting | **Planned** | 当前路径评估显式 individual configuration |
 | Architecture capability/legalization model | **Planned** | target/deployment binding 已有；通用 plugin path 尚无 |
-| Architecture-bound placement、schedule 与 memory plan | **Experimental Contract / Planned** | `ConcretePlanIR` 只有通用 queue-oriented schema 与 structural verifier；producer、route/occupancy semantic 和 typed target extension 尚无 |
+| Architecture-bound placement、schedule 与 memory plan | **Experimental Contract / Reference Slice** | `ConcretePlanIR` 已有 typed queue-order/slot-dataflow extension 与 deterministic virtual binder；production target plugin、resource scheduling、occupancy 和硬件 legality 尚无 |
 | Discrete-event compute/memory/resource simulation | **Planned** | 当前结果是 analytical composition，不是 event simulation |
 | Timeline analysis/replay bundle | **Planned** | `TimingProjection`、`SimulationTraceIR`、`TimelineBundle` 只有 design contract |
 | 通用 network/hardware simulator adapter | **Implemented slice / Planned** | 显式 tabular ingestion 与通用 resolver 已存在；simulator execution、calibrated interpolation、contention validity 与 environment manifest 仍未实现 |
@@ -44,7 +45,7 @@
 
 ## Schema 成熟度不是能力成熟度
 
-当前五个 IR class 使用 `1.0.0` 作为内部 canonical serialization version。这个数字不表示 public API/ABI 已冻结，也不表示每层都有 production producer 和 consumer。特别是 `ConcretePlanIR` 与 `MachineIR` 仍是 experimental scaffold；它们必须通过[风险登记表](risks.md)中的 compatibility Gate 才能升级为 stable contract。
+当前五个 IR class 统一使用 `0.0.0` 作为 pre-graduation canonical schema epoch，并强制要求 `typed-semantics` feature。嵌套 canonical type identity 与内部 pass/planner identity 使用无独立版本号的语义名。Migration 机制通过 synthetic test schema 验证，production registry 保持为空。`ConcretePlanIR` 与 `MachineIR` 仍是 experimental contract，必须通过[风险登记表](risks.md)中的 graduation Gate。
 
 ## 已贯通分析路径
 
@@ -82,14 +83,15 @@ TransformerModelSpec + inference request cohort + inference mapping
 | 基础 | 状态 | Source of truth |
 |---|---|---|
 | Immutable value、stable ID、lineage、codec、digest | **Implemented** | `src/blueprinting/schema/`、`src/blueprinting/synthesizer/ids.py` |
-| 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/synthesizer/ir/`；只有前三层存在 production derivation slice |
+| 渐进式 typed-Python contract | **Implemented foundation** | runtime `Result`/diagnostic、sealed ADT/consumer 与 deterministic `ContractCompiler`；标准 mypy 是独立的可选 CI 层 |
+| 五层 progressive formal-representation schema（`*IR`）与 verifier | **Experimental Contract** | `src/blueprinting/synthesizer/stages/*/ir.py`；只有前三层存在 production derivation slice |
 | Typed workload/strategy/target/deployment binding | **Implemented** | `bindings.py`、`session.py` |
 | Chip、memory、interconnect 与聚合 system profile | **Implemented adapter** | `src/blueprinting/system/`；是 evidence-bearing profile，不是计划中的 `ArchitectureBlueprint` |
 | Transactional analysis/transformation、checkpoint、observer | **Implemented** | `passes/base.py` |
 | Transformer workload/mapping contract、frontend 与 workload algebra | **Implemented slice** | `workload/transformer.py`、`mapping/transformer.py`、`synthesizer/frontend/transformer.py`、`synthesizer/dialects/transformer/` |
-| Distributed/portable mapping derivation | **Implemented slice** | `lowering/transformer.py` |
+| Distributed/portable mapping derivation | **Implemented slice** | `stages/{distributed,portable_plan}/passes.py`、`dialects/transformer/*_derivation.py` |
 | Cost protocol、resolver、roofline、database 与外部 importer | **Implemented slice** | `analysis/cost/`、`analysis/vidur.py`；仅覆盖 exact task latency，不是 plan simulation |
-| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `workload/transformer_inference.py`、`mapping/transformer.py`、`synthesizer/{frontend,lowering}/transformer_inference.py`、`synthesizer/dialects/transformer/inference.py`、`analysis/inference_cost.py`、`application/inference.py` |
+| Static inference frontend、lowering、cost 与 request composition | **Implemented slice** | `workload/transformer_inference.py`、`mapping/transformer.py`、`synthesizer/frontend/transformer_inference.py`、`synthesizer/stages/{distributed,portable_plan}/passes.py`、`synthesizer/dialects/transformer/{inference,inference_derivation}.py`、`analysis/inference_cost.py`、`application/inference.py` |
 | Vidur raw component-profile 对齐 | **Implemented experiment** | `analysis/vidur.py` + `validation/vidur.py`；最小带许可证 CI slice 固定在本地，完整 upstream corpus 仍保持外部依赖 |
 | Calculon experiment | **Implemented experiment** | `validation/calculon.py` |
 | 外部 baseline 回归门禁 | **Implemented** | `data/validation/` 下的冻结 contract 与带许可证离线 fixture、`validation/regression.py`、`.github/workflows/quality.yml` |
@@ -98,7 +100,7 @@ TransformerModelSpec + inference request cohort + inference mapping
 
 ## 验证基线
 
-当前 test suite 覆盖 binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation、Calculon calibration、prefill/decode scaling、KV 容量、static request composition、baseline-only Vidur comparison、roofline component、exact/ambiguous database resolution、simulator unit normalization、AIConfigurator CSV/Parquet schema、显式 Vidur ingestion 与 inference resolver fallback。独立 CI job 会在每次面向 main 的 PR 和 push 上执行 8-case Calculon/SeqSel 与 3-case 固定 Vidur gate，同时冻结 provenance、semantic policy、coverage、comparable-subtotal drift budget、不可抵消的 component error、aggregate result 与 IR digest，且不能静默重生成 golden。Vidur gate 只用于 drift detection，不是 accuracy certification。文档检查强制完整双语 page pair 与 strict site build。
+当前 test suite 覆盖 runtime type-contract compilation、ADT closure、checked failure path、binding consistency、canonical serialization、verifier rejection、pass transaction rollback、checkpoint observer、workload conservation、Calculon calibration、prefill/decode scaling、KV 容量、static request composition、baseline-only Vidur comparison、roofline component、exact/ambiguous database resolution、simulator unit normalization、AIConfigurator CSV/Parquet schema、显式 Vidur ingestion 与 inference resolver fallback。Base CI job 在不安装 mypy 的情况下编译 runtime contract；独立 optional-typing job 使用标准 mypy 分析源码。另一个 regression job 会在每次面向 main 的 PR 和 push 上执行 8-case Calculon/SeqSel 与 3-case 固定 Vidur gate，同时冻结 provenance、semantic policy、coverage、comparable-subtotal drift budget、不可抵消的 component error、aggregate result 与 IR digest，且不能静默重生成 golden。Vidur gate 只用于 drift detection，不是 accuracy certification。文档检查强制完整双语 page pair 与 strict site build。
 
 能力升级需要端到端 product test。例如只增加 `ArchitectureBlueprint` dataclass 仍是 Contract Only；至少要构造两个不同 candidate、映射同一 workload、产生可比较 result 并保持 provenance，才能形成产品级证据。
 
