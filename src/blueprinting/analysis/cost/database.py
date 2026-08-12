@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-import math
 import statistics
 from collections import defaultdict
-from dataclasses import dataclass, field
-from functools import cached_property
+from collections.abc import Iterable
+from dataclasses import field
+from typing import Annotated, TypeAlias
 
-from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest, record_type
+from blueprinting.schema.authoring import (
+    NonEmptyText,
+    NonNegativeFiniteNumber,
+    ValueConstraint,
+    record,
+)
+from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest
 from blueprinting.schema.frozen import FrozenDict
 
 from .protocol import (
@@ -26,82 +32,59 @@ from .protocol import (
 
 # Keep the legacy codec namespace as a stable serialized identity.
 
+_PERFORMANCE_RECORD_IDENTITY_FIELDS = frozenset({"subject", "operation", "hardware", "datatype"})
 
-@record_type("blueprinting.analysis.cost.provenance")
-@dataclass(frozen=True)
+
+def performance_record_identity_collisions(keys: Iterable[str]) -> frozenset[str]:
+    return _PERFORMANCE_RECORD_IDENTITY_FIELDS.intersection(keys)
+
+
+@record("blueprinting.analysis.cost.provenance")
 class EvidenceProvenance:
-    source: str
-    source_revision: str
-    importer: str
-    data_digest: str
+    source: NonEmptyText
+    source_revision: NonEmptyText
+    importer: NonEmptyText
+    data_digest: NonEmptyText
     method: EstimateMethod
     metadata: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        for name in ("source", "source_revision", "importer", "data_digest"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{name} must be a non-empty string")
-        if not isinstance(self.method, EstimateMethod):
-            raise TypeError("method must be EstimateMethod")
-        object.__setattr__(self, "metadata", FrozenDict(self.metadata))
 
-
-@record_type("blueprinting.analysis.cost.performance-record")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.cost.performance-record")
 class PerformanceRecord:
-    record_id: str
+    record_id: NonEmptyText
     subject: CostSubject
-    operation: str
-    hardware: str
-    datatype: str
-    seconds: float
+    operation: NonEmptyText
+    hardware: NonEmptyText
+    datatype: NonEmptyText
+    seconds: NonNegativeFiniteNumber
     selector: FrozenDict
     provenance: EvidenceProvenance
     metadata: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        for name in ("record_id", "operation", "hardware", "datatype"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{name} must be a non-empty string")
-        if not isinstance(self.subject, CostSubject):
-            raise TypeError("subject must be CostSubject")
-        if (
-            isinstance(self.seconds, bool)
-            or not isinstance(self.seconds, (int, float))
-            or not math.isfinite(self.seconds)
-            or self.seconds < 0
-        ):
-            raise ValueError("record seconds must be finite and non-negative")
-        if not isinstance(self.provenance, EvidenceProvenance):
-            raise TypeError("provenance must be EvidenceProvenance")
-        object.__setattr__(self, "selector", FrozenDict(self.selector))
-        object.__setattr__(self, "metadata", FrozenDict(self.metadata))
-        duplicate_identity = {"subject", "operation", "hardware", "datatype"}.intersection(self.selector)
+        duplicate_identity = performance_record_identity_collisions(self.selector)
         if duplicate_identity:
             raise ValueError(f"record selector duplicates core identity: {', '.join(sorted(duplicate_identity))}")
 
 
-@record_type("blueprinting.analysis.cost.performance-database")
-@dataclass(frozen=True)
+PerformanceRecords: TypeAlias = Annotated[
+    tuple[PerformanceRecord, ...],
+    ValueConstraint.NON_EMPTY,
+]
+
+
+@record("blueprinting.analysis.cost.performance-database")
 class PerformanceDatabase:
-    name: str
-    records: tuple[PerformanceRecord, ...]
+    name: NonEmptyText
+    records: PerformanceRecords
     metadata: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("database name must be a non-empty string")
-        object.__setattr__(self, "records", tuple(self.records))
-        object.__setattr__(self, "metadata", FrozenDict(self.metadata))
-        if not self.records or any(not isinstance(record, PerformanceRecord) for record in self.records):
-            raise ValueError("performance database requires typed records")
         record_ids = tuple(record.record_id for record in self.records)
         if len(set(record_ids)) != len(record_ids):
             raise ValueError("performance database record IDs must be unique")
 
-    @cached_property
+    @property
     def revision(self) -> str:
         return content_digest(self, "performance-database")
 
@@ -148,11 +131,18 @@ class PerformanceDatabaseProvider(CostProvider):
                 defaultdict[tuple[tuple[type[object], object], ...], list[PerformanceRecord]],
             ],
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-        for record in database.records:
-            core = (record.subject, record.operation, record.hardware, record.datatype)
-            selector_keys = tuple(record.selector)
-            typed_values = tuple((type(record.selector[key]), record.selector[key]) for key in selector_keys)
-            index[core][selector_keys][typed_values].append(record)
+        for evidence_record in database.records:
+            core = (
+                evidence_record.subject,
+                evidence_record.operation,
+                evidence_record.hardware,
+                evidence_record.datatype,
+            )
+            selector_keys = tuple(evidence_record.selector)
+            typed_values = tuple(
+                (type(evidence_record.selector[key]), evidence_record.selector[key]) for key in selector_keys
+            )
+            index[core][selector_keys][typed_values].append(evidence_record)
         self._index = {
             core: {
                 selector_keys: {values: tuple(records) for values, records in value_index.items()}
@@ -193,17 +183,17 @@ class PerformanceDatabaseProvider(CostProvider):
         specificity = max(len(record.selector) for record in candidates)
         candidates = tuple(record for record in candidates if len(record.selector) == specificity)
         groups: dict[tuple[object, ...], list[PerformanceRecord]] = defaultdict(list)
-        for record in candidates:
-            provenance = record.provenance
+        for evidence_record in candidates:
+            provenance = evidence_record.provenance
             key = (
-                record.selector,
+                evidence_record.selector,
                 provenance.source,
                 provenance.source_revision,
                 provenance.importer,
                 provenance.method,
                 provenance.data_digest,
             )
-            groups[key].append(record)
+            groups[key].append(evidence_record)
         if len(groups) > 1:
             descriptions = sorted(
                 f"{items[0].provenance.source}@{items[0].provenance.source_revision}:{dict(items[0].selector)}"

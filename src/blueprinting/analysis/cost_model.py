@@ -24,7 +24,7 @@ from blueprinting.mapping import (
     TensorParallelCommunication,
     TransformerTrainingMappingSpec,
 )
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import enum
 from blueprinting.synthesizer.dialects.transformer import (
     BlockMemoryFacts,
     EngineKind,
@@ -44,7 +44,7 @@ from ..system import SystemProfile
 # Python package move so existing snapshots and performance evidence still load.
 
 
-@enum_type("blueprinting.analysis.cost.calibration-mode")
+@enum("blueprinting.analysis.cost.calibration-mode")
 class CalibrationMode(Enum):
     PEAK_ONLY = "peak_only"
     SYSTEM_EVIDENCE = "system_evidence"

@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from blueprinting.mapping import TransformerTrainingMappingSpec
 from blueprinting.schema.frozen import FrozenDict
-from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+from blueprinting.workload import (
+    TransformerDataType,
+    TransformerModelSpec,
+    TransformerTrainingWorkloadSpec,
+    require_transformer_data_type,
+)
 
 from ..axes import BindingAxis
 from ..bindings import BindingSet, StrategyBinding, TrainingWorkload, WorkloadBinding
@@ -23,14 +28,11 @@ from ..session import SynthesisSession
 from ..stages.common import OperationName, TensorType
 from ..stages.model.ir import ModelIR, ModelOperation, ModelValue, ValueRole
 
-_SUPPORTED_DATATYPES = frozenset({"float8", "float16", "bfloat16", "float32"})
 
-
-def build_transformer_model_ir(model: TransformerModelSpec, *, datatype: str = "float16") -> ModelIR:
+def build_transformer_model_ir(model: TransformerModelSpec, *, datatype: TransformerDataType = "float16") -> ModelIR:
     """Import a model as one semantic operation before structural lowering."""
 
-    if datatype not in _SUPPORTED_DATATYPES:
-        raise ValueError(f"unsupported datatype: {datatype!r}")
+    datatype = require_transformer_data_type(datatype)
     batch = Symbol("microbatch_size", BindingAxis.WORKLOAD, positive=True)
     sequence = Symbol("sequence_length", BindingAxis.WORKLOAD, positive=True)
     tensor_type = TensorType((batch, sequence, model.hidden_size), datatype)

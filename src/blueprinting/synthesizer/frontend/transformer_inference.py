@@ -6,7 +6,7 @@ from typing import Any
 
 from blueprinting.mapping import TransformerInferenceMappingSpec
 from blueprinting.schema.frozen import FrozenDict
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, require_transformer_data_type
 
 from ..axes import BindingAxis
 from ..bindings import BindingSet, InferencePhase, InferenceWorkload, StrategyBinding, WorkloadBinding
@@ -21,8 +21,6 @@ from ..session import SynthesisSession
 from ..stages.common import Effect, EffectKind, OperationName, TensorType
 from ..stages.model.ir import ModelIR, ModelOperation, ModelValue, ValueRole
 
-_SUPPORTED_DATATYPES = frozenset({"float8", "float16", "bfloat16", "float32"})
-
 
 def _positive_integer(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
@@ -33,7 +31,7 @@ def _positive_integer(value: Any, name: str) -> int:
 def build_transformer_inference_model_ir(
     model: TransformerModelSpec,
     *,
-    datatype: str = "float16",
+    datatype: TransformerDataType = "float16",
 ) -> ModelIR:
     """Import a phase-neutral decoder inference operation.
 
@@ -41,8 +39,7 @@ def build_transformer_inference_model_ir(
     extent is supplied by a phase workload binding, not embedded in the model.
     """
 
-    if datatype not in _SUPPORTED_DATATYPES:
-        raise ValueError(f"unsupported datatype: {datatype!r}")
+    datatype = require_transformer_data_type(datatype)
     batch = Symbol("batch_size", BindingAxis.WORKLOAD, positive=True)
     context = Symbol("sequence_length", BindingAxis.WORKLOAD, positive=True)
     query = Symbol("query_tokens", BindingAxis.WORKLOAD, positive=True)
@@ -98,15 +95,14 @@ def inference_synthesis_session_for(
     phase: InferencePhase,
     batch_size: int,
     context_tokens: int,
-    datatype: str = "float16",
+    datatype: TransformerDataType = "float16",
 ) -> SynthesisSession:
     """Create an explicit phase binding for static inference specialization."""
 
     mapping.validate_model(model)
     _positive_integer(batch_size, "batch_size")
     _positive_integer(context_tokens, "context_tokens")
-    if datatype not in _SUPPORTED_DATATYPES:
-        raise ValueError(f"unsupported datatype: {datatype!r}")
+    datatype = require_transformer_data_type(datatype)
     if not isinstance(phase, InferencePhase):
         raise TypeError("phase must be InferencePhase")
     workload = WorkloadBinding(

@@ -68,6 +68,14 @@ def test_workload_and_network_aliases_reject_conflicts() -> None:
         NetworkTierBinding.from_mapping({"tensor_parallel_network": 1, "tensor_par_net": 0})
 
 
+def test_workload_scalar_domains_are_part_of_the_runtime_type_contract() -> None:
+    with pytest.raises(TypeError, match="TransformerTrainingWorkloadSpec.datatype"):
+        TransformerTrainingWorkloadSpec(8, 1, "fp16")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="TransformerModelSpec.hidden_size"):
+        TransformerModelSpec("invalid", 0, 256, 128, 8, 8, 2)
+
+
 def test_megatron_parallel_axes_are_exposed_as_pattern_matchable_values() -> None:
     mapping = TransformerTrainingMappingSpec.from_mapping(
         {

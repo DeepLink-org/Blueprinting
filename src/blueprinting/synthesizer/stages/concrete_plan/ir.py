@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from dataclasses import field
 from enum import Enum
-from typing import ClassVar, TypeAlias
+from typing import Annotated, ClassVar, TypeAlias
 
-from blueprinting.schema.authoring import VariantSpec, adt, record, require_adt_variant, seal_adt, variant
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import (
+    NonEmptyText,
+    NonNegativeInt,
+    PositiveInt,
+    ValueConstraint,
+    VariantSpec,
+    adt,
+    enum,
+    record,
+    seal_adt,
+    variant,
+)
 from blueprinting.schema.frozen import FrozenDict
 
 from ...errors import DiagnosticBag, VerificationReport
@@ -24,12 +34,9 @@ from ..common import (
     CanonicalIRMixin,
     IRHeader,
     SchemaVersion,
-    frozen_map,
     is_content_digest,
     make_header,
     reject_reserved_attributes,
-    require_instance,
-    typed_tuple,
     verify_known_references,
     verify_ordered_dag,
     verify_unique_ids,
@@ -41,20 +48,12 @@ class DevicePlacement:
     """Binding from a logical rank to a physical target device."""
 
     id: DeviceId
-    logical_rank: int
-    target_device: str
+    logical_rank: NonNegativeInt
+    target_device: NonEmptyText
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        require_instance(self.id, DeviceId, "device placement ID")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if isinstance(self.logical_rank, bool) or not isinstance(self.logical_rank, int) or self.logical_rank < 0:
-            raise ValueError("logical rank must be a non-negative integer")
-        if not isinstance(self.target_device, str) or not self.target_device:
-            raise ValueError("target device identity must not be empty")
 
-
-@enum_type("blueprinting.ir.concrete-plan.queue-kind")
+@enum("blueprinting.ir.concrete-plan.queue-kind")
 class QueueKind(Enum):
     """Target execution-engine category represented by a command queue."""
 
@@ -71,19 +70,9 @@ class QueueSpec:
     id: QueueId
     device: DeviceId
     kind: QueueKind
-    engine: str
+    engine: NonEmptyText
     ordered: bool = True
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, QueueId, "queue ID")
-        require_instance(self.device, DeviceId, "queue device")
-        require_instance(self.kind, QueueKind, "queue kind")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if not isinstance(self.engine, str) or not self.engine:
-            raise ValueError("queue engine must not be empty")
-        if not isinstance(self.ordered, bool):
-            raise TypeError("queue ordered flag must be boolean")
 
 
 @record("blueprinting.ir.concrete-plan.memory-region")
@@ -92,21 +81,10 @@ class MemoryRegion:
 
     id: MemoryRegionId
     device: DeviceId
-    memory_space: str
-    capacity_bytes: int
-    alignment_bytes: int = 1
+    memory_space: NonEmptyText
+    capacity_bytes: PositiveInt
+    alignment_bytes: PositiveInt = 1
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, MemoryRegionId, "memory region ID")
-        require_instance(self.device, DeviceId, "memory region device")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if not isinstance(self.memory_space, str) or not self.memory_space:
-            raise ValueError("memory space must not be empty")
-        for name in ("capacity_bytes", "alignment_bytes"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer")
 
 
 @record("blueprinting.ir.concrete-plan.buffer-binding")
@@ -115,53 +93,30 @@ class BufferBinding:
 
     id: BufferId
     memory_region: MemoryRegionId
-    offset_bytes: int
-    size_bytes: int
-    alignment_bytes: int
+    offset_bytes: NonNegativeInt
+    size_bytes: PositiveInt
+    alignment_bytes: PositiveInt
     lineage: Lineage
     source_buffer: BufferId | None = None
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, BufferId, "buffer binding ID")
-        require_instance(self.memory_region, MemoryRegionId, "buffer memory region")
-        require_instance(self.lineage, Lineage, "buffer binding lineage")
-        if self.source_buffer is not None:
-            require_instance(self.source_buffer, BufferId, "source buffer")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        for name in ("offset_bytes", "size_bytes", "alignment_bytes"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise TypeError(f"{name} must be an integer")
-        if self.offset_bytes < 0:
-            raise ValueError("buffer offset must not be negative")
-        if self.size_bytes <= 0 or self.alignment_bytes <= 0:
-            raise ValueError("buffer size and alignment must be positive")
 
 
 @record("blueprinting.ir.concrete-plan.implementation-ref")
 class ImplementationRef:
     """Versioned target implementation and ABI selected for a command."""
 
-    namespace: str
-    name: str
-    version: str
-    abi: str
-    variant: str = "default"
-
-    def __post_init__(self) -> None:
-        for field_name in ("namespace", "name", "version", "abi", "variant"):
-            if not isinstance(getattr(self, field_name), str):
-                raise TypeError("implementation identity fields must be strings")
-        if any(not getattr(self, item) for item in ("namespace", "name", "version", "abi", "variant")):
-            raise ValueError("implementation identity fields must not be empty")
+    namespace: NonEmptyText
+    name: NonEmptyText
+    version: NonEmptyText
+    abi: NonEmptyText
+    variant: NonEmptyText = "default"
 
     @property
     def key(self) -> str:
         return f"{self.namespace}:{self.name}:{self.version}:{self.variant}@{self.abi}"
 
 
-@enum_type("blueprinting.ir.concrete-plan.access-mode")
+@enum("blueprinting.ir.concrete-plan.access-mode")
 class AccessMode(Enum):
     """Concrete command access performed on a bound buffer."""
 
@@ -177,12 +132,8 @@ class BufferUse:
     buffer: BufferId
     access: AccessMode
 
-    def __post_init__(self) -> None:
-        require_instance(self.buffer, BufferId, "buffer use ID")
-        require_instance(self.access, AccessMode, "buffer access mode")
 
-
-@enum_type("blueprinting.ir.concrete-plan.command-kind")
+@enum("blueprinting.ir.concrete-plan.command-kind")
 class CommandKind(Enum):
     """Derived command category used by generic consumers and diagnostics."""
 
@@ -200,6 +151,13 @@ class CommandBody:
     """Closed family of mutually exclusive target command semantics."""
 
     __variant_spec__: ClassVar[VariantSpec]
+
+
+SynchronizationTokens: TypeAlias = Annotated[
+    tuple[TokenId, ...],
+    ValueConstraint.NON_EMPTY,
+    ValueConstraint.UNIQUE_ITEMS,
+]
 
 
 @variant("launch")
@@ -226,22 +184,12 @@ class Barrier(CommandBody):
 
 @variant("signal")
 class Signal(CommandBody):
-    tokens: tuple[TokenId, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tokens", typed_tuple(self.tokens, TokenId, "signal tokens"))
-        if not self.tokens or len(set(self.tokens)) != len(self.tokens):
-            raise ValueError("signal tokens must be non-empty and unique")
+    tokens: SynchronizationTokens
 
 
 @variant("wait")
 class Wait(CommandBody):
-    tokens: tuple[TokenId, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tokens", typed_tuple(self.tokens, TokenId, "wait tokens"))
-        if not self.tokens or len(set(self.tokens)) != len(self.tokens):
-            raise ValueError("wait tokens must be non-empty and unique")
+    tokens: SynchronizationTokens
 
 
 @variant("host-call")
@@ -268,39 +216,18 @@ class Unsynchronized(CommandSynchronization):
 
 @variant("wait")
 class WaitFor(CommandSynchronization):
-    tokens: tuple[TokenId, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tokens", typed_tuple(self.tokens, TokenId, "command wait tokens"))
-        if not self.tokens or len(set(self.tokens)) != len(self.tokens):
-            raise ValueError("command wait tokens must be non-empty and unique")
+    tokens: SynchronizationTokens
 
 
 @variant("signal")
 class SignalAfter(CommandSynchronization):
-    tokens: tuple[TokenId, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tokens", typed_tuple(self.tokens, TokenId, "command signal tokens"))
-        if not self.tokens or len(set(self.tokens)) != len(self.tokens):
-            raise ValueError("command signal tokens must be non-empty and unique")
+    tokens: SynchronizationTokens
 
 
 @variant("wait-and-signal")
 class WaitAndSignal(CommandSynchronization):
-    wait: tuple[TokenId, ...]
-    signal: tuple[TokenId, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "wait", typed_tuple(self.wait, TokenId, "command wait tokens"))
-        object.__setattr__(self, "signal", typed_tuple(self.signal, TokenId, "command signal tokens"))
-        if (
-            not self.wait
-            or not self.signal
-            or len(set(self.wait)) != len(self.wait)
-            or len(set(self.signal)) != len(self.signal)
-        ):
-            raise ValueError("wait-and-signal token sets must be non-empty and individually unique")
+    wait: SynchronizationTokens
+    signal: SynchronizationTokens
 
 
 CommandSynchronizationVariant: TypeAlias = Unsynchronized | WaitFor | SignalAfter | WaitAndSignal
@@ -320,17 +247,6 @@ class ConcreteCommand:
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        require_instance(self.id, CommandId, "command ID")
-        require_adt_variant(self.body, CommandBody, "command body")
-        require_adt_variant(self.synchronization, CommandSynchronization, "command synchronization")
-        require_instance(self.lineage, Lineage, "command lineage")
-        object.__setattr__(
-            self,
-            "dependencies",
-            typed_tuple(self.dependencies, CommandId, "command dependencies"),
-        )
-        object.__setattr__(self, "buffers", typed_tuple(self.buffers, BufferUse, "command buffers"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
         if isinstance(self.body, (Signal, Wait)) and not isinstance(self.synchronization, Unsynchronized):
             raise ValueError("standalone signal/wait bodies cannot carry an additional synchronization clause")
 
@@ -388,13 +304,7 @@ class QueueIssueOrder:
     """Correctness-significant issue order for one target queue."""
 
     queue: QueueId
-    commands: tuple[CommandId, ...]
-
-    def __post_init__(self) -> None:
-        require_instance(self.queue, QueueId, "issue-order queue")
-        object.__setattr__(self, "commands", typed_tuple(self.commands, CommandId, "issue-order commands"))
-        if len(set(self.commands)) != len(self.commands):
-            raise ValueError("one queue issue order cannot contain duplicate commands")
+    commands: Annotated[tuple[CommandId, ...], ValueConstraint.UNIQUE_ITEMS]
 
 
 @record("blueprinting.ir.concrete-plan.queue-schedule-extension")
@@ -404,7 +314,6 @@ class QueueScheduleExtension(TargetScheduleExtension):
     orders: tuple[QueueIssueOrder, ...]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "orders", typed_tuple(self.orders, QueueIssueOrder, "queue issue orders"))
         if len({item.queue for item in self.orders}) != len(self.orders):
             raise ValueError("queue schedule must define each queue at most once")
 
@@ -413,16 +322,9 @@ class QueueScheduleExtension(TargetScheduleExtension):
 class IssueSlot:
     """Exact cycle and slot assigned to a command by a slot target."""
 
-    cycle: int
-    slot: int
+    cycle: NonNegativeInt
+    slot: NonNegativeInt
     command: CommandId
-
-    def __post_init__(self) -> None:
-        for name in ("cycle", "slot"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"issue {name} must be a non-negative integer")
-        require_instance(self.command, CommandId, "issue-slot command")
 
 
 @record("blueprinting.ir.concrete-plan.route-constraint")
@@ -432,16 +334,11 @@ class RouteConstraint:
     command: CommandId
     source_device: DeviceId
     destination_device: DeviceId
-    channel: str
+    channel: NonEmptyText
 
     def __post_init__(self) -> None:
-        require_instance(self.command, CommandId, "route command")
-        require_instance(self.source_device, DeviceId, "route source device")
-        require_instance(self.destination_device, DeviceId, "route destination device")
         if self.source_device == self.destination_device:
             raise ValueError("route endpoints must differ")
-        if not isinstance(self.channel, str) or not self.channel:
-            raise ValueError("route channel must not be empty")
 
 
 @record("blueprinting.ir.concrete-plan.slot-dataflow-extension")
@@ -452,8 +349,6 @@ class SlotDataflowExtension(TargetScheduleExtension):
     routes: tuple[RouteConstraint, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "issue_slots", typed_tuple(self.issue_slots, IssueSlot, "issue slots"))
-        object.__setattr__(self, "routes", typed_tuple(self.routes, RouteConstraint, "route constraints"))
         positions = tuple((item.cycle, item.slot) for item in self.issue_slots)
         if len(set(positions)) != len(positions):
             raise ValueError("issue cycle/slot pairs must be unique")
@@ -503,38 +398,6 @@ class ConcretePlanIR(CanonicalIRMixin):
     header: IRHeader = field(
         default_factory=lambda: make_header(ConcretePlanIR.SCHEMA_NAME, ConcretePlanIR.SCHEMA_VERSION)
     )
-
-    def __post_init__(self) -> None:
-        require_instance(self.header, IRHeader, "concrete header")
-        identity_fields = (
-            "name",
-            "source_portable_digest",
-            "target_fingerprint",
-            "deployment_fingerprint",
-            "abi_revision",
-            "evidence_revision",
-            "planner_revision",
-        )
-        if any(not isinstance(getattr(self, field_name), str) for field_name in identity_fields):
-            raise TypeError("concrete plan identity fields must be strings")
-        object.__setattr__(self, "devices", typed_tuple(self.devices, DevicePlacement, "concrete devices"))
-        object.__setattr__(self, "queues", typed_tuple(self.queues, QueueSpec, "concrete queues"))
-        object.__setattr__(
-            self,
-            "memory_regions",
-            typed_tuple(self.memory_regions, MemoryRegion, "concrete memory regions"),
-        )
-        object.__setattr__(self, "buffers", typed_tuple(self.buffers, BufferBinding, "concrete buffers"))
-        object.__setattr__(self, "commands", typed_tuple(self.commands, ConcreteCommand, "concrete commands"))
-        require_instance(self.target_extension, TargetScheduleExtension, "concrete target extension")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if (
-            not self.header.parent_digests
-            and self.header.schema_name == self.SCHEMA_NAME
-            and self.header.schema_version == self.SCHEMA_VERSION
-            and is_content_digest(self.source_portable_digest)
-        ):
-            object.__setattr__(self, "header", self.header.with_parents(self.source_portable_digest))
 
     def diagnostics(self) -> VerificationReport:
         bag = DiagnosticBag()

@@ -8,10 +8,10 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, ClassVar, TypeVar
+from typing import Annotated, Any, ClassVar, TypeAlias, TypeVar
 
-from blueprinting.schema.authoring import record
-from blueprinting.schema.codec import canonical_dumps, enum_type
+from blueprinting.schema.authoring import NonEmptyText, ValueConstraint, enum, record
+from blueprinting.schema.codec import canonical_dumps
 
 from .errors import InvalidIdError
 
@@ -98,7 +98,7 @@ class TokenId(StableId):
     PREFIX: ClassVar[str] = "token"
 
 
-@enum_type("blueprinting.ir.lineage-kind")
+@enum("blueprinting.ir.lineage-kind")
 class LineageKind(Enum):
     ROOT = "root"
     PRESERVED = "preserved"
@@ -109,24 +109,21 @@ class LineageKind(Enum):
     GENERATED = "generated"
 
 
+LineageSources: TypeAlias = Annotated[
+    tuple[StableId, ...],
+    ValueConstraint.UNIQUE_ITEMS,
+]
+
+
 @record("blueprinting.ir.lineage")
 class Lineage:
     """Typed provenance from source entities to one lowering product."""
 
     kind: LineageKind
-    transform: str
-    sources: tuple[StableId, ...] = ()
+    transform: NonEmptyText
+    sources: LineageSources = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "sources", tuple(self.sources))
-        if not isinstance(self.kind, LineageKind):
-            raise TypeError("lineage kind must be LineageKind")
-        if any(not isinstance(source, StableId) for source in self.sources):
-            raise TypeError("lineage sources must be stable synthesis IDs")
-        if not self.transform:
-            raise ValueError("lineage transform must not be empty")
-        if len(set(self.sources)) != len(self.sources):
-            raise ValueError("lineage sources must be unique")
         if self.kind is LineageKind.ROOT and self.sources:
             raise ValueError("root lineage cannot have source IDs")
 

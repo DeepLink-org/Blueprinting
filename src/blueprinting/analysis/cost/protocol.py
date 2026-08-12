@@ -7,14 +7,27 @@ resolver selects exactly one answer and records every attempted provider.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from blueprinting.schema.authoring import adt, is_adt_variant, seal_adt, variant
-from blueprinting.schema.codec import content_digest, enum_type, record_type
+from blueprinting.schema.authoring import (
+    CanonicalLowerText,
+    NonBlankText,
+    NonEmptyText,
+    NonNegativeFiniteNumber,
+    NonNegativeInt,
+    PositiveInt,
+    UnitIntervalNumber,
+    adt,
+    enum,
+    is_adt_variant,
+    record,
+    seal_adt,
+    variant,
+)
+from blueprinting.schema.codec import content_digest
 from blueprinting.schema.diagnostics import Diagnostic, DiagnosticSet
 from blueprinting.schema.frozen import FrozenDict
 from blueprinting.schema.result import Checked, Err, Ok
@@ -34,13 +47,13 @@ class InvalidCostEvidenceError(CostModelError):
     """Raised when available evidence is ambiguous or internally invalid."""
 
 
-@enum_type("blueprinting.analysis.cost.subject")
+@enum("blueprinting.analysis.cost.subject")
 class CostSubject(Enum):
     OPERATOR = "operator"
     COMMUNICATION = "communication"
 
 
-@enum_type("blueprinting.analysis.cost.method")
+@enum("blueprinting.analysis.cost.method")
 class EstimateMethod(Enum):
     MEASURED = "measured"
     SIMULATED = "simulated"
@@ -49,7 +62,7 @@ class EstimateMethod(Enum):
     VENDOR_MODEL = "vendor_model"
 
 
-@enum_type("blueprinting.analysis.cost.match")
+@enum("blueprinting.analysis.cost.match")
 class EstimateMatch(Enum):
     EXACT_SELECTOR = "exact_selector"
     INTERPOLATED = "interpolated"
@@ -82,23 +95,7 @@ _RESERVED_DIMENSIONS = frozenset(
 )
 
 
-def _required_text(value: str, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{name} must be a non-empty string")
-
-
-def _optional_text(value: str, name: str) -> None:
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be a string")
-
-
-def _non_negative_integer(value: int, name: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{name} must be a non-negative integer")
-
-
-@record_type("blueprinting.analysis.cost.query")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.cost.query")
 class CostQuery:
     """One fully identified task-cost question.
 
@@ -109,15 +106,15 @@ class CostQuery:
     """
 
     subject: CostSubject
-    operation: str
-    hardware: str
-    datatype: str
-    operations: int = 0
-    read_bytes: int = 0
-    write_bytes: int = 0
-    message_bytes: int = 0
-    participants: int = 1
-    network_tier: int = 0
+    operation: NonBlankText
+    hardware: NonBlankText
+    datatype: NonBlankText
+    operations: NonNegativeInt = 0
+    read_bytes: NonNegativeInt = 0
+    write_bytes: NonNegativeInt = 0
+    message_bytes: NonNegativeInt = 0
+    participants: PositiveInt = 1
+    network_tier: NonNegativeInt = 0
     engine: str = ""
     hardware_revision: str = ""
     implementation: str = ""
@@ -129,26 +126,6 @@ class CostQuery:
     dimensions: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.subject, CostSubject):
-            raise TypeError("subject must be CostSubject")
-        for name in ("operation", "hardware", "datatype"):
-            _required_text(getattr(self, name), name)
-        for name in (
-            "engine",
-            "hardware_revision",
-            "implementation",
-            "implementation_revision",
-            "runtime",
-            "runtime_revision",
-            "topology",
-            "power_mode",
-        ):
-            _optional_text(getattr(self, name), name)
-        for name in ("operations", "read_bytes", "write_bytes", "message_bytes", "network_tier"):
-            _non_negative_integer(getattr(self, name), name)
-        if isinstance(self.participants, bool) or not isinstance(self.participants, int) or self.participants <= 0:
-            raise ValueError("participants must be a positive integer")
-        object.__setattr__(self, "dimensions", FrozenDict(self.dimensions))
         collisions = _RESERVED_DIMENSIONS.intersection(self.dimensions)
         if collisions:
             raise ValueError(f"dimensions use reserved names: {', '.join(sorted(collisions))}")
@@ -188,8 +165,7 @@ class CostQuery:
         return FrozenDict(context)
 
 
-@record_type("blueprinting.analysis.cost.query-context")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.cost.query-context")
 class CostQueryContext:
     """Deployment/implementation facts supplied after portable planning.
 
@@ -197,31 +173,14 @@ class CostQueryContext:
     example ``gemm``) is used as a fallback when no semantic key is present.
     """
 
-    runtime: str = ""
+    runtime: CanonicalLowerText = ""
     runtime_revision: str = ""
     topology: str = ""
     power_mode: str = ""
-    implementations: FrozenDict = field(default_factory=FrozenDict)
-    implementation_revisions: FrozenDict = field(default_factory=FrozenDict)
+    implementations: FrozenDict[NonEmptyText] = field(default_factory=FrozenDict)
+    implementation_revisions: FrozenDict[NonEmptyText] = field(default_factory=FrozenDict)
     dimensions: FrozenDict = field(default_factory=FrozenDict)
-    operation_dimensions: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        for name in ("runtime", "runtime_revision", "topology", "power_mode"):
-            _optional_text(getattr(self, name), name)
-        if self.runtime:
-            object.__setattr__(self, "runtime", self.runtime.strip().lower())
-        for name in ("implementations", "implementation_revisions", "dimensions", "operation_dimensions"):
-            object.__setattr__(self, name, FrozenDict(getattr(self, name)))
-        for name, values in (
-            ("implementations", self.implementations),
-            ("implementation_revisions", self.implementation_revisions),
-        ):
-            if any(not isinstance(value, str) or not value for value in values.values()):
-                raise ValueError(f"{name} values must be non-empty strings")
-        for operation, dimensions in self.operation_dimensions.items():
-            if not isinstance(dimensions, Mapping):
-                raise TypeError(f"operation dimensions for {operation!r} must be a mapping")
+    operation_dimensions: FrozenDict[Mapping[str, Any]] = field(default_factory=FrozenDict)
 
     def implementation_for(self, semantic_operation: str, operation: str) -> str:
         value = self.implementations.get(semantic_operation, self.implementations.get(operation, ""))
@@ -249,30 +208,15 @@ class CostQueryContext:
         return FrozenDict(result)
 
 
-@record_type("blueprinting.analysis.cost.uncertainty")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.cost.uncertainty")
 class EstimateUncertainty:
-    sample_count: int = 0
-    standard_deviation_seconds: float | None = None
-    lower_bound_seconds: float | None = None
-    upper_bound_seconds: float | None = None
-    confidence: float | None = None
+    sample_count: NonNegativeInt = 0
+    standard_deviation_seconds: NonNegativeFiniteNumber | None = None
+    lower_bound_seconds: NonNegativeFiniteNumber | None = None
+    upper_bound_seconds: NonNegativeFiniteNumber | None = None
+    confidence: UnitIntervalNumber | None = None
 
     def __post_init__(self) -> None:
-        _non_negative_integer(self.sample_count, "sample_count")
-        for name in ("standard_deviation_seconds", "lower_bound_seconds", "upper_bound_seconds"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
-            ):
-                raise ValueError(f"{name} must be finite and non-negative when present")
-        if self.confidence is not None and (
-            isinstance(self.confidence, bool)
-            or not isinstance(self.confidence, (int, float))
-            or not math.isfinite(self.confidence)
-            or not 0 <= self.confidence <= 1
-        ):
-            raise ValueError("confidence must be in [0, 1] when present")
         if (
             self.lower_bound_seconds is not None
             and self.upper_bound_seconds is not None
@@ -281,45 +225,19 @@ class EstimateUncertainty:
             raise ValueError("uncertainty lower bound cannot exceed upper bound")
 
 
-@record_type("blueprinting.analysis.cost.estimate")
-@dataclass(frozen=True)
+@record("blueprinting.analysis.cost.estimate")
 class CostEstimate:
-    seconds: float
-    provider: str
-    provider_revision: str
-    source_revision: str
+    seconds: NonNegativeFiniteNumber
+    provider: NonBlankText
+    provider_revision: NonBlankText
+    source_revision: NonBlankText
     method: EstimateMethod
     match: EstimateMatch
     uncertainty: EstimateUncertainty = field(default_factory=EstimateUncertainty)
-    raw_record_ids: tuple[str, ...] = ()
+    raw_record_ids: tuple[NonEmptyText, ...] = ()
     validity_domain: FrozenDict = field(default_factory=FrozenDict)
     components: FrozenDict = field(default_factory=FrozenDict)
-    assumptions: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.seconds, bool)
-            or not isinstance(self.seconds, (int, float))
-            or not math.isfinite(self.seconds)
-            or self.seconds < 0
-        ):
-            raise ValueError("estimate seconds must be finite and non-negative")
-        for name in ("provider", "provider_revision", "source_revision"):
-            _required_text(getattr(self, name), name)
-        if not isinstance(self.method, EstimateMethod):
-            raise TypeError("method must be EstimateMethod")
-        if not isinstance(self.match, EstimateMatch):
-            raise TypeError("match must be EstimateMatch")
-        if not isinstance(self.uncertainty, EstimateUncertainty):
-            raise TypeError("uncertainty must be EstimateUncertainty")
-        object.__setattr__(self, "raw_record_ids", tuple(self.raw_record_ids))
-        object.__setattr__(self, "validity_domain", FrozenDict(self.validity_domain))
-        object.__setattr__(self, "components", FrozenDict(self.components))
-        object.__setattr__(self, "assumptions", tuple(self.assumptions))
-        if any(not isinstance(item, str) or not item for item in self.raw_record_ids):
-            raise ValueError("raw record IDs must be non-empty strings")
-        if any(not isinstance(item, str) or not item for item in self.assumptions):
-            raise ValueError("assumptions must be non-empty strings")
+    assumptions: tuple[NonEmptyText, ...] = ()
 
 
 @adt(wire="blueprinting.analysis.cost.support")
@@ -341,30 +259,18 @@ class CostSupport:
 
 @variant("available")
 class CostAvailable(CostSupport):
-    reason: str
-
-    def __post_init__(self) -> None:
-        _required_text(self.reason, "support reason")
+    reason: NonBlankText
 
 
 @variant("unavailable")
 class CostUnavailable(CostSupport):
-    reason: str
-    missing_fields: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _required_text(self.reason, "support reason")
-        object.__setattr__(self, "missing_fields", tuple(self.missing_fields))
-        if any(not isinstance(item, str) or not item for item in self.missing_fields):
-            raise ValueError("missing fields must be non-empty strings")
+    reason: NonBlankText
+    missing_fields: tuple[NonEmptyText, ...] = ()
 
 
 @variant("invalid")
 class InvalidCostSupport(CostSupport):
-    reason: str
-
-    def __post_init__(self) -> None:
-        _required_text(self.reason, "support reason")
+    reason: NonBlankText
 
 
 CostSupportVariant = CostAvailable | CostUnavailable | InvalidCostSupport
@@ -404,7 +310,8 @@ class CostResolver:
 
     def __init__(self, providers: tuple[CostProvider, ...], *, policy_name: str = "ordered-first-supported-v0") -> None:
         self._providers = tuple(providers)
-        _required_text(policy_name, "policy_name")
+        if not isinstance(policy_name, str) or not policy_name.strip():
+            raise ValueError("policy_name must be a non-empty string")
         identities = tuple((provider.name, provider.revision) for provider in self._providers)
         if len(set(identities)) != len(identities):
             raise ValueError("resolver providers must have unique name/revision identities")

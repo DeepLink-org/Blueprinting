@@ -45,6 +45,7 @@ from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR, req
 from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
 from blueprinting.workload import (
+    TransformerDataType,
     TransformerInferenceRequestSpec,
     TransformerModelSpec,
 )
@@ -352,7 +353,7 @@ class InferenceAnalysisService:
         model: TransformerModelSpec,
         mapping: TransformerInferenceMappingSpec,
         network_binding: NetworkTierBinding,
-        datatype: str,
+        datatype: TransformerDataType,
         hardware: SystemProfile,
         draft: InferenceAnalysisDraft,
         *,

@@ -11,7 +11,24 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from blueprinting.workload import TransformerDataType, require_transformer_data_type
+
 from ..synthesizer.bindings import InferencePhase
+
+_GEMM_PRIMITIVES = frozenset(
+    {
+        "attention_pre_projection",
+        "attention_post_projection",
+        "mlp_up_projection",
+        "mlp_down_projection",
+    }
+)
+
+
+def inference_cost_operation(primitive: str) -> str:
+    """Map one Transformer inference primitive to the shared evidence operation taxonomy."""
+
+    return "gemm" if primitive in _GEMM_PRIMITIVES else primitive
 
 
 @dataclass(frozen=True)
@@ -31,15 +48,16 @@ class InferenceEvidenceQuery:
     query_tokens: int
     context_tokens: int
     tensor_parallel: int
-    datatype: str
+    datatype: TransformerDataType
 
     def __post_init__(self) -> None:
         if not isinstance(self.phase, InferencePhase):
             raise TypeError("phase must be InferencePhase")
-        for field_name in ("primitive", "source_layer", "model_name", "hardware_name", "datatype"):
+        for field_name in ("primitive", "source_layer", "model_name", "hardware_name"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must not be empty")
+        require_transformer_data_type(self.datatype)
         for field_name in (
             "model_sequence_length",
             "hidden_size",

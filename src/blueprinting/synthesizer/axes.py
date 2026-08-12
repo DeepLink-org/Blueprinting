@@ -2,10 +2,10 @@
 
 from enum import Enum
 
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import enum
 
 
-@enum_type("blueprinting.binding.axis")
+@enum("blueprinting.binding.axis")
 class BindingAxis(Enum):
     WORKLOAD = "workload"
     STRATEGY = "strategy"

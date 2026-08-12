@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import Enum
-from typing import Any, cast
+from typing import Any
 
 from typing_extensions import assert_never
 
-from blueprinting.schema.authoring import adt, record, require_adt_variant, seal_adt, variant
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import (
+    AtLeastTwoInt,
+    PositiveInt,
+    adt,
+    enum,
+    record,
+    seal_adt,
+    variant,
+)
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
-
-
-def _positive_integer(value: Any, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return cast(int, value)
-
 
 _MISSING = object()
 
@@ -34,14 +34,14 @@ def _field(data: Mapping[str, Any], canonical: str, legacy: str, default: Any = 
     return default
 
 
-@enum_type("blueprinting.mapping.recompute-policy")
+@enum("blueprinting.mapping.recompute-policy")
 class RecomputePolicy(Enum):
     NONE = "none"
     ATTENTION = "attn_only"
     FULL = "full"
 
 
-@enum_type("blueprinting.mapping.tensor-parallel-communication")
+@enum("blueprinting.mapping.tensor-parallel-communication")
 class TensorParallelCommunication(Enum):
     ALL_REDUCE = "ar"
     REDUCE_SCATTER_ALL_GATHER = "rs_ag"
@@ -66,12 +66,7 @@ class OneForwardOneBackward(PipelineSchedule):
 class InterleavedOneForwardOneBackward(PipelineSchedule):
     """Megatron-style interleaved 1F1B with virtual pipeline stages."""
 
-    virtual_stages: int
-
-    def __post_init__(self) -> None:
-        _positive_integer(self.virtual_stages, "virtual_stages")
-        if self.virtual_stages == 1:
-            raise ValueError("interleaved 1F1B requires more than one virtual stage")
+    virtual_stages: AtLeastTwoInt
 
 
 @variant("forward-only")
@@ -85,13 +80,8 @@ seal_adt(PipelineSchedule, PipelineScheduleVariant)
 
 @record("blueprinting.mapping.tensor-parallel")
 class TensorParallel:
-    degree: int
+    degree: PositiveInt
     communication: TensorParallelCommunication
-
-    def __post_init__(self) -> None:
-        _positive_integer(self.degree, "tensor_parallel.degree")
-        if not isinstance(self.communication, TensorParallelCommunication):
-            raise TypeError("tensor_parallel.communication must be TensorParallelCommunication")
 
     @property
     def sequence_parallel(self) -> bool:
@@ -100,12 +90,10 @@ class TensorParallel:
 
 @record("blueprinting.mapping.pipeline-parallel")
 class PipelineParallel:
-    degree: int
+    degree: PositiveInt
     schedule: PipelineScheduleVariant
 
     def __post_init__(self) -> None:
-        _positive_integer(self.degree, "pipeline_parallel.degree")
-        require_adt_variant(self.schedule, PipelineSchedule, "pipeline_parallel.schedule")
         if self.degree == 1 and not isinstance(self.schedule, SingleStage):
             raise ValueError("pipeline degree one requires SingleStage")
         if self.degree > 1 and isinstance(self.schedule, SingleStage):
@@ -114,21 +102,17 @@ class PipelineParallel:
 
 @record("blueprinting.mapping.data-parallel")
 class DataParallel:
-    degree: int
+    degree: PositiveInt
     optimizer_sharding: bool = False
 
     def __post_init__(self) -> None:
-        _positive_integer(self.degree, "data_parallel.degree")
         if self.optimizer_sharding and self.degree == 1:
             raise ValueError("optimizer sharding requires data parallel degree greater than one")
 
 
 @record("blueprinting.mapping.replica-parallel")
 class ReplicaParallel:
-    degree: int
-
-    def __post_init__(self) -> None:
-        _positive_integer(self.degree, "replica_parallel.degree")
+    degree: PositiveInt
 
 
 @record("blueprinting.mapping.transformer-training-strategy")
@@ -139,14 +123,6 @@ class TransformerTrainingParallelism:
     recompute: RecomputePolicy
 
     def __post_init__(self) -> None:
-        if not isinstance(self.tensor, TensorParallel):
-            raise TypeError("training tensor parallelism must be TensorParallel")
-        if not isinstance(self.pipeline, PipelineParallel):
-            raise TypeError("training pipeline parallelism must be PipelineParallel")
-        if not isinstance(self.data, DataParallel):
-            raise TypeError("training data parallelism must be DataParallel")
-        if not isinstance(self.recompute, RecomputePolicy):
-            raise TypeError("training recompute policy must be RecomputePolicy")
         if isinstance(self.pipeline.schedule, ForwardOnly):
             raise ValueError("forward-only schedule is invalid for training")
 
@@ -158,12 +134,6 @@ class TransformerInferenceParallelism:
     replicas: ReplicaParallel
 
     def __post_init__(self) -> None:
-        if not isinstance(self.tensor, TensorParallel):
-            raise TypeError("inference tensor parallelism must be TensorParallel")
-        if not isinstance(self.pipeline, PipelineParallel):
-            raise TypeError("inference pipeline parallelism must be PipelineParallel")
-        if not isinstance(self.replicas, ReplicaParallel):
-            raise TypeError("inference replicas must be ReplicaParallel")
         if not isinstance(self.pipeline.schedule, (SingleStage, ForwardOnly)):
             raise ValueError("inference requires a single-stage or forward-only schedule")
 
@@ -194,10 +164,6 @@ class TransformerTrainingMappingSpec:
     parallelism: TransformerTrainingParallelism
     fused_activation: bool = False
     sequence_parallel_all_gather_redo: bool = False
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.parallelism, TransformerTrainingParallelism):
-            raise TypeError("parallelism must be TransformerTrainingParallelism")
 
     @property
     def world_size(self) -> int:
@@ -309,10 +275,6 @@ class TransformerInferenceMappingSpec:
     """Target-neutral logical mapping for an inference replica."""
 
     parallelism: TransformerInferenceParallelism
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.parallelism, TransformerInferenceParallelism):
-            raise TypeError("parallelism must be TransformerInferenceParallelism")
 
     @property
     def world_size(self) -> int:

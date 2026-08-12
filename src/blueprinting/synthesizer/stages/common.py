@@ -13,65 +13,49 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import field, replace
 from enum import Enum
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeAlias, TypeVar
 
-from blueprinting.schema.authoring import is_adt_variant, record
-from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest, enum_type
+from blueprinting.schema.authoring import (
+    ContentDigest,
+    NonEmptyText,
+    NonNegativeInt,
+    PositiveFiniteFloat,
+    PositiveInt,
+    StableName,
+    enum,
+    is_adt_variant,
+    record,
+)
+from blueprinting.schema.codec import canonical_dumps, canonical_loads, content_digest
 from blueprinting.schema.diagnostics import Diagnostic, DiagnosticSet
 from blueprinting.schema.errors import SerializationError
-from blueprinting.schema.frozen import FrozenDict, freeze
+from blueprinting.schema.frozen import FrozenDict
 from blueprinting.schema.result import Checked, Err, Ok, checked
 
 from ..errors import DiagnosticBag, IRVerificationError, VerificationReport
-from ..expr import Scalar, ScalarExpr, Symbol
+from ..expr import Scalar, ScalarExpr, ScalarExprVariant, Symbol
 from ..ids import StableId
 
-_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{40}$")
+_KNOWN_TARGET_DIALECTS = frozenset({"cuda", "lpu", "nccl", "rccl", "rocm"})
 TYPED_SEMANTICS_FEATURE = "typed-semantics"
 REQUIRED_IR_FEATURES = frozenset({TYPED_SEMANTICS_FEATURE})
 IR = TypeVar("IR", bound="CanonicalIRMixin")
 Entity = TypeVar("Entity")
+TensorDimension: TypeAlias = PositiveInt | PositiveFiniteFloat | Symbol | ScalarExprVariant
 
 
 def is_content_digest(value: str) -> bool:
     return isinstance(value, str) and _DIGEST_RE.fullmatch(value) is not None
 
 
-def frozen_map(value: Any) -> FrozenDict:
-    """Copy an extension mapping into the synthesizer's immutable value domain."""
-
-    result = freeze(value)
-    if not isinstance(result, FrozenDict):
-        raise TypeError("expected a mapping")
-    return result
-
-
-def require_instance(value: Any, expected: type[Any], field_name: str) -> None:
-    if not isinstance(value, expected):
-        raise TypeError(f"{field_name} must be {expected.__name__}")
-
-
-def typed_tuple(value: Iterable[Any], expected: type[Any], field_name: str) -> tuple[Any, ...]:
-    result = tuple(value)
-    if any(not isinstance(item, expected) for item in result):
-        raise TypeError(f"{field_name} must contain only {expected.__name__} values")
-    return result
-
-
 @record("blueprinting.ir.schema-version", order=True)
 class SchemaVersion:
     """Semantic version of one serialized IR schema."""
 
-    major: int
-    minor: int = 0
-    patch: int = 0
-
-    def __post_init__(self) -> None:
-        for name in ("major", "minor", "patch"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"schema {name} must be a non-negative integer")
+    major: NonNegativeInt
+    minor: NonNegativeInt = 0
+    patch: NonNegativeInt = 0
 
     @classmethod
     def parse(cls, value: str) -> SchemaVersion:
@@ -88,28 +72,11 @@ class SchemaVersion:
 class IRHeader:
     """Version and provenance header embedded in every canonical IR."""
 
-    schema_name: str
+    schema_name: StableName
     schema_version: SchemaVersion
-    producer_version: str = "0.0.0"
-    feature_set: frozenset[str] = frozenset()
-    parent_digests: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if isinstance(self.feature_set, (str, bytes)):
-            raise TypeError("feature_set must be an iterable of feature names")
-        object.__setattr__(self, "feature_set", frozenset(self.feature_set))
-        object.__setattr__(self, "parent_digests", tuple(self.parent_digests))
-        require_instance(self.schema_version, SchemaVersion, "schema_version")
-        if not isinstance(self.schema_name, str):
-            raise TypeError("schema_name must be a string")
-        if _NAME_RE.fullmatch(self.schema_name) is None:
-            raise ValueError(f"invalid schema name: {self.schema_name!r}")
-        if not isinstance(self.producer_version, str) or not self.producer_version:
-            raise ValueError("producer_version must not be empty")
-        if any(not isinstance(feature, str) or _NAME_RE.fullmatch(feature) is None for feature in self.feature_set):
-            raise ValueError("IR feature names must be stable identifiers")
-        if any(not is_content_digest(item) for item in self.parent_digests):
-            raise ValueError("parent_digests must contain canonical 160-bit hex digests")
+    producer_version: NonEmptyText = "0.0.0"
+    feature_set: frozenset[StableName] = frozenset()
+    parent_digests: tuple[ContentDigest, ...] = ()
 
     def with_parents(self, *digests: str) -> IRHeader:
         return replace(self, parent_digests=tuple(digests))
@@ -136,25 +103,15 @@ def make_header(
 class IRSnapshot:
     """Self-checking persistence envelope for a canonical IR value."""
 
-    schema_name: str
+    schema_name: StableName
     schema_version: SchemaVersion
-    producer_version: str
-    feature_set: frozenset[str]
-    content_digest: str
+    producer_version: NonEmptyText
+    feature_set: frozenset[StableName]
+    content_digest: ContentDigest
     payload: Any
 
-    def __post_init__(self) -> None:
-        if isinstance(self.feature_set, (str, bytes)):
-            raise TypeError("snapshot feature_set must be an iterable of feature names")
-        object.__setattr__(self, "feature_set", frozenset(self.feature_set))
-        require_instance(self.schema_version, SchemaVersion, "snapshot schema_version")
-        if not isinstance(self.schema_name, str) or not isinstance(self.producer_version, str):
-            raise TypeError("snapshot schema and producer names must be strings")
-        if not is_content_digest(self.content_digest):
-            raise ValueError("snapshot content_digest must be a canonical 160-bit hex digest")
 
-
-@enum_type("blueprinting.ir.effect-kind")
+@enum("blueprinting.ir.effect-kind")
 class EffectKind(Enum):
     READ = "read"
     WRITE = "write"
@@ -166,26 +123,15 @@ class EffectKind(Enum):
 @record("blueprinting.ir.effect")
 class Effect:
     kind: EffectKind
-    resource: str
-
-    def __post_init__(self) -> None:
-        require_instance(self.kind, EffectKind, "effect kind")
-        if not self.resource:
-            raise ValueError("effect resource must not be empty")
+    resource: NonEmptyText
 
 
 @record("blueprinting.ir.operation-name", order=True)
 class OperationName:
     """Structured operation identity; dialect is never inferred from a string."""
 
-    dialect: str
-    name: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.dialect, str) or not isinstance(self.name, str):
-            raise TypeError("operation dialect and name must be strings")
-        if _NAME_RE.fullmatch(self.dialect) is None or _NAME_RE.fullmatch(self.name) is None:
-            raise ValueError(f"invalid operation name: {self.dialect}.{self.name}")
+    dialect: StableName
+    name: StableName
 
     @classmethod
     def parse(cls, value: str) -> OperationName:
@@ -198,33 +144,22 @@ class OperationName:
         return f"{self.dialect}.{self.name}"
 
 
+def is_known_target_dialect(operation: OperationName) -> bool:
+    """Recognize built-in target dialects forbidden before target binding."""
+
+    return operation.dialect.lower() in _KNOWN_TARGET_DIALECTS
+
+
 @record("blueprinting.ir.tensor-type")
 class TensorType:
     """Target-neutral logical tensor type."""
 
-    shape: tuple[Scalar, ...]
-    dtype: str
+    shape: tuple[TensorDimension, ...]
+    dtype: StableName
     layout: tuple[int, ...] | None = None
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "shape", tuple(self.shape))
-        if self.layout is not None:
-            object.__setattr__(self, "layout", tuple(self.layout))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if not isinstance(self.dtype, str):
-            raise TypeError("tensor dtype must be a string")
-        if _NAME_RE.fullmatch(self.dtype) is None:
-            raise ValueError(f"invalid dtype name: {self.dtype!r}")
-        for dimension in self.shape:
-            if isinstance(dimension, bool) or not (
-                isinstance(dimension, (int, float, Symbol)) or is_adt_variant(dimension, ScalarExpr)
-            ):
-                raise TypeError(f"invalid tensor dimension: {dimension!r}")
-            if isinstance(dimension, float) and not math.isfinite(dimension):
-                raise ValueError("concrete tensor dimensions must be finite")
-            if isinstance(dimension, (int, float)) and dimension <= 0:
-                raise ValueError("concrete tensor dimensions must be greater than zero")
         if self.layout is not None and tuple(sorted(self.layout)) != tuple(range(len(self.shape))):
             raise ValueError("tensor layout must be a permutation of shape dimensions")
 

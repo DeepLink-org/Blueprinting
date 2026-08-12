@@ -31,7 +31,7 @@ from blueprinting.synthesizer.stages.distributed.passes import DistributeTransfo
 from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR
 from blueprinting.synthesizer.stages.portable_plan.passes import PlanTransformerInferencePass
 from blueprinting.system import SystemProfile
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, require_transformer_data_type
 
 
 @dataclass(frozen=True)
@@ -169,7 +169,7 @@ class VidurExperimentCase:
     model: TransformerModelSpec
     mapping: TransformerInferenceMappingSpec
     network_binding: NetworkTierBinding
-    datatype: str
+    datatype: TransformerDataType
     hardware: SystemProfile
     phase: InferencePhase
     batch_size: int
@@ -187,8 +187,7 @@ class VidurExperimentCase:
         self.mapping.validate_model(self.model)
         if self.context_tokens > self.model.sequence_length:
             raise ValueError("context_tokens cannot exceed model sequence_length")
-        if self.datatype not in {"float8", "float16", "bfloat16", "float32"}:
-            raise ValueError(f"unsupported datatype: {self.datatype!r}")
+        require_transformer_data_type(self.datatype)
         if self.hardware.datatype != self.datatype:
             raise ValueError("hardware and workload datatype must match")
 

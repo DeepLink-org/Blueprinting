@@ -69,6 +69,14 @@ def _provenance(*, digest: str = "fixture-data") -> EvidenceProvenance:
     )
 
 
+def test_cost_query_context_uses_typed_canonical_maps() -> None:
+    with pytest.raises(TypeError, match="CostQueryContext.implementations"):
+        CostQueryContext(implementations=FrozenDict({"gemm": ""}))
+
+    with pytest.raises(TypeError, match="CostQueryContext.runtime"):
+        CostQueryContext(runtime=" VLLM ")
+
+
 def test_roofline_exposes_components_and_uses_max_bound():
     hardware = _hardware()
     provider = RooflineCostProvider(

@@ -11,11 +11,21 @@ import math
 from collections.abc import Mapping
 from enum import Enum
 from numbers import Real
-from typing import Any, ClassVar, TypeAlias, cast
+from typing import Annotated, Any, ClassVar, TypeAlias, cast
 
 from typing_extensions import assert_never
 
-from blueprinting.schema.authoring import VariantSpec, adt, is_adt_variant, record, seal_adt, variant
+from blueprinting.schema.authoring import (
+    FiniteFloat,
+    SymbolName,
+    ValueConstraint,
+    VariantSpec,
+    adt,
+    is_adt_variant,
+    record,
+    seal_adt,
+    variant,
+)
 
 from .axes import BindingAxis
 from .errors import BindingError
@@ -63,16 +73,10 @@ class _ExpressionOperators:
 
 @record("blueprinting.expression.symbol")
 class Symbol(_ExpressionOperators):
-    name: str
+    name: SymbolName
     axis: BindingAxis
     integer: bool = True
     positive: bool = False
-
-    def __post_init__(self) -> None:
-        if not self.name or not self.name.replace("_", "a").isalnum():
-            raise ValueError(f"invalid symbol name: {self.name!r}")
-        if not isinstance(self.axis, BindingAxis):
-            raise TypeError("symbol axis must be a BindingAxis")
 
 
 @adt(wire="blueprinting.expression.scalar")
@@ -101,10 +105,7 @@ class ScalarExpr(_ExpressionOperators):
 
 @variant("add")
 class Add(ScalarExpr):
-    terms: tuple[Scalar, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "terms", _many(self.terms, "add"))
+    terms: ScalarOperands
 
 
 @variant("subtract")
@@ -112,17 +113,10 @@ class Subtract(ScalarExpr):
     left: Scalar
     right: Scalar
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "left", _coerce(self.left))
-        object.__setattr__(self, "right", _coerce(self.right))
-
 
 @variant("multiply")
 class Multiply(ScalarExpr):
-    factors: tuple[Scalar, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "factors", _many(self.factors, "multiply"))
+    factors: ScalarOperands
 
 
 @variant("divide")
@@ -130,40 +124,30 @@ class Divide(ScalarExpr):
     numerator: Scalar
     denominator: Scalar
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "numerator", _coerce(self.numerator))
-        object.__setattr__(self, "denominator", _coerce(self.denominator))
-
 
 @variant("ceil-divide")
 class CeilDivide(ScalarExpr):
     numerator: Scalar
     denominator: Scalar
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "numerator", _coerce(self.numerator))
-        object.__setattr__(self, "denominator", _coerce(self.denominator))
-
 
 @variant("maximum")
 class Maximum(ScalarExpr):
-    values: tuple[Scalar, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "values", _many(self.values, "maximum"))
+    values: ScalarOperands
 
 
 @variant("minimum")
 class Minimum(ScalarExpr):
-    values: tuple[Scalar, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "values", _many(self.values, "minimum"))
+    values: ScalarOperands
 
 
 ScalarExprVariant: TypeAlias = Add | Subtract | Multiply | Divide | CeilDivide | Maximum | Minimum
 seal_adt(ScalarExpr, ScalarExprVariant)
-Scalar = int | float | Symbol | ScalarExprVariant
+Scalar: TypeAlias = int | FiniteFloat | Symbol | ScalarExprVariant
+ScalarOperands: TypeAlias = Annotated[
+    tuple[Scalar, ...],
+    ValueConstraint.AT_LEAST_TWO_ITEMS,
+]
 
 
 def _coerce(value: Scalar) -> Scalar:
@@ -172,13 +156,6 @@ def _coerce(value: Scalar) -> Scalar:
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("scalar expressions do not permit NaN or infinity")
     return cast(Scalar, value)
-
-
-def _many(values: tuple[Scalar, ...], operation: str) -> tuple[Scalar, ...]:
-    result = tuple(_coerce(item) for item in values)
-    if len(result) < 2:
-        raise ValueError(f"{operation} expects at least two arguments")
-    return result
 
 
 def operands(value: ScalarExprVariant) -> tuple[Scalar, ...]:

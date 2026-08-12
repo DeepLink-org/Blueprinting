@@ -19,7 +19,7 @@ from blueprinting.schema.frozen import FrozenDict
 from ..synthesizer.bindings import InferencePhase
 from .cost.database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
 from .cost.protocol import CostSubject, EstimateMethod
-from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult
+from .inference_evidence import InferenceEvidenceQuery, InferenceEvidenceResult, inference_cost_operation
 
 _COMPUTE_COLUMNS = {
     "input_layernorm": "time_stats.input_layernorm.median",
@@ -44,15 +44,6 @@ _SOURCE_LAYERS = {
     "mlp_down_projection": "mlp.down",
     "residual_add": "mlp.residual",
 }
-
-_GEMM_PRIMITIVES = frozenset(
-    {
-        "attention_pre_projection",
-        "attention_post_projection",
-        "mlp_up_projection",
-        "mlp_down_projection",
-    }
-)
 
 
 def _read_rows(path: Path, *, required: frozenset[str], timing_columns: frozenset[str]) -> tuple[dict[str, str], ...]:
@@ -553,7 +544,7 @@ class VidurProfileImporter:
                 milliseconds = _milliseconds(row, metric)
                 if milliseconds is None:
                     continue
-                operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+                operation = inference_cost_operation(primitive)
                 selector = {
                     **shared_selector,
                     "semantic_operation": primitive,

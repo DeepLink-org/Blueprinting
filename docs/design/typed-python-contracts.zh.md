@@ -14,7 +14,7 @@ Runtime declaration 是事实源。安装 mypy 后会增加 function body、flow
 
 ## 第一层：Typed Runtime Value
 
-`@record` 派生 frozen/slotted canonical product type，并执行 annotation-driven structural check。`@adt` 与 `@variant` 定义 semantic constructor family；显式 union alias 与 `seal_adt` 共同封闭该 family：
+`@record` 派生 frozen/slotted canonical product type，并执行 annotation-driven structural check；`@enum` 注册 closed canonical enumeration，同时不暴露 codec registry。`@adt` 与 `@variant` 定义 semantic constructor family；显式 union alias 与 `seal_adt` 共同封闭该 family。`@record` 与 `@adt` 自己负责 dataclass derivation，因此若再叠加 `@dataclass` 会直接拒绝，避免悄然绕过 structural check：
 
 ```python
 @adt(wire="blueprinting.binding.workload-mode")
@@ -111,7 +111,7 @@ Transformation semantic 继续保持为 source snapshot 与显式 `SynthesisSess
 
 元编程保持克制：decorator 只派生机械结构与 manifest，不包装执行、不检查 stack frame、不生成隐藏业务规则，也不替代显式 normalizer/verifier。
 
-Decorator surface 按受众分层：普通 `blueprinting.schema` 与 `blueprinting.synthesizer.passes` 分别提供值/codec 和 transaction runner，不导出 authoring decorator；core schema 或 trusted dialect author 从 `blueprinting.schema.authoring` 导入 `record/adt/variant`，pass/target extension author 从 `blueprinting.synthesizer.passes.authoring` 导入 `derivation/relation/claim`。Codec registry、manifest compiler 与 pass registry 属于内部实现。
+Decorator surface 按受众分层：普通 `blueprinting.schema` 与 `blueprinting.synthesizer.passes` 分别提供值/codec 和 transaction runner，不导出 authoring decorator；core schema 或 trusted dialect author 从 `blueprinting.schema.authoring` 导入 `record/enum/adt/variant`，pass/target extension author 从 `blueprinting.synthesizer.passes.authoring` 导入 `derivation/relation/claim`。Codec registry、manifest compiler 与 pass registry 属于内部实现。
 
 ## 当前限制
 

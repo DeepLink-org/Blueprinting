@@ -59,6 +59,13 @@ def test_runtime_contract_digest_covers_record_fields_defaults_and_enum_members(
     types = manifest.types
     workload = next(item for item in types.canonical_types if item.wire == "blueprinting.binding.workload")
     phase = next(item for item in types.canonical_types if item.wire == "blueprinting.binding.inference-phase")
+    all_to_all = next(
+        item for item in types.canonical_types if item.wire == "blueprinting.ir.distributed-task.collective.all-to-all"
+    )
+    machine_opcode = next(item for item in types.canonical_types if item.wire == "blueprinting.ir.machine.opcode")
+    training_workload = next(
+        item for item in types.canonical_types if item.wire == "blueprinting.workload.transformer-training"
+    )
     collective = next(
         item for item in types.algebraic_families if item.wire == "blueprinting.ir.distributed-task.collective"
     )
@@ -73,6 +80,13 @@ def test_runtime_contract_digest_covers_record_fields_defaults_and_enum_members(
         ("PREFILL", '"prefill"'),
         ("DECODE", '"decode"'),
     )
+    participant_shape = all_to_all.fields[0].annotation
+    assert participant_shape.startswith("annotated[builtins.tuple[builtins.int,builtins.Ellipsis]")
+    assert '"value":"non_empty"' in participant_shape
+    assert '"value":"unique_items"' in participant_shape
+    assert '"value":"non_negative_items"' in participant_shape
+    assert all('"value":"non_empty"' in field.annotation for field in machine_opcode.fields)
+    assert training_workload.fields[2].annotation == 'literal["float8","float16","bfloat16","float32"]'
 
     def with_canonical_type(updated):
         return replace(

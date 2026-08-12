@@ -2,20 +2,44 @@
 
 from __future__ import annotations
 
+import math
 import re
 import types
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, ClassVar, TypeGuard, TypeVar, Union, get_args, get_origin, get_type_hints
+from enum import Enum
+from typing import Annotated, Any, ClassVar, Literal, TypeGuard, TypeVar, Union, get_args, get_origin, get_type_hints
 
 from typing_extensions import dataclass_transform
 
-from .codec import record_type
+from .codec import enum_type, record_type
+from .frozen import FrozenDict
 
 T = TypeVar("T")
 
 _WIRE_RE = re.compile(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*")
 _LOCAL_TAG_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+
+
+@enum_type("blueprinting.schema.value-constraint")
+class ValueConstraint(Enum):
+    """Small closed vocabulary of reusable structural refinements."""
+
+    NON_EMPTY = "non_empty"
+    NON_BLANK = "non_blank"
+    AT_LEAST_TWO_ITEMS = "at_least_two_items"
+    UNIQUE_ITEMS = "unique_items"
+    NON_EMPTY_ITEMS = "non_empty_items"
+    NON_NEGATIVE = "non_negative"
+    NON_NEGATIVE_ITEMS = "non_negative_items"
+    POSITIVE = "positive"
+    AT_LEAST_TWO = "at_least_two"
+    AT_MOST_ONE = "at_most_one"
+    FINITE = "finite"
+    CANONICAL_LOWER_TEXT = "canonical_lower_text"
+    STABLE_NAME = "stable_name"
+    CONTENT_DIGEST = "content_digest"
+    SYMBOL_NAME = "symbol_name"
 
 
 @dataclass(frozen=True)
@@ -68,7 +92,13 @@ def _matches(value: Any, annotation: Any) -> bool:
     if origin is ClassVar:
         return True
     if origin is Annotated:
-        return _matches(value, get_args(annotation)[0])
+        base, *metadata = get_args(annotation)
+        return _matches(value, base) and all(
+            not isinstance(constraint, ValueConstraint) or _matches_constraint(value, constraint)
+            for constraint in metadata
+        )
+    if origin is Literal:
+        return any(type(value) is type(expected) and value == expected for expected in get_args(annotation))
     if origin in {types.UnionType, Union}:
         return any(_matches(value, item) for item in get_args(annotation))
     if origin is tuple:
@@ -83,6 +113,11 @@ def _matches(value: Any, annotation: Any) -> bool:
     if origin is frozenset:
         arguments = get_args(annotation)
         return isinstance(value, frozenset) and (not arguments or all(_matches(item, arguments[0]) for item in value))
+    if origin is FrozenDict:
+        arguments = get_args(annotation)
+        return isinstance(value, FrozenDict) and (
+            not arguments or all(_matches(item, arguments[0]) for item in value.values())
+        )
     if origin in {dict, Mapping}:
         arguments = get_args(annotation)
         if not isinstance(value, Mapping):
@@ -109,12 +144,61 @@ def _matches(value: Any, annotation: Any) -> bool:
         return True
 
 
+def _matches_constraint(value: Any, constraint: ValueConstraint) -> bool:
+    try:
+        if constraint is ValueConstraint.NON_EMPTY:
+            return len(value) > 0
+        if constraint is ValueConstraint.NON_BLANK:
+            return isinstance(value, str) and bool(value.strip())
+        if constraint is ValueConstraint.AT_LEAST_TWO_ITEMS:
+            return len(value) >= 2
+        if constraint is ValueConstraint.UNIQUE_ITEMS:
+            return len(set(value)) == len(value)
+        if constraint is ValueConstraint.NON_EMPTY_ITEMS:
+            return all(bool(item) for item in value)
+        if constraint is ValueConstraint.NON_NEGATIVE:
+            return bool(value >= 0)
+        if constraint is ValueConstraint.NON_NEGATIVE_ITEMS:
+            return all(item >= 0 for item in value)
+        if constraint is ValueConstraint.POSITIVE:
+            return bool(value > 0)
+        if constraint is ValueConstraint.AT_LEAST_TWO:
+            return bool(value >= 2)
+        if constraint is ValueConstraint.AT_MOST_ONE:
+            return bool(value <= 1)
+        if constraint is ValueConstraint.FINITE:
+            return not isinstance(value, float) or math.isfinite(value)
+        if constraint is ValueConstraint.CANONICAL_LOWER_TEXT:
+            return isinstance(value, str) and value == value.strip().lower()
+        if constraint is ValueConstraint.STABLE_NAME:
+            return isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*", value) is not None
+        if constraint is ValueConstraint.CONTENT_DIGEST:
+            return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+        if constraint is ValueConstraint.SYMBOL_NAME:
+            return isinstance(value, str) and bool(value) and value.replace("_", "a").isalnum()
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
 def _install_structural_post_init(cls: type[T]) -> None:
-    original = cls.__dict__.get("__post_init__")
+    local_invariant = cls.__dict__.get("__post_init__")
+    invariants: list[Callable[[Any], None]] = []
+    for base in cls.__bases__:
+        inherited = getattr(base, "__record_invariants__", None)
+        if inherited is not None:
+            invariants.extend(inherited)
+            continue
+        inherited_post_init = getattr(base, "__post_init__", None)
+        if inherited_post_init is not None:
+            invariants.append(inherited_post_init)
+    if local_invariant is not None:
+        invariants.append(local_invariant)
+
+    unique_invariants = tuple(dict.fromkeys(invariants))
+    setattr(cls, "__record_invariants__", unique_invariants)  # noqa: B010
 
     def structural_post_init(self: Any) -> None:
-        if original is not None:
-            original(self)
         annotations = _structural_annotations(type(self))
         for name, annotation in annotations.items():
             if get_origin(annotation) is ClassVar:
@@ -122,6 +206,8 @@ def _install_structural_post_init(cls: type[T]) -> None:
             value = getattr(self, name)
             if not _matches(value, annotation):
                 raise TypeError(f"{type(self).__name__}.{name} must match {annotation!r}, got {type(value).__name__}")
+        for invariant in unique_invariants:
+            invariant(self)
 
     setattr(cls, "__post_init__", structural_post_init)  # noqa: B010
 
@@ -138,12 +224,21 @@ def record(
         raise TypeError("canonical record tag must be a dotted lowercase wire identity")
 
     def decorate(cls: type[T]) -> type[T]:
-        if "__dataclass_fields__" not in cls.__dict__:
-            _install_structural_post_init(cls)
-            cls = dataclass(frozen=True, slots=True, order=order)(cls)
+        if "__dataclass_fields__" in cls.__dict__:
+            raise TypeError("@record derives its own frozen dataclass; do not combine it with @dataclass")
+        _install_structural_post_init(cls)
+        cls = dataclass(frozen=True, slots=True, order=order)(cls)
         return record_type(tag)(cls)
 
     return decorate
+
+
+def enum(tag: str) -> Callable[[type[T]], type[T]]:
+    """Register one closed enumeration through the public authoring surface."""
+
+    if not isinstance(tag, str) or _WIRE_RE.fullmatch(tag) is None:
+        raise TypeError("canonical enum tag must be a dotted lowercase wire identity")
+    return enum_type(tag)
 
 
 @dataclass_transform(frozen_default=True)
@@ -154,8 +249,9 @@ def adt(*, wire: str) -> Callable[[type[T]], type[T]]:
         raise TypeError("ADT wire namespace must be a dotted lowercase identity")
 
     def decorate(cls: type[T]) -> type[T]:
-        if "__dataclass_fields__" not in cls.__dict__:
-            cls = dataclass(frozen=True, slots=True)(cls)
+        if "__dataclass_fields__" in cls.__dict__:
+            raise TypeError("@adt derives its own frozen dataclass; do not combine it with @dataclass")
+        cls = dataclass(frozen=True, slots=True)(cls)
         if cls in _ADT_SPECS:
             raise RuntimeError(f"ADT family {cls.__name__} is already registered")
         if any(item.wire == wire for item in _ADT_SPECS.values()):

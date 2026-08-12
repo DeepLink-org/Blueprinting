@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from typing import Annotated, TypeAlias
 
-from blueprinting.schema.codec import record_type
-
-
-def _positive_rate(value: float, name: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-        raise ValueError(f"{name} must be a finite positive number")
+from blueprinting.schema.authoring import (
+    NonNegativeInt,
+    PositiveFiniteNumber,
+    PositiveInt,
+    PositiveUnitIntervalNumber,
+    ValueConstraint,
+    record,
+)
 
 
 def _non_negative_integer(value: int, name: str) -> None:
@@ -18,37 +19,27 @@ def _non_negative_integer(value: int, name: str) -> None:
         raise ValueError(f"{name} must be a non-negative integer")
 
 
-@record_type("blueprinting.system.efficiency-point")
-@dataclass(frozen=True)
+@record("blueprinting.system.efficiency-point")
 class EfficiencyPoint:
     """Measured or simulated efficiency above one work-size threshold."""
 
-    threshold: int
-    efficiency: float
-
-    def __post_init__(self) -> None:
-        if isinstance(self.threshold, bool) or not isinstance(self.threshold, int) or self.threshold < 0:
-            raise ValueError("efficiency threshold must be a non-negative integer")
-        if (
-            isinstance(self.efficiency, bool)
-            or not isinstance(self.efficiency, (int, float))
-            or not math.isfinite(self.efficiency)
-            or not 0 < self.efficiency <= 1
-        ):
-            raise ValueError("efficiency must be finite and in (0, 1]")
+    threshold: NonNegativeInt
+    efficiency: PositiveUnitIntervalNumber
 
 
-@record_type("blueprinting.system.efficiency-curve")
-@dataclass(frozen=True)
+EfficiencyPoints: TypeAlias = Annotated[
+    tuple[EfficiencyPoint, ...],
+    ValueConstraint.NON_EMPTY,
+]
+
+
+@record("blueprinting.system.efficiency-curve")
 class EfficiencyCurve:
     """Piecewise-constant utilization evidence indexed by exact work size."""
 
-    points: tuple[EfficiencyPoint, ...]
+    points: EfficiencyPoints
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "points", tuple(self.points))
-        if not self.points or any(not isinstance(point, EfficiencyPoint) for point in self.points):
-            raise ValueError("an efficiency curve requires typed points")
         thresholds = tuple(point.threshold for point in self.points)
         if thresholds != tuple(sorted(thresholds, reverse=True)) or len(set(thresholds)) != len(thresholds):
             raise ValueError("efficiency thresholds must be unique and descending")
@@ -64,18 +55,12 @@ class EfficiencyCurve:
         raise AssertionError("zero-threshold curve failed to cover work")
 
 
-@record_type("blueprinting.system.processor-profile")
-@dataclass(frozen=True)
+@record("blueprinting.system.processor-profile")
 class ProcessorProfile:
     """One chip compute engine and its size-dependent utilization evidence."""
 
-    peak_operations_per_second: float
+    peak_operations_per_second: PositiveFiniteNumber
     efficiency: EfficiencyCurve
-
-    def __post_init__(self) -> None:
-        _positive_rate(self.peak_operations_per_second, "peak_operations_per_second")
-        if not isinstance(self.efficiency, EfficiencyCurve):
-            raise TypeError("efficiency must be EfficiencyCurve")
 
     def throughput(self, operations: int, *, apply_efficiency: bool = True) -> float:
         _non_negative_integer(operations, "operations")
@@ -85,25 +70,13 @@ class ProcessorProfile:
         return self.peak_operations_per_second * efficiency
 
 
-@record_type("blueprinting.system.memory-profile")
-@dataclass(frozen=True)
+@record("blueprinting.system.memory-profile")
 class MemoryProfile:
     """One chip-visible memory tier and its transfer-efficiency evidence."""
 
-    capacity_bytes: int
-    peak_bytes_per_second: float
+    capacity_bytes: PositiveInt
+    peak_bytes_per_second: PositiveFiniteNumber
     efficiency: EfficiencyCurve
-
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.capacity_bytes, bool)
-            or not isinstance(self.capacity_bytes, int)
-            or self.capacity_bytes <= 0
-        ):
-            raise ValueError("capacity_bytes must be a positive integer")
-        _positive_rate(self.peak_bytes_per_second, "peak_bytes_per_second")
-        if not isinstance(self.efficiency, EfficiencyCurve):
-            raise TypeError("efficiency must be EfficiencyCurve")
 
     def throughput(self, transferred_bytes: int, *, apply_efficiency: bool = True) -> float:
         _non_negative_integer(transferred_bytes, "transferred_bytes")

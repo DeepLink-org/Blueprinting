@@ -14,7 +14,12 @@ from typing import Any
 from blueprinting.schema.codec import content_digest
 from blueprinting.schema.frozen import FrozenDict
 
-from .database import EvidenceProvenance, PerformanceDatabase, PerformanceRecord
+from .database import (
+    EvidenceProvenance,
+    PerformanceDatabase,
+    PerformanceRecord,
+    performance_record_identity_collisions,
+)
 from .protocol import CostSubject, EstimateMethod
 
 
@@ -110,7 +115,7 @@ class TabularImportSpec:
         collisions = set(self.selector_columns).intersection(self.constant_selectors)
         if collisions:
             raise ValueError(f"selector columns collide with constants: {', '.join(sorted(collisions))}")
-        duplicate_identity = {"subject", "operation", "hardware", "datatype"}.intersection(
+        duplicate_identity = performance_record_identity_collisions(
             set(self.selector_columns).union(self.constant_selectors)
         )
         if duplicate_identity:

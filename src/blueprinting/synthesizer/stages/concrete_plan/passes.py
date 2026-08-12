@@ -8,6 +8,7 @@ from ...axes import BindingAxis
 from ...ids import CommandId, DeviceId, Lineage, MemoryRegionId, QueueId
 from ...passes.authoring import DerivationPass, PassContext, PassRule, RelationCheckContext, derivation, relation
 from ...session import SynthesisSession
+from ..common import make_header
 from ..portable_plan.ir import PlanBuffer, PlanTask, PlanTaskKind, PortablePlanIR
 from .ir import (
     AccessMode,
@@ -260,6 +261,11 @@ def _common(
         buffers=buffers,
         commands=tuple(commands),
         target_extension=extension,
+        header=make_header(
+            ConcretePlanIR.SCHEMA_NAME,
+            ConcretePlanIR.SCHEMA_VERSION,
+            parent_digests=(ir.digest,),
+        ),
     )
 
 

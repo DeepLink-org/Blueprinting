@@ -23,7 +23,7 @@ from ...bindings import TrainingWorkload
 from ...ids import BufferId, Lineage, NodeId, ValueId
 from ...passes.authoring import RelationCheckContext, relation
 from ...session import SynthesisSession
-from ...stages.common import OperationName, TensorType
+from ...stages.common import OperationName, TensorType, make_header
 from ...stages.distributed.ir import (
     Collective,
     CollectiveKind,
@@ -364,6 +364,11 @@ def normalize_training_distribution(ir: ModelIR, session: SynthesisSession) -> D
             "one-local-tensor-parallel-block",
             block_memory,
         ),
+        header=make_header(
+            DistributedTaskIR.SCHEMA_NAME,
+            DistributedTaskIR.SCHEMA_VERSION,
+            parent_digests=(ir.digest,),
+        ),
     )
     return distributed
 
@@ -504,5 +509,10 @@ def normalize_training_plan(ir: DistributedTaskIR, session: SynthesisSession) ->
             mapping,
             program.scope,
             block_memory,
+        ),
+        header=make_header(
+            PortablePlanIR.SCHEMA_NAME,
+            PortablePlanIR.SCHEMA_VERSION,
+            parent_digests=(ir.digest,),
         ),
     )

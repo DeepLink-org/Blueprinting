@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, TypeVar
 
 from .errors import SerializationError
+from .frozen import FrozenDict
 
 T = TypeVar("T")
 
@@ -152,14 +153,16 @@ def _decode(value: Any) -> Any:
         items = value["$map"]
         if not isinstance(items, list):
             raise SerializationError("canonical mapping payload must be an array")
-        result = {}
+        result = []
+        keys = set()
         for pair in items:
             if not isinstance(pair, list) or len(pair) != 2 or not isinstance(pair[0], str):
                 raise SerializationError("invalid canonical mapping entry")
-            if pair[0] in result:
+            if pair[0] in keys:
                 raise SerializationError(f"duplicate canonical mapping key: {pair[0]!r}")
-            result[pair[0]] = _decode(pair[1])
-        return result
+            keys.add(pair[0])
+            result.append((pair[0], _decode(pair[1])))
+        return FrozenDict(items=result)
 
     if set(value) == {"$enum", "value"}:
         tag = value["$enum"]

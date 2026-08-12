@@ -74,7 +74,7 @@ def test_legacy_public_symbols_are_not_reexported() -> None:
 
 def test_decorator_authoring_surfaces_are_explicitly_separated() -> None:
     assert not any(hasattr(schema, name) for name in ("record", "adt", "variant", "record_type", "enum_type"))
-    assert all(hasattr(schema_authoring, name) for name in ("record", "adt", "variant", "seal_adt"))
+    assert all(hasattr(schema_authoring, name) for name in ("record", "enum", "adt", "variant", "seal_adt"))
     assert not any(hasattr(passes, name) for name in ("derivation", "relation", "claim", "rule"))
     assert all(hasattr(pass_authoring, name) for name in ("derivation", "relation", "claim"))
     assert not hasattr(pass_authoring, "rule")
@@ -105,6 +105,7 @@ def test_domain_ownership_is_not_hidden_by_compatibility_reexports() -> None:
 def test_canonical_wire_identities_are_domain_owned_and_versionless() -> None:
     tags: list[str] = []
     adt_families: list[str] = []
+    low_level_codec_authors: list[str] = []
     for source in PACKAGE_ROOT.rglob("*.py"):
         tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
         for class_node in (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)):
@@ -112,13 +113,15 @@ def test_canonical_wire_identities_are_domain_owned_and_versionless() -> None:
                 if not isinstance(decorator, ast.Call):
                     continue
                 name = decorator.func.id if isinstance(decorator.func, ast.Name) else None
-                if name in {"record", "record_type", "enum_type"}:
+                if name in {"record", "enum", "record_type", "enum_type"}:
                     assert (
                         decorator.args
                         and isinstance(decorator.args[0], ast.Constant)
                         and isinstance(decorator.args[0].value, str)
                     )
                     tags.append(decorator.args[0].value)
+                    if name in {"record_type", "enum_type"} and source.parent != PACKAGE_ROOT / "schema":
+                        low_level_codec_authors.append(str(source.relative_to(PACKAGE_ROOT)))
                     assert all(keyword.arg != "field_aliases" for keyword in decorator.keywords)
                 elif name == "adt":
                     arguments = {keyword.arg: keyword.value for keyword in decorator.keywords}
@@ -128,6 +131,7 @@ def test_canonical_wire_identities_are_domain_owned_and_versionless() -> None:
                     adt_families.append(wire.value)
 
     assert len(tags) >= 70
+    assert low_level_codec_authors == []
     assert all(tag.startswith("blueprinting.") and "_" not in tag for tag in tags)
     assert all(not tag.rpartition(".")[2].removeprefix("v").isdigit() for tag in tags)
     assert all(wire.startswith("blueprinting.") and "_" not in wire for wire in adt_families)

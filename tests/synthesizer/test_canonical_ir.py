@@ -8,6 +8,7 @@ import pytest
 from blueprinting.schema import FrozenDict, SerializationError, canonical_dumps, canonical_loads
 from blueprinting.schema.codec import record_type
 from blueprinting.synthesizer import BindingAxis, NodeId, Symbol
+from blueprinting.synthesizer.errors import InvalidIdError
 from blueprinting.synthesizer.stages.common import IRHeader, IRSnapshot
 from blueprinting.synthesizer.stages.concrete_plan.ir import ConcretePlanIR
 from blueprinting.synthesizer.stages.distributed.ir import DistributedTaskIR
@@ -103,6 +104,14 @@ def test_codec_rejects_duplicate_keys_nonfinite_values_and_nonstring_map_keys() 
         canonical_dumps({1: "invalid"})
 
 
+def test_codec_decodes_canonical_maps_as_frozen_values() -> None:
+    decoded = canonical_loads(canonical_dumps(FrozenDict({"nested": {"values": [1, 2]}})))
+
+    assert isinstance(decoded, FrozenDict)
+    assert isinstance(decoded["nested"], FrozenDict)
+    assert decoded["nested"]["values"] == (1, 2)
+
+
 def test_codec_registration_requires_frozen_records() -> None:
     @dataclass
     class MutableRecord:
@@ -114,7 +123,7 @@ def test_codec_registration_requires_frozen_records() -> None:
 
 def test_ir_snapshot_is_deeply_immutable(model_ir: ModelIR) -> None:
     source = {"nested": {"labels": ["initial"]}}
-    snapshot = replace(model_ir, attributes=source)
+    snapshot = replace(model_ir, attributes=FrozenDict(source))
     digest = snapshot.digest
 
     source["nested"]["labels"].append("mutated")
@@ -127,11 +136,21 @@ def test_ir_snapshot_is_deeply_immutable(model_ir: ModelIR) -> None:
         snapshot.attributes["new"] = "value"  # type: ignore[index]
 
 
+def test_canonical_record_construction_is_strict(model_ir: ModelIR) -> None:
+    with pytest.raises(TypeError, match="ModelIR.attributes"):
+        replace(model_ir, attributes={"mutable": True})  # type: ignore[arg-type]
+
+
 def test_typed_ids_are_deterministic_and_namespace_separated() -> None:
     assert NodeId.derive("fixture", 1) == NodeId.derive("fixture", 1)
     assert str(NodeId.derive("fixture", 1)).startswith("node:")
     assert NodeId.derive("fixture", 1) != NodeId.derive("fixture", 2)
     assert FrozenDict({"id": NodeId.derive("fixture", 1)}) == FrozenDict({"id": NodeId.derive("fixture", 1)})
+
+
+def test_typed_ids_preserve_base_invariants() -> None:
+    with pytest.raises(InvalidIdError, match="invalid NodeId"):
+        NodeId("bad")
 
 
 def test_concrete_workload_quantity_gate_rejects_symbolic_float_and_negative_values() -> None:

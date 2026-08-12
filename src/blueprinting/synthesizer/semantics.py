@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from blueprinting.schema.authoring import record
+from blueprinting.schema.authoring import NonEmptyText, record
 
 
 class SemanticPayload:
@@ -44,11 +44,7 @@ class EmptySemantic(
 ):
     """Explicit absence of dialect-specific semantics for generic fixtures."""
 
-    namespace: str = "generic"
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.namespace, str) or not self.namespace:
-            raise ValueError("empty semantic namespace must not be empty")
+    namespace: NonEmptyText = "generic"
 
 
 EMPTY_SEMANTIC = EmptySemantic()

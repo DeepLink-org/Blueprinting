@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from blueprinting.mapping import TransformerInferenceMappingSpec, TransformerTrainingMappingSpec
-from blueprinting.schema.authoring import record
-from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
+from blueprinting.schema.authoring import NonEmptyText, PositiveInt, record
+from blueprinting.workload import TransformerDataType, TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 from ...bindings import InferencePhase
 from ...semantics import (
@@ -25,10 +25,6 @@ from .training import BlockMemoryFacts, PrimitiveInvocation, TrainingPhase
 class TransformerModelOperationSemantic(ModelOperationSemantic):
     model: TransformerModelSpec
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.model, TransformerModelSpec):
-            raise TypeError("model must be TransformerModelSpec")
-
 
 @record("blueprinting.ir.semantic.transformer.training-workload-binding-semantic")
 class TransformerTrainingWorkloadSemantic(BindingSemantic):
@@ -42,17 +38,9 @@ class TransformerTrainingStrategySemantic(BindingSemantic):
 
 @record("blueprinting.ir.semantic.transformer.inference-workload-binding-semantic")
 class TransformerInferenceWorkloadSemantic(BindingSemantic):
-    batch_size: int
-    context_tokens: int
-    datatype: str
-
-    def __post_init__(self) -> None:
-        for name in ("batch_size", "context_tokens"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer")
-        if not isinstance(self.datatype, str) or not self.datatype:
-            raise ValueError("datatype must not be empty")
+    batch_size: PositiveInt
+    context_tokens: PositiveInt
+    datatype: TransformerDataType
 
 
 @record("blueprinting.ir.semantic.transformer.inference-strategy-binding-semantic")
@@ -114,7 +102,7 @@ class TransformerInferenceProgramSemantic(ProgramSemantic):
     batch_size: int
     query_tokens: int
     context_tokens: int
-    datatype: str
+    datatype: TransformerDataType
     scope: str
     block_memory: InferenceBlockMemoryFacts
 
@@ -126,15 +114,9 @@ class TransformerInferencePlanSemantic(TransformerInferenceProgramSemantic):
 
 @record("blueprinting.ir.semantic.transformer.buffer-semantic")
 class TransformerBufferSemantic(BufferSemantic):
-    role: str
+    role: NonEmptyText
     phase: InferencePhase | None = None
-    bound: str | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.role, str) or not self.role:
-            raise ValueError("buffer semantic role must not be empty")
-        if self.bound is not None and (not isinstance(self.bound, str) or not self.bound):
-            raise ValueError("buffer semantic bound must be non-empty when provided")
+    bound: NonEmptyText | None = None
 
 
 def training_task_semantic(invocation: PrimitiveInvocation) -> TransformerTrainingPlanTaskSemantic:

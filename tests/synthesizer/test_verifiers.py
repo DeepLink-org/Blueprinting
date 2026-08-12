@@ -5,12 +5,13 @@ from dataclasses import fields, replace
 import pytest
 
 from blueprinting.schema import FrozenDict
-from blueprinting.synthesizer import BufferId, NodeId, ValueId
-from blueprinting.synthesizer.stages.common import OperationName
-from blueprinting.synthesizer.stages.concrete_plan.ir import ConcretePlanIR
+from blueprinting.synthesizer import BufferId, NodeId, TokenId, ValueId
+from blueprinting.synthesizer.stages.common import OperationName, SchemaVersion
+from blueprinting.synthesizer.stages.concrete_plan.ir import ConcretePlanIR, Signal, WaitFor
 from blueprinting.synthesizer.stages.distributed.ir import (
     AllGather,
     AllReduce,
+    AllToAll,
     Broadcast,
     CollectiveKind,
     CollectiveSpec,
@@ -19,7 +20,12 @@ from blueprinting.synthesizer.stages.distributed.ir import (
     collective_kind,
     make_collective_spec,
 )
-from blueprinting.synthesizer.stages.machine.ir import MachineIR, MachineOpcode
+from blueprinting.synthesizer.stages.machine.ir import (
+    MachineIR,
+    MachineOpcode,
+    MachineSection,
+    MachineSectionKind,
+)
 from blueprinting.synthesizer.stages.model.ir import ModelIR
 from blueprinting.synthesizer.stages.portable_plan.ir import PortablePlanIR
 
@@ -91,6 +97,39 @@ def test_collective_adt_makes_kind_specific_fields_structural() -> None:
         )
     with pytest.raises(ValueError, match="root must be one of its participants"):
         Broadcast((0, 1), 64, 2)
+
+
+@pytest.mark.parametrize("participants", ((), (0, 0), (-1, 0)))
+def test_collective_participant_refinement_is_shared(participants: tuple[int, ...]) -> None:
+    with pytest.raises(TypeError, match="AllToAll.participants"):
+        AllToAll(participants, 64)
+
+
+def test_synchronization_token_refinement_is_shared() -> None:
+    token = TokenId.derive("fixture", "synchronization")
+
+    with pytest.raises(TypeError, match="Signal.tokens"):
+        Signal(())
+    with pytest.raises(TypeError, match="WaitFor.tokens"):
+        WaitFor((token, token))
+
+
+@pytest.mark.parametrize(
+    ("constructor", "field"),
+    (
+        (lambda: MachineOpcode("", "launch"), "MachineOpcode.dialect"),
+        (lambda: MachineOpcode("virtual", ""), "MachineOpcode.name"),
+        (lambda: SchemaVersion(-1), "SchemaVersion.major"),
+    ),
+)
+def test_scalar_refinements_are_enforced_by_record_deriving(constructor, field: str) -> None:
+    with pytest.raises(TypeError, match=field):
+        constructor()
+
+
+def test_relational_invariants_remain_on_the_owning_record() -> None:
+    with pytest.raises(ValueError, match="code section cannot contain opaque data"):
+        MachineSection("text", MachineSectionKind.CODE, data=b"not-code")
 
 
 def test_portable_rejects_timing_smuggled_through_attributes(portable_ir: PortablePlanIR) -> None:

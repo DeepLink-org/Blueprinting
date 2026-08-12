@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, dataclass
 
 import pytest
 
@@ -9,6 +9,7 @@ from blueprinting.schema.authoring import (
     adt,
     adt_manifest,
     is_adt_variant,
+    record,
     seal_adt,
     variant,
 )
@@ -45,6 +46,22 @@ def test_variant_derives_frozen_slotted_canonical_records_and_short_wire_tags() 
         ("literal", "tests.expression.literal"),
         ("pair", "tests.expression.pair"),
     ]
+
+
+def test_authoring_decorators_own_dataclass_derivation() -> None:
+    @dataclass(frozen=True)
+    class _LegacyRecord:
+        value: int
+
+    with pytest.raises(TypeError, match="@record derives its own frozen dataclass"):
+        record("tests.legacy-record")(_LegacyRecord)
+
+    @dataclass(frozen=True)
+    class _LegacyFamily:
+        pass
+
+    with pytest.raises(TypeError, match="@adt derives its own frozen dataclass"):
+        adt(wire="tests.legacy-family")(_LegacyFamily)
 
 
 def test_variant_structural_validation_is_derived_from_annotations() -> None:

@@ -12,8 +12,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 from blueprinting.mapping import RecomputePolicy, TensorParallelCommunication, TransformerTrainingMappingSpec
-from blueprinting.schema.authoring import record
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import NonEmptyText, NonNegativeInt, enum, record
 from blueprinting.workload import TransformerModelSpec, TransformerTrainingWorkloadSpec
 
 from ...stages.distributed.ir import CollectiveKind
@@ -22,7 +21,7 @@ from .common import EngineKind, PhaseWork
 # Keep the legacy codec namespace as a stable serialized identity.
 
 
-@enum_type("blueprinting.analysis.transformer.training-phase")
+@enum("blueprinting.analysis.transformer.training-phase")
 class TrainingPhase(Enum):
     FORWARD = "forward"
     RECOMPUTE = "recompute"
@@ -36,24 +35,15 @@ class TrainingPhase(Enum):
 class PrimitiveInvocation:
     """One structurally selected operation in a local block program."""
 
-    name: str
-    source_layer: str
-    primitive: str
+    name: NonEmptyText
+    source_layer: NonEmptyText
+    primitive: NonEmptyText
     phase: TrainingPhase
     engine: EngineKind
     work: PhaseWork
     collective: CollectiveKind | None = None
 
     def __post_init__(self) -> None:
-        for field_name in ("name", "source_layer", "primitive"):
-            if not isinstance(getattr(self, field_name), str) or not getattr(self, field_name):
-                raise ValueError(f"{field_name} must not be empty")
-        if not isinstance(self.phase, TrainingPhase):
-            raise TypeError("phase must be TrainingPhase")
-        if not isinstance(self.engine, EngineKind):
-            raise TypeError("engine must be EngineKind")
-        if not isinstance(self.work, PhaseWork):
-            raise TypeError("work must be PhaseWork")
         if self.engine is EngineKind.COLLECTIVE:
             if self.collective is None:
                 raise ValueError("collective invocations require a collective kind")
@@ -65,20 +55,14 @@ class PrimitiveInvocation:
 class BlockMemoryFacts:
     """Storage quantities for one local tensor-parallel block shard."""
 
-    weights: int
-    activation_working: int
-    activation_storage: int
-    activation_checkpoint: int
-    weight_gradients: int
-    weight_gradients_unsharded: int
-    activation_gradients: int
-    optimizer: int
-
-    def __post_init__(self) -> None:
-        for field_name in self.__dataclass_fields__:
-            value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{field_name} must be a non-negative integer")
+    weights: NonNegativeInt
+    activation_working: NonNegativeInt
+    activation_storage: NonNegativeInt
+    activation_checkpoint: NonNegativeInt
+    weight_gradients: NonNegativeInt
+    weight_gradients_unsharded: NonNegativeInt
+    activation_gradients: NonNegativeInt
+    optimizer: NonNegativeInt
 
 
 @dataclass(frozen=True)

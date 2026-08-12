@@ -6,16 +6,24 @@ choosing a physical device, queue, implementation, address, or timestamp.
 
 from __future__ import annotations
 
-import math
 from dataclasses import field
 from enum import Enum
-from numbers import Real
-from typing import ClassVar
+from typing import Annotated, ClassVar, TypeAlias
 
 from typing_extensions import assert_never
 
-from blueprinting.schema.authoring import adt, record, require_adt_variant, seal_adt, variant
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import (
+    NonEmptyText,
+    NonNegativeInt,
+    PositiveFiniteFloat,
+    PositiveInt,
+    ValueConstraint,
+    adt,
+    enum,
+    record,
+    seal_adt,
+    variant,
+)
 from blueprinting.schema.frozen import FrozenDict
 
 from ...errors import DiagnosticBag, VerificationReport
@@ -30,12 +38,10 @@ from ..common import (
     IRHeader,
     OperationName,
     SchemaVersion,
-    frozen_map,
     is_content_digest,
+    is_known_target_dialect,
     make_header,
     reject_reserved_attributes,
-    require_instance,
-    typed_tuple,
     verify_known_references,
     verify_nonnegative_scalar,
     verify_ordered_dag,
@@ -43,7 +49,7 @@ from ..common import (
 )
 
 
-@enum_type("blueprinting.ir.portable-plan.resource-kind")
+@enum("blueprinting.ir.portable-plan.resource-kind")
 class ResourceKind(Enum):
     """Target-neutral class of a resource demand."""
 
@@ -56,7 +62,7 @@ class ResourceKind(Enum):
     SYNCHRONIZATION = "synchronization"
 
 
-@enum_type("blueprinting.ir.portable-plan.resource-scope")
+@enum("blueprinting.ir.portable-plan.resource-scope")
 class ResourceScope(Enum):
     """Replication scope used when accounting a resource demand."""
 
@@ -74,33 +80,20 @@ class ResourceRequirement:
     scope: ResourceScope = ResourceScope.PER_TASK
     capabilities: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        require_instance(self.kind, ResourceKind, "resource kind")
-        require_instance(self.scope, ResourceScope, "resource scope")
-        object.__setattr__(self, "capabilities", frozen_map(self.capabilities))
+
+ImplementationAlternatives: TypeAlias = Annotated[
+    tuple[NonEmptyText, ...],
+    ValueConstraint.UNIQUE_ITEMS,
+]
 
 
 @record("blueprinting.ir.portable-plan.implementation-requirement")
 class ImplementationRequirement:
     """Target-neutral capability request with semantic alternatives."""
 
-    capability: str
-    alternatives: tuple[str, ...] = ()
+    capability: NonEmptyText
+    alternatives: ImplementationAlternatives = ()
     constraints: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "alternatives",
-            typed_tuple(self.alternatives, str, "implementation alternatives"),
-        )
-        object.__setattr__(self, "constraints", frozen_map(self.constraints))
-        if not isinstance(self.capability, str) or not self.capability:
-            raise ValueError("implementation capability must not be empty")
-        if len(set(self.alternatives)) != len(self.alternatives):
-            raise ValueError("implementation alternatives must be unique")
-        if any(not item for item in self.alternatives):
-            raise ValueError("implementation alternatives must not be empty")
 
 
 @record("blueprinting.ir.portable-plan.workload-facts")
@@ -114,9 +107,6 @@ class WorkloadFacts:
     temporary_bytes: Scalar = 0
     persistent_bytes: Scalar = 0
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
 
 
 def require_concrete_quantity(value: Scalar, subject: str) -> int:
@@ -135,7 +125,7 @@ def require_concrete_quantity(value: Scalar, subject: str) -> int:
     return value
 
 
-@enum_type("blueprinting.ir.portable-plan.buffer-role")
+@enum("blueprinting.ir.portable-plan.buffer-role")
 class PlanBufferRole(Enum):
     """Semantic lifetime role of a portable buffer."""
 
@@ -148,7 +138,7 @@ class PlanBufferRole(Enum):
     COMMUNICATION = "communication"
 
 
-@enum_type("blueprinting.ir.portable-plan.storage-class")
+@enum("blueprinting.ir.portable-plan.storage-class")
 class AbstractStorageClass(Enum):
     """Storage capability required without selecting a physical memory."""
 
@@ -170,29 +160,12 @@ class PlanBuffer:
     lineage: Lineage
     producer: NodeId | None = None
     consumers: tuple[NodeId, ...] = ()
-    alignment_bytes: int = 1
+    alignment_bytes: PositiveInt = 1
     semantic: BufferSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        require_instance(self.id, BufferId, "plan buffer ID")
-        require_instance(self.role, PlanBufferRole, "plan buffer role")
-        require_instance(self.storage_class, AbstractStorageClass, "plan buffer storage class")
-        require_instance(self.lineage, Lineage, "plan buffer lineage")
-        require_instance(self.semantic, BufferSemantic, "plan buffer semantic")
-        if self.producer is not None:
-            require_instance(self.producer, NodeId, "plan buffer producer")
-        object.__setattr__(self, "consumers", typed_tuple(self.consumers, NodeId, "plan buffer consumers"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if (
-            isinstance(self.alignment_bytes, bool)
-            or not isinstance(self.alignment_bytes, int)
-            or self.alignment_bytes <= 0
-        ):
-            raise ValueError("buffer alignment must be a positive integer")
 
-
-@enum_type("blueprinting.ir.portable-plan.task-kind")
+@enum("blueprinting.ir.portable-plan.task-kind")
 class PlanTaskKind(Enum):
     """Execution-domain category of a portable task."""
 
@@ -247,46 +220,15 @@ class PlanTask:
     dependencies: tuple[NodeId, ...]
     inputs: tuple[BufferId, ...]
     outputs: tuple[BufferId, ...]
-    logical_ranks: tuple[int, ...]
+    logical_ranks: tuple[NonNegativeInt, ...]
     workload: WorkloadFacts
     lineage: Lineage
     resources: tuple[ResourceRequirement, ...] = ()
     implementations: tuple[ImplementationRequirement, ...] = ()
-    concurrency_group: str | None = None
+    concurrency_group: NonEmptyText | None = None
     effects: tuple[Effect, ...] = ()
     semantic: PlanTaskSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, NodeId, "plan task ID")
-        require_adt_variant(self.body, PlanTaskBody, "plan task body")
-        require_instance(self.operation, OperationName, "plan task operation")
-        require_instance(self.workload, WorkloadFacts, "plan task workload")
-        require_instance(self.lineage, Lineage, "plan task lineage")
-        require_instance(self.semantic, PlanTaskSemantic, "plan task semantic")
-        object.__setattr__(self, "dependencies", typed_tuple(self.dependencies, NodeId, "plan task dependencies"))
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, BufferId, "plan task inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, BufferId, "plan task outputs"))
-        object.__setattr__(self, "logical_ranks", tuple(self.logical_ranks))
-        object.__setattr__(
-            self,
-            "resources",
-            typed_tuple(self.resources, ResourceRequirement, "plan task resources"),
-        )
-        object.__setattr__(
-            self,
-            "implementations",
-            typed_tuple(self.implementations, ImplementationRequirement, "plan task implementations"),
-        )
-        object.__setattr__(self, "effects", typed_tuple(self.effects, Effect, "plan task effects"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if any(isinstance(rank, bool) or not isinstance(rank, int) or rank < 0 for rank in self.logical_ranks):
-            raise ValueError("logical ranks must be non-negative integers")
-        if self.concurrency_group is not None:
-            if not isinstance(self.concurrency_group, str):
-                raise TypeError("concurrency_group must be a string")
-            if not self.concurrency_group:
-                raise ValueError("concurrency_group must be non-empty when provided")
 
     @property
     def kind(self) -> PlanTaskKind:
@@ -306,7 +248,7 @@ class PlanTask:
         assert_never(self.body)
 
 
-@enum_type("blueprinting.ir.portable-plan.objective-kind")
+@enum("blueprinting.ir.portable-plan.objective-kind")
 class ObjectiveKind(Enum):
     """Quantity optimized while exploring portable plans."""
 
@@ -316,7 +258,7 @@ class ObjectiveKind(Enum):
     ENERGY = "energy"
 
 
-@enum_type("blueprinting.ir.portable-plan.objective-direction")
+@enum("blueprinting.ir.portable-plan.objective-direction")
 class ObjectiveDirection(Enum):
     """Optimization direction for a portable-plan objective."""
 
@@ -330,18 +272,7 @@ class PlanObjective:
 
     kind: ObjectiveKind
     direction: ObjectiveDirection
-    weight: float = 1.0
-
-    def __post_init__(self) -> None:
-        require_instance(self.kind, ObjectiveKind, "objective kind")
-        require_instance(self.direction, ObjectiveDirection, "objective direction")
-        if (
-            isinstance(self.weight, bool)
-            or not isinstance(self.weight, Real)
-            or not math.isfinite(self.weight)
-            or self.weight <= 0
-        ):
-            raise ValueError("objective weight must be greater than zero")
+    weight: PositiveFiniteFloat = 1.0
 
 
 _PORTABLE_RESERVED = frozenset(
@@ -413,30 +344,6 @@ class PortablePlanIR(CanonicalIRMixin):
     header: IRHeader = field(
         default_factory=lambda: make_header(PortablePlanIR.SCHEMA_NAME, PortablePlanIR.SCHEMA_VERSION)
     )
-
-    def __post_init__(self) -> None:
-        require_instance(self.header, IRHeader, "portable header")
-        require_instance(self.semantic, ProgramSemantic, "portable program semantic")
-        for field_name in ("name", "source_distributed_digest", "strategy_fingerprint", "planner_revision"):
-            if not isinstance(getattr(self, field_name), str):
-                raise TypeError(f"{field_name} must be a string")
-        object.__setattr__(self, "tasks", typed_tuple(self.tasks, PlanTask, "portable tasks"))
-        object.__setattr__(self, "buffers", typed_tuple(self.buffers, PlanBuffer, "portable buffers"))
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, BufferId, "portable inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, BufferId, "portable outputs"))
-        object.__setattr__(
-            self,
-            "objectives",
-            typed_tuple(self.objectives, PlanObjective, "portable objectives"),
-        )
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if (
-            not self.header.parent_digests
-            and self.header.schema_name == self.SCHEMA_NAME
-            and self.header.schema_version == self.SCHEMA_VERSION
-            and is_content_digest(self.source_distributed_digest)
-        ):
-            object.__setattr__(self, "header", self.header.with_parents(self.source_distributed_digest))
 
     def diagnostics(self) -> VerificationReport:
         bag = DiagnosticBag()
@@ -545,7 +452,7 @@ class PortablePlanIR(CanonicalIRMixin):
                         *path,
                         "logical_ranks",
                     )
-            if task.operation.dialect.lower() in {"cuda", "nccl", "rocm", "rccl", "lpu"}:
+            if is_known_target_dialect(task.operation):
                 bag.error(
                     "portable.target_dialect",
                     f"target dialect {task.operation.dialect!r} is illegal in PortablePlanIR",

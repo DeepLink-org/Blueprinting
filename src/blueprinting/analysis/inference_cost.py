@@ -14,7 +14,7 @@ from blueprinting.synthesizer.dialects.transformer import (
     TransformerInferencePlanSemantic,
     TransformerInferencePlanTaskSemantic,
 )
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec
 
 from ..synthesizer.bindings import InferencePhase
 from ..synthesizer.stages.portable_plan.ir import (
@@ -26,7 +26,7 @@ from ..synthesizer.stages.portable_plan.ir import (
 from ..system import SystemProfile
 from .cost import CostQuery, CostQueryContext, CostResolver, CostSubject, EstimateUncertainty
 from .cost_model import CalibrationMode
-from .inference_evidence import InferenceEvidenceQuery
+from .inference_evidence import InferenceEvidenceQuery, inference_cost_operation
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,7 @@ def inference_evidence_query_for(
     *,
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -106,16 +106,6 @@ def inference_evidence_query_for(
     )
 
 
-_GEMM_PRIMITIVES = frozenset(
-    {
-        "attention_pre_projection",
-        "attention_post_projection",
-        "mlp_up_projection",
-        "mlp_down_projection",
-    }
-)
-
-
 def _merge_dimensions(base: dict[str, object], extra: FrozenDict) -> FrozenDict:
     overlap = set(base).intersection(extra)
     conflicts = tuple(key for key in overlap if base[key] != extra[key])
@@ -131,7 +121,7 @@ def cost_query_for_inference_task(
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
     network_binding: NetworkTierBinding,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,
@@ -144,7 +134,7 @@ def cost_query_for_inference_task(
         raise TypeError("context must be CostQueryContext")
     invocation = _invocation_from_plan_task(task)
     primitive = invocation.primitive
-    operation = "gemm" if primitive in _GEMM_PRIMITIVES else primitive
+    operation = inference_cost_operation(primitive)
     subject = CostSubject.COMMUNICATION if invocation.engine is EngineKind.COLLECTIVE else CostSubject.OPERATOR
     tensor_parallel = mapping.tensor_parallel
     dimensions: dict[str, object] = {
@@ -170,7 +160,7 @@ def cost_query_for_inference_task(
         "window_size": 0,
         "kv_cache_datatype": datatype,
     }
-    if primitive in _GEMM_PRIMITIVES:
+    if operation == "gemm":
         tokens = batch_size * query_tokens
         local_hidden = model.hidden_size // tensor_parallel
         local_feedforward = model.feedforward_size // tensor_parallel
@@ -214,7 +204,7 @@ def _task_estimate(
     hardware: SystemProfile,
     mapping: TransformerInferenceMappingSpec,
     network_binding: NetworkTierBinding,
-    datatype: str,
+    datatype: TransformerDataType,
     model: TransformerModelSpec,
     batch_size: int,
     query_tokens: int,

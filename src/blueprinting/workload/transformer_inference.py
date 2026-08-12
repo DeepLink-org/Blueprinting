@@ -13,40 +13,25 @@ construction and phase binding are owned by the synthesizer frontend.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
-from blueprinting.schema.codec import record_type
+from blueprinting.schema.authoring import PositiveInt, record
 
-from .transformer import TransformerModelSpec
-
-
-def _positive_integer(value: Any, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return int(value)
+from .transformer import TransformerDataType, TransformerModelSpec, transformer_element_bytes
 
 
-@record_type("blueprinting.workload.transformer-inference-request")
-@dataclass(frozen=True)
+@record("blueprinting.workload.transformer-inference-request")
 class TransformerInferenceRequestSpec:
     """A homogeneous request cohort before online scheduling is applied."""
 
-    batch_size: int
-    prompt_tokens: int
-    generated_tokens: int
-    datatype: str = "float16"
-
-    def __post_init__(self) -> None:
-        for field_name in ("batch_size", "prompt_tokens", "generated_tokens"):
-            _positive_integer(getattr(self, field_name), field_name)
-        if self.datatype not in {"float8", "float16", "bfloat16", "float32"}:
-            raise ValueError(f"unsupported datatype: {self.datatype!r}")
+    batch_size: PositiveInt
+    prompt_tokens: PositiveInt
+    generated_tokens: PositiveInt
+    datatype: TransformerDataType = "float16"
 
     @property
     def bytes_per_element(self) -> int:
-        widths: dict[str, int] = {"float8": 1, "float16": 2, "bfloat16": 2, "float32": 4}
-        return widths[self.datatype]
+        return transformer_element_bytes(self.datatype)
 
     @property
     def decode_iterations(self) -> int:

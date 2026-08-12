@@ -13,13 +13,13 @@ from blueprinting.mapping import (
     TransformerInferenceMappingSpec,
     TransformerInferenceParallelism,
 )
-from blueprinting.workload import TransformerModelSpec
+from blueprinting.workload import TransformerDataType, TransformerModelSpec
 
 from ...bindings import InferencePhase, InferenceWorkload
 from ...ids import BufferId, Lineage, NodeId, ValueId
 from ...passes.authoring import RelationCheckContext, relation
 from ...session import SynthesisSession
-from ...stages.common import Effect, EffectKind, OperationName, TensorType
+from ...stages.common import Effect, EffectKind, OperationName, TensorType, make_header
 from ...stages.distributed.ir import (
     Collective,
     CollectiveKind,
@@ -83,7 +83,7 @@ def _parallelism(mapping: TransformerInferenceMappingSpec) -> tuple[int, int, in
 def _semantic_specs(
     ir: ModelIR,
     session: SynthesisSession,
-) -> tuple[TransformerModelSpec, TransformerInferenceMappingSpec, InferencePhase, int, int, int, str]:
+) -> tuple[TransformerModelSpec, TransformerInferenceMappingSpec, InferencePhase, int, int, int, TransformerDataType]:
     if len(ir.operations) != 1 or ir.operations[0].operation != OperationName("transformer", "decoder_inference"):
         raise ValueError("Transformer inference distribution expects one transformer.decoder_inference operation")
     operation_semantic = ir.operations[0].semantic
@@ -448,6 +448,11 @@ def normalize_inference_distribution(ir: ModelIR, session: SynthesisSession) -> 
             "one-local-tensor-parallel-block-phase",
             block_memory,
         ),
+        header=make_header(
+            DistributedTaskIR.SCHEMA_NAME,
+            DistributedTaskIR.SCHEMA_VERSION,
+            parent_digests=(ir.digest,),
+        ),
     )
     return distributed
 
@@ -650,5 +655,10 @@ def normalize_inference_plan(ir: DistributedTaskIR, session: SynthesisSession) -
             program.datatype,
             program.scope,
             block_memory,
+        ),
+        header=make_header(
+            PortablePlanIR.SCHEMA_NAME,
+            PortablePlanIR.SCHEMA_VERSION,
+            parent_digests=(ir.digest,),
         ),
     )

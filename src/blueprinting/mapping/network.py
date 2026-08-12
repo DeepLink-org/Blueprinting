@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from blueprinting.schema.authoring import record
+from blueprinting.schema.authoring import NonNegativeInt, record
 
 
 def _tier(value: Any, name: str) -> int:
@@ -29,13 +29,9 @@ class NetworkTierBinding:
     :class:`~blueprinting.system.SystemProfile`.
     """
 
-    tensor_parallel: int = 0
-    pipeline_parallel: int = 0
-    data_parallel: int = 0
-
-    def __post_init__(self) -> None:
-        for name in ("tensor_parallel", "pipeline_parallel", "data_parallel"):
-            _tier(getattr(self, name), name)
+    tensor_parallel: NonNegativeInt = 0
+    pipeline_parallel: NonNegativeInt = 0
+    data_parallel: NonNegativeInt = 0
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> NetworkTierBinding:

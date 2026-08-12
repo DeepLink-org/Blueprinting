@@ -30,6 +30,7 @@ from blueprinting.application import (
     SweepReport,
     SweepRequest,
 )
+from blueprinting.workload import TRANSFORMER_DATA_TYPES
 
 from .catalog import ConfigCatalog, default_catalog
 from .chrome_trace import perfetto_open_javascript, portable_projection_trace_json
@@ -59,7 +60,6 @@ from .presentation import (
     timeline_summary,
 )
 
-_COMPILER_DTYPES = ("float16", "bfloat16", "float32", "float8")
 _PARALLEL_OPTIONS = (1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128)
 _CALIBRATION_LABELS = {
     "系统证据曲线": CalibrationMode.SYSTEM_EVIDENCE,
@@ -355,7 +355,7 @@ class ConfigurationPanel:
         hardware = self.catalog.load("systems", hardware_name)
         matrix = set(hardware.get("matrix", {}))
         vector = set(hardware.get("vector", {}))
-        supported = tuple(item for item in _COMPILER_DTYPES if item in matrix and item in vector)
+        supported = tuple(item for item in TRANSFORMER_DATA_TYPES if item in matrix and item in vector)
         if not supported:
             raise ValueError(f"硬件预设 {hardware_name} 没有同时定义 matrix/vector datatype")
         return supported

@@ -6,8 +6,7 @@ from dataclasses import field
 from enum import Enum
 from typing import ClassVar
 
-from blueprinting.schema.authoring import record
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import enum, record
 from blueprinting.schema.frozen import FrozenDict
 
 from ...errors import DiagnosticBag, VerificationReport
@@ -20,18 +19,16 @@ from ..common import (
     OperationName,
     SchemaVersion,
     TensorType,
-    frozen_map,
+    is_known_target_dialect,
     make_header,
     reject_reserved_attributes,
-    require_instance,
-    typed_tuple,
     verify_known_references,
     verify_ordered_dag,
     verify_unique_ids,
 )
 
 
-@enum_type("blueprinting.ir.model.value-role")
+@enum("blueprinting.ir.model.value-role")
 class ValueRole(Enum):
     """Semantic ownership role of a model-level SSA value."""
 
@@ -56,15 +53,6 @@ class ModelValue:
     name: str = ""
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        require_instance(self.id, ValueId, "model value ID")
-        require_instance(self.type, TensorType, "model value type")
-        require_instance(self.role, ValueRole, "model value role")
-        require_instance(self.lineage, Lineage, "model value lineage")
-        if not isinstance(self.name, str):
-            raise TypeError("model value name must be a string")
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-
 
 @record("blueprinting.ir.model.operation")
 class ModelOperation:
@@ -79,21 +67,6 @@ class ModelOperation:
     effects: tuple[Effect, ...] = ()
     semantic: ModelOperationSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, NodeId, "model operation ID")
-        require_instance(self.operation, OperationName, "model operation name")
-        require_instance(self.lineage, Lineage, "model operation lineage")
-        require_instance(self.semantic, ModelOperationSemantic, "model operation semantic")
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, ValueId, "model operation inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, ValueId, "model operation outputs"))
-        object.__setattr__(
-            self,
-            "control_dependencies",
-            typed_tuple(self.control_dependencies, NodeId, "model control dependencies"),
-        )
-        object.__setattr__(self, "effects", typed_tuple(self.effects, Effect, "model operation effects"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
 
 
 _MODEL_RESERVED = frozenset(
@@ -135,16 +108,6 @@ class ModelIR(CanonicalIRMixin):
     attributes: FrozenDict = field(default_factory=FrozenDict)
     header: IRHeader = field(default_factory=lambda: make_header(ModelIR.SCHEMA_NAME, ModelIR.SCHEMA_VERSION))
 
-    def __post_init__(self) -> None:
-        require_instance(self.header, IRHeader, "model header")
-        if not isinstance(self.name, str):
-            raise TypeError("model name must be a string")
-        object.__setattr__(self, "values", typed_tuple(self.values, ModelValue, "model values"))
-        object.__setattr__(self, "operations", typed_tuple(self.operations, ModelOperation, "model operations"))
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, ValueId, "model inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, ValueId, "model outputs"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-
     def diagnostics(self) -> VerificationReport:
         bag = DiagnosticBag()
         self._verify_common(bag)
@@ -181,7 +144,7 @@ class ModelIR(CanonicalIRMixin):
         producers = {}
         for index, operation in enumerate(self.operations):
             path = ("operations", str(index))
-            if operation.operation.dialect.lower() in {"cuda", "nccl", "rocm", "rccl", "lpu"}:
+            if is_known_target_dialect(operation.operation):
                 bag.error(
                     "model.target_dialect",
                     f"target dialect {operation.operation.dialect!r} is illegal in ModelIR",

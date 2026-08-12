@@ -14,7 +14,7 @@ Runtime declarations are authoritative. Installing mypy adds function-body, flow
 
 ## Layer 1: typed runtime values
 
-`@record` derives frozen/slotted canonical product types and performs annotation-driven structural checks. `@adt` and `@variant` define a semantic constructor family; an explicit union alias plus `seal_adt` closes the family:
+`@record` derives frozen/slotted canonical product types and performs annotation-driven structural checks. `@enum` registers a closed canonical enumeration without exposing the codec registry. `@adt` and `@variant` define a semantic constructor family; an explicit union alias plus `seal_adt` closes the family. `@record` and `@adt` own dataclass derivation, so stacking either with `@dataclass` is rejected rather than silently bypassing structural checks:
 
 ```python
 @adt(wire="blueprinting.binding.workload-mode")
@@ -111,7 +111,7 @@ When adding or changing a formal type:
 
 Metaprogramming is intentionally narrow: decorators derive mechanical structure and manifests, but do not wrap execution, inspect stack frames, synthesize hidden business rules, or replace explicit normalizers and verifiers.
 
-Decorator surfaces are separated by audience. Plain `blueprinting.schema` and `blueprinting.synthesizer.passes` provide values/codecs and the transaction runner without exporting authoring decorators. Core schema and trusted dialect authors import `record/adt/variant` from `blueprinting.schema.authoring`; pass and target-extension authors import `derivation/relation/claim` from `blueprinting.synthesizer.passes.authoring`. Codec registries, manifest compilation, and pass registries remain implementation details.
+Decorator surfaces are separated by audience. Plain `blueprinting.schema` and `blueprinting.synthesizer.passes` provide values/codecs and the transaction runner without exporting authoring decorators. Core schema and trusted dialect authors import `record/enum/adt/variant` from `blueprinting.schema.authoring`; pass and target-extension authors import `derivation/relation/claim` from `blueprinting.synthesizer.passes.authoring`. Codec registries, manifest compilation, and pass registries remain implementation details.
 
 ## Current limits
 

@@ -6,8 +6,7 @@ from dataclasses import field
 from enum import Enum
 from typing import ClassVar
 
-from blueprinting.schema.authoring import record
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import NonEmptyText, PositiveInt, enum, record
 from blueprinting.schema.frozen import FrozenDict
 
 from ...errors import DiagnosticBag, VerificationReport
@@ -16,12 +15,9 @@ from ..common import (
     CanonicalIRMixin,
     IRHeader,
     SchemaVersion,
-    frozen_map,
     is_content_digest,
     make_header,
     reject_reserved_attributes,
-    require_instance,
-    typed_tuple,
     verify_ordered_dag,
     verify_unique_ids,
 )
@@ -31,14 +27,8 @@ from ..common import (
 class MachineOpcode:
     """Dialect-qualified opcode owned by one target plugin."""
 
-    dialect: str
-    name: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.dialect, str) or not isinstance(self.name, str):
-            raise TypeError("machine opcode dialect and name must be strings")
-        if not self.dialect or not self.name:
-            raise ValueError("machine opcode dialect and name must not be empty")
+    dialect: NonEmptyText
+    name: NonEmptyText
 
     def __str__(self) -> str:
         return f"{self.dialect}.{self.name}"
@@ -56,22 +46,8 @@ class MachineInstruction:
     source_command: CommandId | None = None
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
-    def __post_init__(self) -> None:
-        require_instance(self.id, InstructionId, "machine instruction ID")
-        require_instance(self.opcode, MachineOpcode, "machine opcode")
-        require_instance(self.lineage, Lineage, "machine instruction lineage")
-        if self.source_command is not None:
-            require_instance(self.source_command, CommandId, "machine source command")
-        object.__setattr__(
-            self,
-            "dependencies",
-            typed_tuple(self.dependencies, InstructionId, "machine instruction dependencies"),
-        )
-        object.__setattr__(self, "operands", frozen_map(self.operands))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
 
-
-@enum_type("blueprinting.ir.machine.section-kind")
+@enum("blueprinting.ir.machine.section-kind")
 class MachineSectionKind(Enum):
     """Container role of a machine-program section."""
 
@@ -85,31 +61,14 @@ class MachineSectionKind(Enum):
 class MachineSection:
     """Aligned code or data section in a target machine program."""
 
-    name: str
+    name: NonEmptyText
     kind: MachineSectionKind
     instructions: tuple[MachineInstruction, ...] = ()
     data: bytes = b""
-    alignment_bytes: int = 1
+    alignment_bytes: PositiveInt = 1
     attributes: FrozenDict = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
-        require_instance(self.kind, MachineSectionKind, "machine section kind")
-        object.__setattr__(
-            self,
-            "instructions",
-            typed_tuple(self.instructions, MachineInstruction, "machine section instructions"),
-        )
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("machine section name must not be empty")
-        if not isinstance(self.data, bytes):
-            raise TypeError("machine section data must be bytes")
-        if (
-            isinstance(self.alignment_bytes, bool)
-            or not isinstance(self.alignment_bytes, int)
-            or self.alignment_bytes <= 0
-        ):
-            raise ValueError("machine section alignment must be a positive integer")
         if self.kind is MachineSectionKind.CODE and self.data:
             raise ValueError("code section cannot contain opaque data")
         if self.kind is not MachineSectionKind.CODE and self.instructions:
@@ -120,13 +79,8 @@ class MachineSection:
 class MachineEntryPoint:
     """Named externally addressable instruction in a machine program."""
 
-    name: str
+    name: NonEmptyText
     instruction: InstructionId
-
-    def __post_init__(self) -> None:
-        require_instance(self.instruction, InstructionId, "entry-point instruction")
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("machine entry-point name must not be empty")
 
 
 _MACHINE_RESERVED = frozenset(
@@ -158,34 +112,6 @@ class MachineIR(CanonicalIRMixin):
     entry_points: tuple[MachineEntryPoint, ...] = ()
     attributes: FrozenDict = field(default_factory=FrozenDict)
     header: IRHeader = field(default_factory=lambda: make_header(MachineIR.SCHEMA_NAME, MachineIR.SCHEMA_VERSION))
-
-    def __post_init__(self) -> None:
-        require_instance(self.header, IRHeader, "machine header")
-        identity_fields = (
-            "name",
-            "source_concrete_digest",
-            "target_fingerprint",
-            "target_plugin",
-            "target_abi",
-            "emitter_revision",
-            "program_format",
-        )
-        if any(not isinstance(getattr(self, field_name), str) for field_name in identity_fields):
-            raise TypeError("machine program identity fields must be strings")
-        object.__setattr__(self, "sections", typed_tuple(self.sections, MachineSection, "machine sections"))
-        object.__setattr__(
-            self,
-            "entry_points",
-            typed_tuple(self.entry_points, MachineEntryPoint, "machine entry points"),
-        )
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if (
-            not self.header.parent_digests
-            and self.header.schema_name == self.SCHEMA_NAME
-            and self.header.schema_version == self.SCHEMA_VERSION
-            and is_content_digest(self.source_concrete_digest)
-        ):
-            object.__setattr__(self, "header", self.header.with_parents(self.source_concrete_digest))
 
     @property
     def instructions(self) -> tuple[MachineInstruction, ...]:

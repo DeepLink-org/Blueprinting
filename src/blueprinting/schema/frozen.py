@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any
+from typing import Any, Generic, cast
+
+from typing_extensions import TypeVar
+
+V = TypeVar("V", default=Any)
 
 
 def freeze(value: Any) -> Any:
@@ -38,31 +42,31 @@ def thaw(value: Any) -> Any:
     return value
 
 
-class FrozenDict(Mapping[str, Any]):
+class FrozenDict(Mapping[str, V], Generic[V]):
     """A compact, hashable mapping with recursively frozen values."""
 
     __slots__ = ("_hash", "_items")
 
     def __init__(
         self,
-        source: Mapping[str, Any] | None = None,
+        source: Mapping[str, V] | None = None,
         *,
-        items: Iterable[tuple[str, Any]] | None = None,
+        items: Iterable[tuple[str, V]] | None = None,
     ) -> None:
         if source is not None and items is not None:
             raise TypeError("provide either source or items, not both")
         raw_items = source.items() if source is not None else (items or ())
-        copied: dict[str, Any] = {}
+        copied: dict[str, V] = {}
         for key, value in raw_items:
             if not isinstance(key, str):
                 raise TypeError("FrozenDict keys must be strings")
             if key in copied:
                 raise ValueError(f"duplicate FrozenDict key: {key!r}")
-            copied[key] = freeze(value)
-        self._items: tuple[tuple[str, Any], ...] = tuple(sorted(copied.items(), key=lambda pair: pair[0]))
+            copied[key] = cast(V, freeze(value))
+        self._items: tuple[tuple[str, V], ...] = tuple(sorted(copied.items(), key=lambda pair: pair[0]))
         self._hash: int | None = None
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> V:
         for item_key, value in self._items:
             if item_key == key:
                 return value
@@ -83,12 +87,12 @@ class FrozenDict(Mapping[str, Any]):
         body = ", ".join(f"{key!r}: {value!r}" for key, value in self._items)
         return f"FrozenDict({{{body}}})"
 
-    def __reduce__(self) -> tuple[type[FrozenDict], tuple[dict[str, Any]]]:
+    def __reduce__(self) -> tuple[type[FrozenDict[V]], tuple[dict[str, V]]]:
         """Use the public constructor for process and UI cache round-trips."""
 
         return FrozenDict, (dict(self._items),)
 
-    def evolve(self, **changes: Any) -> FrozenDict:
+    def evolve(self, **changes: V) -> FrozenDict[V]:
         updated = dict(self._items)
         updated.update(changes)
         return FrozenDict(updated)

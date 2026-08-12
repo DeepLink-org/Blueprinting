@@ -15,7 +15,7 @@ from blueprinting.synthesizer.ids import (
     TokenId,
     ValueId,
 )
-from blueprinting.synthesizer.stages.common import OperationName, TensorType
+from blueprinting.synthesizer.stages.common import OperationName, TensorType, make_header
 from blueprinting.synthesizer.stages.concrete_plan.ir import (
     AccessMode,
     BufferBinding,
@@ -184,6 +184,11 @@ def distributed_ir(model_ir: ModelIR) -> DistributedTaskIR:
         ),
         inputs=(input_id, weight_id),
         outputs=(output_id,),
+        header=make_header(
+            DistributedTaskIR.SCHEMA_NAME,
+            DistributedTaskIR.SCHEMA_VERSION,
+            parent_digests=(model_ir.digest,),
+        ),
     )
 
 
@@ -272,6 +277,11 @@ def portable_ir(distributed_ir: DistributedTaskIR) -> PortablePlanIR:
         inputs=(input_id, weight_id),
         outputs=(output_id,),
         objectives=(PlanObjective(ObjectiveKind.LATENCY, ObjectiveDirection.MINIMIZE),),
+        header=make_header(
+            PortablePlanIR.SCHEMA_NAME,
+            PortablePlanIR.SCHEMA_VERSION,
+            parent_digests=(distributed_ir.digest,),
+        ),
     )
 
 
@@ -344,6 +354,11 @@ def concrete_ir(portable_ir: PortablePlanIR) -> ConcretePlanIR:
                 QueueIssueOrder(collective_queue, (collective_command,)),
             )
         ),
+        header=make_header(
+            ConcretePlanIR.SCHEMA_NAME,
+            ConcretePlanIR.SCHEMA_VERSION,
+            parent_digests=(portable_ir.digest,),
+        ),
     )
 
 
@@ -391,4 +406,9 @@ def machine_ir(concrete_ir: ConcretePlanIR) -> MachineIR:
             ),
         ),
         entry_points=(MachineEntryPoint("main", launch_id),),
+        header=make_header(
+            MachineIR.SCHEMA_NAME,
+            MachineIR.SCHEMA_VERSION,
+            parent_digests=(concrete_ir.digest,),
+        ),
     )

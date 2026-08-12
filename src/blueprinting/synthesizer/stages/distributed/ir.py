@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from dataclasses import field
 from enum import Enum
-from typing import ClassVar, TypeAlias
+from typing import Annotated, ClassVar, TypeAlias
 
 from typing_extensions import assert_never
 
-from blueprinting.schema.authoring import VariantSpec, adt, record, require_adt_variant, seal_adt, variant
-from blueprinting.schema.codec import enum_type
+from blueprinting.schema.authoring import (
+    NonEmptyText,
+    NonNegativeInt,
+    PositiveInt,
+    ValueConstraint,
+    VariantSpec,
+    adt,
+    enum,
+    record,
+    seal_adt,
+    variant,
+)
 from blueprinting.schema.frozen import FrozenDict
 
 from ...errors import DiagnosticBag, VerificationReport
@@ -25,12 +35,10 @@ from ..common import (
     OperationName,
     SchemaVersion,
     TensorType,
-    frozen_map,
     is_content_digest,
+    is_known_target_dialect,
     make_header,
     reject_reserved_attributes,
-    require_instance,
-    typed_tuple,
     verify_known_references,
     verify_nonnegative_scalar,
     verify_ordered_dag,
@@ -43,30 +51,24 @@ from ..model.ir import ValueRole
 class MeshAxis:
     """One named dimension of the logical, target-neutral device mesh."""
 
-    name: str
-    size: int
+    name: NonEmptyText
+    size: PositiveInt
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("mesh axis name must not be empty")
-        if isinstance(self.size, bool) or not isinstance(self.size, int) or self.size <= 0:
-            raise ValueError("mesh axis size must be a positive integer")
+
+MeshAxes: TypeAlias = Annotated[tuple[MeshAxis, ...], ValueConstraint.NON_EMPTY]
 
 
 @record("blueprinting.ir.distributed-task.logical-mesh")
 class LogicalMesh:
     """Cartesian logical-rank space used by sharding and collectives."""
 
-    name: str
-    axes: tuple[MeshAxis, ...]
+    name: NonEmptyText
+    axes: MeshAxes
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "axes", typed_tuple(self.axes, MeshAxis, "logical mesh axes"))
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("logical mesh name must not be empty")
         names = tuple(axis.name for axis in self.axes)
-        if not names or len(set(names)) != len(names):
-            raise ValueError("logical mesh axes must be non-empty and uniquely named")
+        if len(set(names)) != len(names):
+            raise ValueError("logical mesh axes must be uniquely named")
 
     @property
     def size(self) -> int:
@@ -84,22 +86,15 @@ class LogicalMesh:
 class ShardingSpec:
     """Mapping from tensor dimensions to logical mesh axes."""
 
-    dimension_axes: tuple[tuple[str, ...], ...]
-    replicated_axes: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "dimension_axes", tuple(tuple(item) for item in self.dimension_axes))
-        object.__setattr__(self, "replicated_axes", tuple(self.replicated_axes))
-        axes = tuple(axis for dimensions in self.dimension_axes for axis in dimensions) + self.replicated_axes
-        if any(not isinstance(axis, str) or not axis for axis in axes):
-            raise ValueError("sharding axes must be non-empty strings")
+    dimension_axes: tuple[tuple[NonEmptyText, ...], ...]
+    replicated_axes: tuple[NonEmptyText, ...] = ()
 
     @classmethod
     def replicated(cls, rank: int, axes: tuple[str, ...]) -> ShardingSpec:
         return cls(dimension_axes=tuple(() for _ in range(rank)), replicated_axes=axes)
 
 
-@enum_type("blueprinting.ir.distributed-task.collective-kind")
+@enum("blueprinting.ir.distributed-task.collective-kind")
 class CollectiveKind(Enum):
     """Logical collective semantics independent of a communication library."""
 
@@ -110,7 +105,7 @@ class CollectiveKind(Enum):
     BROADCAST = "broadcast"
 
 
-@enum_type("blueprinting.ir.distributed-task.reduction-kind")
+@enum("blueprinting.ir.distributed-task.reduction-kind")
 class ReductionKind(Enum):
     """Associative reduction operation required by a logical collective."""
 
@@ -125,65 +120,47 @@ class CollectiveSpec:
     """Closed collective semantics without conditional reduction/root fields."""
 
 
-def _validate_collective_participants(participants: tuple[int, ...]) -> tuple[int, ...]:
-    normalized = tuple(participants)
-    if any(isinstance(rank, bool) or not isinstance(rank, int) or rank < 0 for rank in normalized):
-        raise ValueError("collective participants must be non-negative integer ranks")
-    if not normalized or len(set(normalized)) != len(normalized):
-        raise ValueError("collective participants must be non-empty and unique")
-    return normalized
+CollectiveParticipants: TypeAlias = Annotated[
+    tuple[int, ...],
+    ValueConstraint.NON_EMPTY,
+    ValueConstraint.UNIQUE_ITEMS,
+    ValueConstraint.NON_NEGATIVE_ITEMS,
+]
 
 
 @variant("all-reduce")
 class AllReduce(CollectiveSpec):
-    participants: tuple[int, ...]
+    participants: CollectiveParticipants
     message_bytes: Scalar
     reduction: ReductionKind
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "participants", _validate_collective_participants(self.participants))
-        require_instance(self.reduction, ReductionKind, "all-reduce reduction")
 
 
 @variant("reduce-scatter")
 class ReduceScatter(CollectiveSpec):
-    participants: tuple[int, ...]
+    participants: CollectiveParticipants
     message_bytes: Scalar
     reduction: ReductionKind
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "participants", _validate_collective_participants(self.participants))
-        require_instance(self.reduction, ReductionKind, "reduce-scatter reduction")
 
 
 @variant("all-gather")
 class AllGather(CollectiveSpec):
-    participants: tuple[int, ...]
+    participants: CollectiveParticipants
     message_bytes: Scalar
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "participants", _validate_collective_participants(self.participants))
 
 
 @variant("all-to-all")
 class AllToAll(CollectiveSpec):
-    participants: tuple[int, ...]
+    participants: CollectiveParticipants
     message_bytes: Scalar
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "participants", _validate_collective_participants(self.participants))
 
 
 @variant("broadcast")
 class Broadcast(CollectiveSpec):
-    participants: tuple[int, ...]
+    participants: CollectiveParticipants
     message_bytes: Scalar
-    root: int
+    root: NonNegativeInt
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "participants", _validate_collective_participants(self.participants))
-        if isinstance(self.root, bool) or not isinstance(self.root, int) or self.root < 0:
-            raise ValueError("broadcast root must be a non-negative integer rank")
         if self.root not in self.participants:
             raise ValueError("broadcast root must be one of its participants")
 
@@ -245,21 +222,14 @@ def make_collective_spec(
 class PeerTransfer:
     """Logical point-to-point transfer between two virtual ranks."""
 
-    source_rank: int
-    destination_rank: int
+    source_rank: NonNegativeInt
+    destination_rank: NonNegativeInt
     message_bytes: Scalar
-    channel: str = "default"
+    channel: NonEmptyText = "default"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.channel, str):
-            raise TypeError("peer transfer channel must be a string")
-        for endpoint in (self.source_rank, self.destination_rank):
-            if isinstance(endpoint, bool) or not isinstance(endpoint, int) or endpoint < 0:
-                raise ValueError("peer transfer endpoints must be non-negative integer ranks")
         if self.source_rank == self.destination_rank:
             raise ValueError("peer transfer endpoints must differ")
-        if not self.channel:
-            raise ValueError("peer transfer channel must not be empty")
 
 
 @adt(wire="blueprinting.ir.distributed-task.task")
@@ -310,23 +280,10 @@ class DistributedValue:
     type: TensorType
     role: ValueRole
     sharding: ShardingSpec
-    owners: tuple[int, ...]
+    owners: tuple[NonNegativeInt, ...]
     lineage: Lineage
     source_value: ValueId | None = None
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, ValueId, "distributed value ID")
-        require_instance(self.type, TensorType, "distributed value type")
-        require_instance(self.role, ValueRole, "distributed value role")
-        require_instance(self.sharding, ShardingSpec, "distributed value sharding")
-        require_instance(self.lineage, Lineage, "distributed value lineage")
-        if self.source_value is not None:
-            require_instance(self.source_value, ValueId, "distributed source value")
-        object.__setattr__(self, "owners", tuple(self.owners))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if any(isinstance(rank, bool) or not isinstance(rank, int) or rank < 0 for rank in self.owners):
-            raise ValueError("distributed value owners must be non-negative integer ranks")
 
 
 @record("blueprinting.ir.distributed-task.task-envelope")
@@ -336,7 +293,7 @@ class DistributedTask:
     id: NodeId
     body: TaskBodyVariant
     operation: OperationName
-    ranks: tuple[int, ...]
+    ranks: tuple[NonNegativeInt, ...]
     inputs: tuple[ValueId, ...]
     outputs: tuple[ValueId, ...]
     dependencies: tuple[NodeId, ...]
@@ -344,25 +301,6 @@ class DistributedTask:
     effects: tuple[Effect, ...] = ()
     semantic: DistributedTaskSemantic = EMPTY_SEMANTIC
     attributes: FrozenDict = field(default_factory=FrozenDict)
-
-    def __post_init__(self) -> None:
-        require_instance(self.id, NodeId, "distributed task ID")
-        require_adt_variant(self.body, TaskBody, "distributed task body")
-        require_instance(self.operation, OperationName, "distributed task operation")
-        require_instance(self.lineage, Lineage, "distributed task lineage")
-        require_instance(self.semantic, DistributedTaskSemantic, "distributed task semantic")
-        object.__setattr__(self, "ranks", tuple(self.ranks))
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, ValueId, "distributed task inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, ValueId, "distributed task outputs"))
-        object.__setattr__(
-            self,
-            "dependencies",
-            typed_tuple(self.dependencies, NodeId, "distributed task dependencies"),
-        )
-        object.__setattr__(self, "effects", typed_tuple(self.effects, Effect, "distributed task effects"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if any(isinstance(rank, bool) or not isinstance(rank, int) or rank < 0 for rank in self.ranks):
-            raise ValueError("distributed task ranks must be non-negative integers")
 
     @property
     def body_tag(self) -> str:
@@ -422,25 +360,6 @@ class DistributedTaskIR(CanonicalIRMixin):
     header: IRHeader = field(
         default_factory=lambda: make_header(DistributedTaskIR.SCHEMA_NAME, DistributedTaskIR.SCHEMA_VERSION)
     )
-
-    def __post_init__(self) -> None:
-        require_instance(self.header, IRHeader, "distributed header")
-        require_instance(self.mesh, LogicalMesh, "distributed logical mesh")
-        require_instance(self.semantic, ProgramSemantic, "distributed program semantic")
-        if not isinstance(self.name, str):
-            raise TypeError("distributed program name must be a string")
-        object.__setattr__(self, "values", typed_tuple(self.values, DistributedValue, "distributed values"))
-        object.__setattr__(self, "tasks", typed_tuple(self.tasks, DistributedTask, "distributed tasks"))
-        object.__setattr__(self, "inputs", typed_tuple(self.inputs, ValueId, "distributed inputs"))
-        object.__setattr__(self, "outputs", typed_tuple(self.outputs, ValueId, "distributed outputs"))
-        object.__setattr__(self, "attributes", frozen_map(self.attributes))
-        if (
-            not self.header.parent_digests
-            and self.header.schema_name == self.SCHEMA_NAME
-            and self.header.schema_version == self.SCHEMA_VERSION
-            and is_content_digest(self.source_model_digest)
-        ):
-            object.__setattr__(self, "header", self.header.with_parents(self.source_model_digest))
 
     def diagnostics(self) -> VerificationReport:
         bag = DiagnosticBag()
@@ -514,7 +433,7 @@ class DistributedTaskIR(CanonicalIRMixin):
             for rank in task.ranks:
                 if rank not in valid_ranks:
                     bag.error("rank.unknown", f"task rank {rank} is outside the logical mesh", *path, "ranks")
-            if task.operation.dialect.lower() in {"cuda", "nccl", "rocm", "rccl", "lpu"}:
+            if is_known_target_dialect(task.operation):
                 bag.error(
                     "distributed.target_dialect",
                     f"target dialect {task.operation.dialect!r} is illegal in DistributedTaskIR",
